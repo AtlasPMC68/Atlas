@@ -79,7 +79,10 @@ export function updateMapLabelVisibility(
     const featureId = label.dataset.featureId;
     if (!featureId) return;
 
-    const isVisible = visibleIds.has(featureId);
+    const isVisible =
+      visibleIds.has(featureId) ||
+      (selectedFeatureId != null && featureId === selectedFeatureId) ||
+      label.classList.contains("label-selected");
     label.style.visibility = isVisible ? "" : "hidden";
     label.style.pointerEvents = isVisible ? "" : "none";
     const circle = findCircleMarker(layers.get(featureId));

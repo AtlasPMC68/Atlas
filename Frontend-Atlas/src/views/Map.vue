@@ -26,7 +26,7 @@
           @delete-map="onDeleteMap"
           @add-map="openAddMapDialog"
           @duplicate-map="() => openDuplicateMapDialog()"
-          @select-map="onSelectMap"
+          @select-map="selectMap"
           @edit-map="openEditMapDialog"
           @save-label-styles="saveCustomLabelStyles"
           @update-feature="onUpdateFeature"
@@ -272,7 +272,7 @@
               :multi-selected-feature-ids="multiSelectedFeatureIds"
               @exact-date-change="onExactDateChange"
               @select-date="onTimelineDateSelect"
-              @select-map="onSelectMap"
+              @select-map="selectMap"
               @edit-map="openEditMapDialog"
               @edit-element="onEditElementFromTimeline"
               @select-element="onSelectElementFromTimeline"
@@ -471,39 +471,13 @@ function onEditFeatureRequest(feature: Feature) {
   featureVisibilityControlsRef.value?.showEditFeatureDialog(feature);
 }
 
-function onSelectMap(mapId: string) {
-  const period = mapPeriods.value.find((p: MapPeriod) => String(p.id) === String(mapId));
-  const year = period ? ((period as any).startYear ?? toYear(period.startDate)) : null;
-  if (period && year != null) {
-    selectedYear.value = year;
-    if (period.startDate && (period as any).exactDate) {
-      selectedExactDate.value = period.startDate;
-    } else {
-      selectedExactDate.value = null;
-    }
-    nextTick(() => {
-      mapGeoJsonRef.value?.fitToVisibleFeatures(undefined, true);
-    });
-  }
-}
-
 function onSelectFeatures(ids: string[]) {
-  if (ids.length === 1) {
-    selectFeature(ids[0]);
-    return;
-  }
   multiSelectedFeatureIds.value = ids;
   if (ids.length > 0) {
     selectedFeatureId.value = null;
-    const selectedFeats = features.value.filter((f: Feature) => ids.includes(String(f.id)));
-    const mapId = selectedFeats.find((f: Feature) => f.mapId)?.mapId;
-    if (mapId) {
-      const period = mapPeriods.value.find((p: MapPeriod) => String(p.id) === String(mapId));
-      const year = period ? ((period as any).startYear ?? toYear(period.startDate)) : null;
-      if (period && year != null && timelineMode.value !== "global" && selectedYear.value !== year) {
-        selectedYear.value = year;
-      }
-    }
+    nextTick(() => {
+      mapGeoJsonRef.value?.fitToFeatures?.(ids, true);
+    });
   }
 }
 
@@ -567,6 +541,9 @@ function selectFeature(id: string | null) {
   selectedFeatureId.value = id;
   if (id) {
     multiSelectedFeatureIds.value = [];
+    nextTick(() => {
+      mapGeoJsonRef.value?.fitToFeatures?.([id], true);
+    });
 
     const feat = features.value.find((f: Feature) => String(f.id) === String(id));
     if (feat) {
@@ -1419,14 +1396,14 @@ function nudgeSelectedFeatures(dx: number, dy: number) {
   const idsSet = new Set(idsToNudge);
   const nextFeatures = features.value.map((f: Feature) => {
     if (!idsSet.has(String(f.id))) return f;
-    return nudgeFeatureByPixels(f, currentMap, dx, dy);
+    return nudgeFeatureByPixels(f, currentMap as any as L.Map, dx, dy);
   });
   commitFeatureSnapshot(nextFeatures);
 }
 
 function nudgeFeatureByPixels(
   feature: Feature,
-  leafletMap: any,
+  leafletMap: L.Map,
   dx: number,
   dy: number,
 ): Feature {
@@ -1944,6 +1921,49 @@ async function requireProjectId(): Promise<string> {
 
 function openAddMapDialog() {
   addMapDialogRef.value?.open();
+}
+
+function selectMap(mapId: string) {
+  const period =
+    enrichedPeriods.value.find((p: SliderPeriod) => String(p.id) === String(mapId)) ??
+    mapPeriods.value.find((p: MapPeriod) => String(p.id) === String(mapId));
+
+  if (!period) return;
+
+  if (timelineMode.value === "global") {
+    timelineMode.value = "period";
+  }
+
+  const targetYear = (period as any).startYear ?? toYear(period.startDate);
+  const targetExactDate =
+    (period as any).exactDate && period.startDate ? period.startDate : null;
+
+  selectedYear.value = targetYear;
+  selectedExactDate.value = targetExactDate;
+
+  if (period.title) {
+    currentMapTitle.value = period.title;
+  }
+
+  // Clear element selection when switching maps
+  selectedFeatureId.value = null;
+  multiSelectedFeatureIds.value = [];
+
+  nextTick(() => {
+    const mapFeatureIds = new Set(
+      features.value
+        .filter((f: Feature) => {
+          const mIds = getFeatureMapIds(f);
+          return mIds.includes(mapId);
+        })
+        .map((f: Feature) => String(f.id)),
+    );
+    if (mapFeatureIds.size > 0) {
+      mapGeoJsonRef.value?.fitToVisibleFeatures(mapFeatureIds, true);
+    } else {
+      mapGeoJsonRef.value?.fitToVisibleFeatures(undefined, true);
+    }
+  });
 }
 
 function openEditMapDialog(mapId: string) {

@@ -1,9 +1,17 @@
 <template>
   <dialog ref="dialogRef" class="modal">
-    <div class="modal-box max-w-xl p-0">
+    <div class="modal-box max-w-xl p-0 relative">
+      <button
+        type="button"
+        class="btn btn-sm btn-circle btn-ghost absolute right-4 top-4 z-10"
+        :disabled="isDuplicating"
+        @click="close"
+      >
+        ✕
+      </button>
       <form @submit.prevent="handleSubmit">
         <div class="card-body">
-          <h3 class="text-lg font-bold">Dupliquer une carte</h3>
+          <h3 class="text-xl font-bold">Dupliquer une carte</h3>
 
           <p v-if="error" class="text-xs text-red-700 bg-white border border-red-500 rounded px-2 py-1 mt-1">{{ error }}</p>
 
@@ -104,10 +112,10 @@
             <span class="text-sm">Utiliser des dates exactes</span>
           </label>
 
-          <div class="flex justify-end gap-2 mt-6">
+          <div class="modal-action mt-6 flex justify-end gap-2">
             <button
               type="button"
-              class="btn btn-ghost"
+              class="modal-secondary-btn w-32"
               :disabled="isDuplicating"
               @click="close"
             >
@@ -115,7 +123,7 @@
             </button>
             <button
               type="submit"
-              class="btn btn-primary"
+              class="btn btn-primary rounded-lg w-32"
               :disabled="!isValid || isDuplicating"
               data-testid="duplicate-map-submit-button"
             >

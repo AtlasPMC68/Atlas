@@ -153,18 +153,40 @@
     @apply h-full w-full flex items-center gap-2 px-3 rounded-lg bg-base-100 border border-gray-300 overflow-hidden;
   }
 
-  /* Tooltip à fond blanc */
-  .tooltip-light::before {
-    @apply bg-base-100 text-base-content border border-gray-300 shadow-md;
+  /* Tooltip à fond blanc uniformisé */
+  .tooltip-light::before,
+  .tooltip::before {
+    @apply bg-white text-gray-800 border border-gray-300 shadow-md text-xs font-normal rounded-md px-2 py-1;
   }
 
-  .tooltip-light::after {
-    @apply border-t-base-100;
+  .tooltip-light::after,
+  .tooltip::after {
+    @apply border-gray-300;
+  }
+
+  .tooltip.tooltip-bottom::after,
+  .tooltip-bottom.tooltip-light::after {
+    border-bottom-color: #cbd5e1 !important;
+  }
+
+  .tooltip.tooltip-top::after,
+  .tooltip-top.tooltip-light::after {
+    border-top-color: #cbd5e1 !important;
+  }
+
+  .tooltip.tooltip-left::after,
+  .tooltip-left.tooltip-light::after {
+    border-left-color: #cbd5e1 !important;
+  }
+
+  .tooltip.tooltip-right::after,
+  .tooltip-right.tooltip-light::after {
+    border-right-color: #cbd5e1 !important;
   }
 
   /* Boutons d'action */
   .modal-secondary-btn {
-    @apply btn btn-outline border-gray-400 rounded-lg w-36 shrink-0 text-sm hover:bg-base-200 hover:text-base-content;
+    @apply btn btn-outline border-gray-400 rounded-lg w-32 shrink-0 text-sm hover:bg-base-200 hover:text-base-content;
   }
 
   .modal-secondary-btn:hover {

@@ -35,7 +35,7 @@
             class="flex items-center gap-2 rounded-md px-2 py-1.5 cursor-pointer border transition-all select-none"
             :class="[
               isFeatureSelected(feature.id)
-                ? 'border-primary ring-1 ring-primary bg-primary/10 font-semibold'
+                ? 'border-primary ring-1 ring-inset ring-primary bg-primary/10 font-semibold'
                 : 'border-transparent hover:bg-base-200/60',
             ]"
             @click="onFeatureClick(feature, $event)"
@@ -60,7 +60,7 @@
               class="text-sm leading-tight truncate min-w-0 flex-1"
               :title="feature.properties?.name || '! Nom manquant'"
             >
-              {{ feature.properties?.name || "! Nom manquant" }}
+              {{ feature.properties?.name || "Nom manquant" }}
             </span>
           </li>
         </ul>
@@ -78,7 +78,6 @@ import { createFeatureDoubleClickHandler } from "../../utils/featureInteraction"
 import {
   getContinuousRangeSelection,
   isRangeSelectModifier,
-  isToggleSelectModifier,
 } from "../../utils/selectionUtils";
 
 const props = withDefaults(
@@ -128,39 +127,35 @@ const { handleClick: onFeatureClick, handleDblClick: onFeatureDblClick } =
       if (feature.id == null) return;
       const featureId = String(feature.id);
       const mouseEv = event as MouseEvent | undefined;
+      const isCtrl = Boolean(mouseEv?.ctrlKey || mouseEv?.metaKey);
+      const isShift = Boolean(mouseEv?.shiftKey);
 
-      if (isToggleSelectModifier(mouseEv)) {
+      if (isCtrl) {
         const currentList = props.multiSelectedFeatureIds ?? [];
         const next = new Set<string>(currentList);
-        if (props.selectedFeatureId) {
-          next.add(props.selectedFeatureId);
-        }
+        if (props.selectedFeatureId) next.add(String(props.selectedFeatureId));
         if (next.has(featureId)) {
           next.delete(featureId);
         } else {
           next.add(featureId);
         }
         lastSelectedAnchorId.value = featureId;
-        emit("select-feature", null as any);
+        emit("select-feature", null);
         emit("select-features", Array.from(next));
         return;
       }
 
-      if (isRangeSelectModifier(mouseEv)) {
+      if (isShift) {
         const orderedIds = visibleZoneFeatures.value.map((f: Feature) => String(f.id));
-        const anchorId =
-          props.selectedFeatureId ||
-          lastSelectedAnchorId.value ||
-          (props.multiSelectedFeatureIds?.[0] ?? null);
         const range = getContinuousRangeSelection(
           orderedIds,
-          anchorId,
+          lastSelectedAnchorId.value,
           featureId,
         );
-        lastSelectedAnchorId.value = anchorId || featureId;
-        emit("select-feature", null as any);
-        emit("select-features", range);
-        return;
+        if (range.length > 1) {
+          emit("select-features", range);
+          return;
+        }
       }
 
       lastSelectedAnchorId.value = featureId;

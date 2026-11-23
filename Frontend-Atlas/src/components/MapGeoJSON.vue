@@ -603,53 +603,64 @@ function extendBoundsWithLayer(bounds: L.LatLngBounds, layer: L.Layer) {
   }
 }
 
-function focusOnFeatures(ids: string[]) {
-  if (!map || ids.length === 0) return;
+function extendBoundsWithGeometry(bounds: L.LatLngBounds, geom: any) {
+  if (!geom || !geom.coordinates) return;
+  const { type, coordinates } = geom;
+  if (type === "Point") {
+    const [lng, lat] = coordinates as [number, number];
+    if (Number.isFinite(lat) && Number.isFinite(lng)) bounds.extend([lat, lng]);
+  } else if (type === "MultiPoint" || type === "LineString") {
+    (coordinates as number[][]).forEach(([lng, lat]) => {
+      if (Number.isFinite(lat) && Number.isFinite(lng)) bounds.extend([lat, lng]);
+    });
+  } else if (type === "Polygon" || type === "MultiLineString") {
+    (coordinates as number[][][]).forEach((ring) => {
+      ring?.forEach(([lng, lat]) => {
+        if (Number.isFinite(lat) && Number.isFinite(lng)) bounds.extend([lat, lng]);
+      });
+    });
+  } else if (type === "MultiPolygon") {
+    (coordinates as number[][][][]).forEach((poly) => {
+      poly?.forEach((ring) => {
+        ring?.forEach(([lng, lat]) => {
+          if (Number.isFinite(lat) && Number.isFinite(lng)) bounds.extend([lat, lng]);
+        });
+      });
+    });
+  }
+}
 
-  const targetFeatures = ids
-    .map(
-      (id) =>
-        props.features.find((f: Feature) => String(f.id) === String(id)) ||
-        localFeaturesSnapshot.value.find((f: Feature) => String(f.id) === String(id)),
-    )
-    .filter((f): f is Feature => Boolean(f));
+function fitToFeatures(ids: string[] | Set<string>, animate = true) {
+  if (!map) return;
+  const idArray = Array.from(ids instanceof Set ? ids : (ids ?? []));
+  if (idArray.length === 0) return;
 
   const bounds = L.latLngBounds([]);
 
-  for (const id of ids) {
-    const layer = featureLayerManager.layers.get(String(id));
+  idArray.forEach((id) => {
+    const layer = featureLayerManager.layers.get(id);
     if (layer) {
       extendBoundsWithLayer(bounds, layer);
     }
-  }
-
-  for (const feat of targetFeatures) {
-    const featId = String(feat.id);
-    if (!featureLayerManager.layers.has(featId) && feat.geometry) {
-      try {
-        if (feat.geometry.type === "Point") {
-          const [lng, lat] = feat.geometry.coordinates as [number, number];
-          bounds.extend([lat, lng]);
-        } else {
-          const geoLayer = L.geoJSON(feat);
-          const b = geoLayer.getBounds();
-          if (b.isValid()) bounds.extend(b);
-        }
-      } catch {
-        // ignore
-      }
+    const feat = (props.features ?? []).find(
+      (f: Feature) => String(f.id) === String(id),
+    );
+    if (feat?.geometry) {
+      extendBoundsWithGeometry(bounds, feat.geometry);
     }
-  }
+  });
 
   if (!bounds.isValid()) return;
 
-  const allTextOrPoint = targetFeatures.every((f) => {
-    const type = getMapElementType(f);
-    return type === "point" || type === "label" || f.geometry?.type === "Point";
+  const onlyTextOrPoints = idArray.every((id) => {
+    const f = (props.features ?? []).find((feat: Feature) => String(feat.id) === String(id));
+    if (!f) return false;
+    const t = getMapElementType(f);
+    return t === "label" || t === "point";
   });
 
-  const focusMaxZoom = allTextOrPoint ? 7 : 10;
-  map.fitBounds(bounds, { padding: [80, 80], maxZoom: focusMaxZoom, animate: true });
+  const focusMaxZoom = onlyTextOrPoints ? 7 : 10;
+  map.fitBounds(bounds, { padding: [80, 80], maxZoom: focusMaxZoom, animate });
 }
 
 function clearDraftLayers() {
@@ -686,7 +697,7 @@ defineExpose({
   clearDraftLayers,
   resetSelection,
   fitToVisibleFeatures,
-  focusOnFeatures,
+  fitToFeatures,
   multiSelectedIds,
 });
 
@@ -858,6 +869,9 @@ function applyLabelPresentationStyle(
   el.dataset.minZoom = String(presentation.minZoom);
   el.dataset.wordType = presentation.wordType;
   el.dataset.featureId = String(featureId);
+  if (selectedFeatureId.value === String(featureId)) {
+    el.classList.add("label-selected");
+  }
 }
 
 function buildLabelMarker(
@@ -867,12 +881,13 @@ function buildLabelMarker(
 ): L.Marker {
   const [lng, lat] = feature.geometry.coordinates as [number, number];
   const coord: L.LatLngTuple = [lat, lng];
+  const isSelected = selectedFeatureId.value === String(feature.id);
 
   const marker = L.marker(coord, {
     icon: L.divIcon({
-      className: "city-label-text",
+      className: isSelected ? "city-label-text label-selected" : "city-label-text",
       html: `
-        <div class="label-wrapper">
+        <div class="label-wrapper" data-feature-id="${feature.id}">
           <div class="label-content"${presentation.styleAttribute}>${presentation.html}</div>
           <div class="label-anchor rotate-handle"></div>
           <div class="label-quick-actions">
@@ -901,12 +916,12 @@ function buildLabelMarker(
     if (dupBtn && !(dupBtn as any).__bound) {
       (dupBtn as any).__bound = true;
       dupBtn.addEventListener("click", (e) => {
-        L.DomEvent.stopPropagation(e);
+        L.DomEvent.stopPropagation(e as unknown as Event);
         e.preventDefault();
         emit("duplicate-feature", feature);
       });
       dupBtn.addEventListener("mousedown", (e) => {
-        L.DomEvent.stopPropagation(e);
+        L.DomEvent.stopPropagation(e as unknown as Event);
       });
     }
 
@@ -914,12 +929,12 @@ function buildLabelMarker(
     if (delBtn && !(delBtn as any).__bound) {
       (delBtn as any).__bound = true;
       delBtn.addEventListener("click", (e) => {
-        L.DomEvent.stopPropagation(e);
+        L.DomEvent.stopPropagation(e as unknown as Event);
         e.preventDefault();
         emit("delete-feature", feature);
       });
       delBtn.addEventListener("mousedown", (e) => {
-        L.DomEvent.stopPropagation(e);
+        L.DomEvent.stopPropagation(e as unknown as Event);
       });
     }
   };
@@ -938,11 +953,17 @@ function buildLabelMarker(
     applyLabelPresentationStyle(marker, presentation, feature.id);
     preventSelection();
     bindQuickActionButtons();
+    if (selectedFeatureId.value === String(feature.id)) {
+      marker.getElement()?.classList.add("label-selected");
+    }
   });
   if (marker.getElement()) {
     applyLabelPresentationStyle(marker, presentation, feature.id);
     preventSelection();
     bindQuickActionButtons();
+    if (selectedFeatureId.value === String(feature.id)) {
+      marker.getElement()?.classList.add("label-selected");
+    }
   }
 
   return marker;
@@ -1354,16 +1375,9 @@ function renderAllFeatures() {
     }
   });
 
-  // Re-attach image / shape scaling interaction if the selected feature was re-rendered
+  // Re-apply selection effects if the selected feature was re-rendered
   if (selectedFeatureId.value) {
-    const selectedFeature = currentFeatures.find(
-      (f: Feature) => String(f.id) === selectedFeatureId.value,
-    );
-    if (selectedFeature && getMapElementType(selectedFeature) === "image") {
-      imageOverlay.attach(selectedFeatureId.value);
-    } else if (isScalableFeature(selectedFeature)) {
-      shapeScaling.attach(selectedFeatureId.value);
-    }
+    applySelectionEffects(selectedFeatureId.value);
   }
 
   previousFeatureIds.value = currentIds;
@@ -1835,6 +1849,9 @@ function applySelectionEffects(id: string) {
     drawing.setToolbarMode("label");
     layer.getElement()?.classList.add("image-overlay-selected");
   } else if (layer && isTextOrPoint) {
+    if (map && !map.hasLayer(layer)) {
+      map.addLayer(layer);
+    }
     // Texts / Cities / Labels: enable label toolbar and show selection highlight
     drawing.setToolbarMode("label");
     enablePerFeatureDrag(layer);
@@ -1855,24 +1872,29 @@ function applySelectionEffects(id: string) {
       cityLabel = layer;
     }
 
-    if (cityLabel) {
-      const el = (cityLabel as any).getElement?.();
-      el?.classList.add("label-selected");
-      const pm = (map as MapWithPm)?.pm;
-      if (pm?.globalRotateModeEnabled?.()) {
-        el?.classList.add("label-rotate-mode");
+    const applyLabelClasses = () => {
+      if (cityLabel) {
+        const el = (cityLabel as any).getElement?.();
+        el?.classList.add("label-selected");
+        const pm = (map as MapWithPm)?.pm;
+        if (pm?.globalRotateModeEnabled?.()) {
+          el?.classList.add("label-rotate-mode");
+        }
       }
-    }
+      document.querySelectorAll(
+        `.city-label-text[data-feature-id="${id}"], [data-feature-id="${id}"].city-label-text, .label-wrapper[data-feature-id="${id}"]`
+      ).forEach((node) => {
+        const markerRoot = node.closest(".city-label-text") || node;
+        markerRoot.classList.add("label-selected");
+        const pm = (map as MapWithPm)?.pm;
+        if (pm?.globalRotateModeEnabled?.()) {
+          markerRoot.classList.add("label-rotate-mode");
+        }
+      });
+    };
 
-    // Also ensure DOM element has .label-selected directly
-    const domLabel = document.querySelector(`.city-label-text[data-feature-id="${id}"]`);
-    if (domLabel) {
-      domLabel.classList.add("label-selected");
-      const pm = (map as MapWithPm)?.pm;
-      if (pm?.globalRotateModeEnabled?.()) {
-        domLabel.classList.add("label-rotate-mode");
-      }
-    }
+    applyLabelClasses();
+    nextTick(applyLabelClasses);
 
     if (cityLatLng && map) {
       selectedCityRing = L.marker(cityLatLng, {
@@ -1956,24 +1978,24 @@ function applySelectionEffects(id: string) {
       const el = selectedFeatureQuickActionsMarker.getElement();
       if (el) {
         el.querySelector(".action-duplicate")?.addEventListener("click", (e) => {
-          L.DomEvent.stopPropagation(e);
+          L.DomEvent.stopPropagation(e as unknown as Event);
           e.preventDefault();
           emit("duplicate-feature", selectedFeature);
         });
-        el.querySelector(".action-duplicate")?.addEventListener("mousedown", (e) => L.DomEvent.stopPropagation(e));
+        el.querySelector(".action-duplicate")?.addEventListener("mousedown", (e) => L.DomEvent.stopPropagation(e as unknown as Event));
         el.querySelector(".action-delete")?.addEventListener("click", (e) => {
-          L.DomEvent.stopPropagation(e);
+          L.DomEvent.stopPropagation(e as unknown as Event);
           e.preventDefault();
           emit("delete-feature", selectedFeature);
         });
-        el.querySelector(".action-delete")?.addEventListener("mousedown", (e) => L.DomEvent.stopPropagation(e));
+        el.querySelector(".action-delete")?.addEventListener("mousedown", (e) => L.DomEvent.stopPropagation(e as unknown as Event));
       }
     }
   }
 
   // Smoothly pan/zoom map to focus on the selected feature
   if (map) {
-    focusOnFeatures([id]);
+    fitToFeatures([id], true);
   }
 
   updateLabelVisibility();
@@ -2025,6 +2047,8 @@ function updateMultiSelection(ids: string[]) {
   clearMultiSelectStylesAndDrag();
   if (!map || ids.length === 0) return;
 
+  fitToFeatures(ids, true);
+
   const validLayers = ids
     .map((id) => featureLayerManager.layers.get(id))
     .filter((l): l is L.Layer => Boolean(l && map?.hasLayer(l)));
@@ -2063,11 +2087,6 @@ watch(
   (newIds) => {
     multiSelectedIds.value = new Set(newIds ?? []);
     updateMultiSelection(newIds ?? []);
-    if (newIds && newIds.length > 0) {
-      nextTick(() => {
-        focusOnFeatures(newIds);
-      });
-    }
   },
   { immediate: true },
 );

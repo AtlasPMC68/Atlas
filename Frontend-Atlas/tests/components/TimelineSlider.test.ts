@@ -73,6 +73,10 @@ describe("TimelineSlider year labels", () => {
     await track.trigger("click");
     expect(wrapper.emitted("update:year")?.at(-1)).toEqual([1800]);
     expect(wrapper.emitted("select-date")?.at(-1)).toEqual([1800]);
+    expect(wrapper.emitted("select-map")?.at(-1)).toEqual(["p1"]);
+
+    await track.trigger("dblclick");
+    expect(wrapper.emitted("edit-map")?.at(-1)).toEqual(["p1"]);
   });
 });
 

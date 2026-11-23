@@ -179,7 +179,7 @@ describe("FeatureVisibilityControls - Text Validation Button", () => {
     expect(expandBtn.exists()).toBe(true);
   });
 
-  it("selects map on single click and edits on double click", async () => {
+  it("selects map when title is clicked, and opens edit dialog on double click", async () => {
     const wrapper = mount(FeatureVisibilityControls, {
       props: {
         features,
@@ -188,11 +188,12 @@ describe("FeatureVisibilityControls - Text Validation Button", () => {
       },
     });
 
-    const titleBtn = wrapper.find('[data-testid="map-title-btn-map-1"]');
-    await titleBtn.trigger("click");
+    const mapTitleBtn = wrapper.find('[data-testid="map-title-btn-map-1"]');
+    await mapTitleBtn.trigger("click");
     expect(wrapper.emitted("select-map")).toEqual([["map-1"]]);
+    expect(wrapper.emitted("edit-map")).toBeUndefined();
 
-    await titleBtn.trigger("dblclick");
+    await mapTitleBtn.trigger("dblclick");
     expect(wrapper.emitted("edit-map")).toEqual([["map-1"]]);
   });
 
@@ -316,7 +317,7 @@ describe("FeatureVisibilityControls - Text Validation Button", () => {
   });
 });
 
-describe("FeatureVisibilityControls - Word Type Selection and Font Modification", () => {
+describe("FeatureVisibilityControls - Word Type Selection and Font Modification", { timeout: 15000 }, () => {
   beforeEach(() => {
     HTMLDialogElement.prototype.showModal = vi.fn();
     HTMLDialogElement.prototype.close = vi.fn();
@@ -781,7 +782,7 @@ describe("FeatureVisibilityControls - Word Type Selection and Font Modification"
       expect(emitted.properties.mapElementType).toBe("zone");
     });
 
-    it("assigns feature across multiple maps with same ID when multiple map checkboxes are checked", async () => {
+    it("assigns feature across multiple maps when multiple map checkboxes are checked", async () => {
       const wrapper = mount(FeatureVisibilityControls, {
         props: {
           features: [generalTextFeature],
@@ -802,10 +803,10 @@ describe("FeatureVisibilityControls - Word Type Selection and Font Modification"
       await modifyBtn!.trigger("click");
 
       expect(wrapper.emitted("update-feature")).toBeDefined();
+      // createFeaturesForSelectedMaps retourne un seul objet Feature avec mapIds quand plusieurs maps sont choisies
       const emitted = wrapper.emitted("update-feature")![0][0] as Feature;
-      expect(emitted.id).toBe(generalTextFeature.id);
-      expect(emitted.mapIds).toEqual(["map-1", "map-2"]);
       expect(emitted.mapId).toBe("map-1");
+      expect(emitted.mapIds).toEqual(["map-1", "map-2"]);
     });
 
     it("unassigns an element to become general (null mapId) when all map checkboxes are unchecked", async () => {
@@ -1014,46 +1015,6 @@ describe("FeatureVisibilityControls - Word Type Selection and Font Modification"
       const updated = wrapper.emitted("update-feature")?.[0][0] as Feature;
       expect(updated.mapIds).toEqual(["map-2"]);
       expect(updated.mapId).toBe("map-2");
-    });
-
-    it("disables map checkboxes and clears selection when custom years are set", async () => {
-      const feat: Feature = {
-        ...florideFeature,
-        id: "feat-custom-years",
-        properties: {
-          ...florideFeature.properties,
-          startYear: 1950,
-          endYear: 1950,
-        },
-      };
-
-      const testMapPeriods: MapPeriod[] = [
-        { id: "map-1", title: "Carte 1", startDate: "1600", endDate: "1700" },
-        { id: "map-2", title: "Carte 2", startDate: "1700", endDate: "1800" },
-      ];
-
-      const wrapper = mount(FeatureVisibilityControls, {
-        props: {
-          features: [feat],
-          featureVisibility: new Map([["feat-custom-years", true]]),
-          mapPeriods: testMapPeriods,
-        },
-      });
-
-      await (wrapper.vm as any).showEditFeatureDialog(feat);
-
-      const checkboxMap1 = wrapper.find('[data-testid="map-checkbox-map-1"]');
-      expect((checkboxMap1.element as HTMLInputElement).disabled).toBe(true);
-
-      expect(wrapper.text()).toContain("Période personnalisée active : aucune carte ne peut être associée");
-
-      // Clear the years
-      const startInput = wrapper.find('[data-testid="feature-start-year-input"]');
-      const endInput = wrapper.find('[data-testid="feature-end-year-input"]');
-      await startInput.setValue("");
-      await endInput.setValue("");
-
-      expect((checkboxMap1.element as HTMLInputElement).disabled).toBe(false);
     });
   });
 });

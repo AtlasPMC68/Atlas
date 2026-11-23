@@ -1,8 +1,16 @@
 <template>
   <dialog ref="dialogRef" class="modal">
-    <div class="modal-box">
+    <div class="modal-box relative">
+      <button
+        type="button"
+        class="btn btn-sm btn-circle btn-ghost absolute right-4 top-4 z-10"
+        :disabled="saving"
+        @click="close"
+      >
+        ✕
+      </button>
       <form @submit.prevent="submit">
-        <h3 class="text-lg font-bold mb-4">Modifier la carte</h3>
+        <h3 class="text-xl font-bold mb-4">Modifier la carte</h3>
         <fieldset class="flex flex-col gap-3" :disabled="saving">
           <label class="form-control">
             <span class="label">Nom de la carte</span>
@@ -58,11 +66,11 @@
         </fieldset>
 
         <p v-if="errorMessage" class="text-xs text-red-700 bg-white border border-red-500 rounded px-2 py-1 mt-1">{{ errorMessage }}</p>
-        <div class="modal-action">
-          <button type="button" class="btn btn-ghost" :disabled="saving" @click="close">
+        <div class="modal-action mt-6 flex justify-end gap-2">
+          <button type="button" class="modal-secondary-btn w-32" :disabled="saving" @click="close">
             Annuler
           </button>
-          <button type="submit" class="btn btn-primary" :disabled="!isValid || saving">
+          <button type="submit" class="btn btn-primary rounded-lg w-32" :disabled="!isValid || saving">
             <span v-if="saving" class="loading loading-spinner loading-xs"></span>
             <span v-else>Enregistrer</span>
           </button>

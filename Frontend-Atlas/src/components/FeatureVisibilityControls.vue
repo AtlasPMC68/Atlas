@@ -792,66 +792,15 @@
   </dialog>
 
   <!-- Delete feature confirmation dialog -->
-  <dialog ref="deleteFeatureDialogRef" class="modal">
-    <div class="modal-box max-w-lg">
-      <h3 class="text-lg font-bold flex items-center gap-2">
-        <ExclamationTriangleIcon v-if="hasMultiMapFeatureToDelete" class="w-5 h-5 text-warning shrink-0" />
-        {{ hasMultiMapFeatureToDelete ? "Élément partagé sur plusieurs cartes" : "Supprimer l'élément" }}
-      </h3>
-
-      <div v-if="hasMultiMapFeatureToDelete" class="py-3 flex flex-col gap-2">
-        <p class="text-sm">
-          <span class="font-semibold">{{ featureToDeleteName }}</span> est présent sur <span class="font-bold">{{ sharedMapCount }} cartes</span> ({{ sharedMapNames }}).
-        </p>
-        <p class="text-xs text-base-content/70">
-          Souhaitez-vous uniquement le <strong>retirer de la carte actuelle</strong> (il restera visible sur les autres cartes) ou le <strong>supprimer définitivement du projet</strong> ?
-        </p>
-      </div>
-      <p v-else class="py-4 text-sm">
-        Êtes-vous sûr de vouloir supprimer
-        <span class="font-semibold">{{ featureToDeleteName }}</span> ?
-        Cette action est irréversible.
-      </p>
-
-      <div class="modal-action flex items-center justify-end gap-2 flex-wrap">
-        <button
-          class="btn btn-ghost"
-          :disabled="isDeletingFeature"
-          @click="deleteFeatureDialogRef?.close()"
-        >
-          Annuler
-        </button>
-        <button
-          v-if="hasMultiMapFeatureToDelete && targetMapIdToRemove"
-          class="btn btn-primary"
-          data-testid="remove-from-map-btn"
-          :disabled="isDeletingFeature"
-          @click="onRemoveFromCurrentMap"
-        >
-          <span v-if="isDeletingFeature" class="loading loading-spinner loading-xs"></span>
-          <span v-else>Retirer de cette carte</span>
-        </button>
-        <button
-          class="btn btn-error"
-          :class="hasMultiMapFeatureToDelete ? 'btn-outline text-error hover:!text-white' : 'text-white'"
-          data-testid="confirm-delete-feature-btn"
-          :disabled="isDeletingFeature"
-          @click="onDeleteFeature"
-        >
-          <span
-            v-if="isDeletingFeature"
-            class="loading loading-spinner loading-xs"
-          ></span>
-          <span v-else>
-            {{ hasMultiMapFeatureToDelete ? "Supprimer de toutes les cartes" : "Supprimer" }}
-          </span>
-        </button>
-      </div>
-    </div>
-    <form method="dialog" class="modal-backdrop">
-      <button :disabled="isDeletingFeature">close</button>
-    </form>
-  </dialog>
+  <DeleteFeatureDialog
+    ref="deleteFeatureDialogRef"
+    :features="props.features"
+    :map-periods="props.mapPeriods"
+    :active-map-id="props.activeMapId"
+    :is-deleting="isDeletingFeature"
+    @delete-features="onDeleteFeaturesConfirmed"
+    @remove-from-maps="onRemoveFromMapsConfirmed"
+  />
 
   <!-- Map selection dialog for text validation -->
   <dialog ref="selectMapValidationDialogRef" data-testid="select-map-validation-dialog" class="modal z-[2500]">
@@ -925,6 +874,7 @@ import {
   getCustomStyleObject,
 } from "../utils/labelPresentation";
 import CustomLabelStyleManager from "./CustomLabelStyleManager.vue";
+import DeleteFeatureDialog from "./DeleteFeatureDialog.vue";
 import { getFeatureMapId, getFeatureMapIds, getMapElementType } from "../utils/featureHelpers";
 import {
   WORD_TYPE_STYLES,
@@ -1160,9 +1110,6 @@ const mapToDeleteId = ref<string | null>(null);
 const mapToDeleteTitle = ref<string>("");
 const isDeletingMap = ref(false);
 
-const deleteFeatureDialogRef = ref<HTMLDialogElement | undefined>(undefined);
-const featureToDeleteId = ref<string | null>(null);
-const featureToDeleteName = ref<string>("");
 const isDeletingFeature = ref(false);
 
 const selectMapValidationDialogRef = ref<HTMLDialogElement | undefined>(undefined);
@@ -1587,76 +1534,47 @@ async function onDeleteMap() {
   });
 }
 
-const featuresToDeleteIds = ref<string[]>([]);
-
-const featuresToDelete = computed<Feature[]>(() => {
-  const idsSet = new Set(featuresToDeleteIds.value);
-  return props.features.filter((f) => idsSet.has(String(f.id)));
-});
-
-const hasMultiMapFeatureToDelete = computed(() => {
-  return featuresToDelete.value.some((f) => getFeatureMapIds(f).length > 1);
-});
-
-const targetMapIdToRemove = computed(() => {
-  if (props.activeMapId) return props.activeMapId;
-  const first = featuresToDelete.value[0];
-  return first ? getFeatureMapId(first) : null;
-});
-
-const sharedMapCount = computed(() => {
-  const first = featuresToDelete.value[0];
-  return first ? getFeatureMapIds(first).length : 0;
-});
-
-const sharedMapNames = computed(() => {
-  const first = featuresToDelete.value[0];
-  if (!first) return "";
-  const ids = new Set(getFeatureMapIds(first));
-  if (!props.mapPeriods) return `${ids.size} cartes`;
-  const names = props.mapPeriods
-    .filter((p) => ids.has(p.id))
-    .map((p) => p.title);
-  return names.join(", ") || `${ids.size} cartes`;
-});
+const deleteFeatureDialogRef = ref<InstanceType<typeof DeleteFeatureDialog> | null>(null);
 
 function showDeleteFeatureDialog(featureOrFeatures: Feature | Feature[]) {
-  const feats = Array.isArray(featureOrFeatures) ? featureOrFeatures : [featureOrFeatures];
-  if (feats.length === 0) return;
-
-  const isMulti =
-    feats.length > 1 ||
-    Boolean(
-      props.multiSelectedFeatureIds &&
-        props.multiSelectedFeatureIds.length > 1 &&
-        props.multiSelectedFeatureIds.some((id) => String(id) === String(feats[0].id)),
-    );
-
-  if (feats.length > 1) {
-    featuresToDeleteIds.value = feats.map((f) => String(f.id));
-    featureToDeleteName.value = `${feats.length} éléments sélectionnés`;
-  } else if (isMulti && props.multiSelectedFeatureIds) {
-    featuresToDeleteIds.value = [...props.multiSelectedFeatureIds];
-    featureToDeleteName.value = `${props.multiSelectedFeatureIds.length} éléments sélectionnés`;
-  } else {
-    featuresToDeleteIds.value = [String(feats[0].id)];
-    featureToDeleteName.value = feats[0].properties?.name || "Élément sans nom";
-  }
-
-  featureToDeleteId.value = String(feats[0].id);
-  deleteFeatureDialogRef.value?.showModal();
+  deleteFeatureDialogRef.value?.open(featureOrFeatures);
 }
 
-async function onRemoveFromCurrentMap() {
-  const targetMapId = targetMapIdToRemove.value;
-  if (!targetMapId || featuresToDelete.value.length === 0) return;
+async function onDeleteFeaturesConfirmed(idsToDelete: string[]) {
+  if (idsToDelete.length === 0) return;
+  isDeletingFeature.value = true;
+  emit("delete-feature", idsToDelete.length === 1 ? idsToDelete[0] : idsToDelete, {
+    onSuccess: () => {
+      showAlert(
+        "success",
+        idsToDelete.length > 1
+          ? `${idsToDelete.length} éléments supprimés avec succès !`
+          : "Élément supprimé avec succès !",
+      );
+      isDeletingFeature.value = false;
+      deleteFeatureDialogRef.value?.close();
+    },
+    onError: (message: string) => {
+      showAlert("error", message || "Erreur lors de la suppression de l'élément.");
+      isDeletingFeature.value = false;
+    },
+  });
+}
+
+async function onRemoveFromMapsConfirmed(payload: { featureIds: string[]; mapIdsToRemove: string[] }) {
+  const { featureIds, mapIdsToRemove } = payload;
+  if (featureIds.length === 0 || mapIdsToRemove.length === 0) return;
+
+  const removeSet = new Set(mapIdsToRemove.map(String));
+  const feats = props.features.filter((f) => featureIds.includes(String(f.id)));
+  if (feats.length === 0) return;
 
   isDeletingFeature.value = true;
   const updatedList: Feature[] = [];
 
-  for (const feat of featuresToDelete.value) {
+  for (const feat of feats) {
     const existingIds = getFeatureMapIds(feat);
-    const nextMapIds = existingIds.filter((id) => id !== targetMapId);
+    const nextMapIds = existingIds.filter((id) => !removeSet.has(String(id)));
     const newMainMapId = nextMapIds.length > 0 ? nextMapIds[0] : null;
 
     const updated: Feature = {
@@ -1680,7 +1598,7 @@ async function onRemoveFromCurrentMap() {
         showAlert(
           "success",
           updatedList.length > 1
-            ? `${updatedList.length} éléments retirés de la carte avec succès !`
+            ? `${updatedList.length} éléments retirés avec succès !`
             : "Élément retiré de la carte avec succès !",
         );
         isDeletingFeature.value = false;
@@ -1692,35 +1610,6 @@ async function onRemoveFromCurrentMap() {
       },
     },
   );
-}
-
-async function onDeleteFeature() {
-  const idsAvailable = featuresToDeleteIds.value.length > 0 || Boolean(featureToDeleteId.value);
-  if (!idsAvailable) return;
-  isDeletingFeature.value = true;
-  const idsToDelete =
-    featuresToDeleteIds.value.length > 0
-      ? featuresToDeleteIds.value
-      : featureToDeleteId.value
-        ? [featureToDeleteId.value]
-        : [];
-
-  emit("delete-feature", idsToDelete.length === 1 ? idsToDelete[0] : idsToDelete, {
-    onSuccess: () => {
-      showAlert(
-        "success",
-        idsToDelete.length > 1
-          ? `${idsToDelete.length} éléments supprimés avec succès !`
-          : "Élément supprimé avec succès !",
-      );
-      isDeletingFeature.value = false;
-      deleteFeatureDialogRef.value?.close();
-    },
-    onError: (message: string) => {
-      showAlert("error", message || "Erreur lors de la suppression de l'élément.");
-      isDeletingFeature.value = false;
-    },
-  });
 }
 
 defineExpose({

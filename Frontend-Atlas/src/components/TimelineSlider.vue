@@ -358,6 +358,11 @@ const emit = defineEmits([
 ]);
 
 function onPeriodClick(period: SliderPeriod) {
+  if (period.exactDate && period.startDate) {
+    emit("exact-date-change", period.startDate);
+  } else {
+    emit("exact-date-change", null);
+  }
   selectYear(period.startYear);
   emit("select-map", period.id);
 }
@@ -504,7 +509,7 @@ function getItemsByMap(items: TimelineMarkerItem[]): MarkerMapGroup[] {
       item.isCustom === true ||
       item.startYear != null ||
       item.endYear != null;
-    const effectiveMapId = isCustom ? null : (item.mapId ?? null);
+    const effectiveMapId: string | null = isCustom ? null : ((item.mapId as string | null | undefined) ?? null);
     const key = effectiveMapId ? String(effectiveMapId) : "general";
     const title = effectiveMapId
       ? (item.mapTitle || `Carte ${effectiveMapId}`)
