@@ -19,7 +19,7 @@
       </button>
     </div>
 
-    <!-- Liste des éléments avec contrôle de visibilité -->
+    <!-- Element list with visibility controls -->
     <div class="px-1 flex flex-1 flex-col min-h-0">
       <div
         class="card flex flex-1 flex-col gap-4 min-h-0 overflow-y-auto scroll-stable"
@@ -292,7 +292,7 @@
     </div>
   </div>
 
-  <!-- Modale d'édition d'élément uniformisée -->
+  <!-- Standardized element edit modal -->
   <dialog ref="editFeatureDialogRef" class="modal" v-if="featureToEdit">
     <div class="modal-box w-11/12 max-w-6xl flex flex-col gap-4">
       <h3 class="text-lg font-bold truncate">
@@ -303,7 +303,7 @@
       </h3>
 
       <fieldset class="grid grid-cols-1 lg:grid-cols-[1.55fr_1fr] gap-6 items-start">
-        <!-- Colonne gauche : Informations générales, Texte et Style géométrique unifié -->
+        <!-- Left column: General info, text and unified geometric style -->
         <div class="flex flex-col gap-4 min-w-0">
           <div class="flex flex-col gap-1.5">
             <span class="section-title">
@@ -382,7 +382,7 @@
             </div>
           </div>
 
-          <!-- Réglages du texte -->
+          <!-- Text settings -->
           <div v-if="isTextElement" class="editor-section">
             <span class="section-title">
               Réglages du texte
@@ -477,7 +477,7 @@
             </div>
           </div>
 
-          <!-- Réglages géométriques unifiés (Point ou Forme / Zone / Ligne) -->
+          <!-- Unified geometric settings (Point or Shape / Zone / Line) -->
           <div v-if="hasGeometryControls" class="editor-section">
             <div class="flex items-baseline justify-between gap-2">
               <span class="section-title">
@@ -515,7 +515,7 @@
                 />
               </div>
 
-              <!-- Aperçu séparé en deux colonnes : texte à gauche, rendu agrandi à droite -->
+              <!-- Preview separated into two columns: text on the left, enlarged rendering on the right -->
               <div
                 class="setting-preview-card"
                 data-testid="point-preview-container"
@@ -622,7 +622,7 @@
           </div>
         </div>
 
-        <!-- Colonne droite : Cartes associées & Dates -->
+        <!-- Right column: Associated maps & Dates -->
         <div class="flex flex-col gap-3 min-w-0">
           <div
             v-if="props.mapPeriods && props.mapPeriods.length > 0"

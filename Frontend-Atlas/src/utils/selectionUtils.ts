@@ -235,8 +235,24 @@ export function applySelectionModifier(
 }
 
 /**
- * Calculates geometric nudge delta (dx, dy) in pixels based on arrow keys.
+ * Resolves targeted features from single or multi selection state.
  */
+export function getSelectedTargetFeatures<T extends { id?: string | number }>(
+  allFeatures: T[],
+  selectedId: string | number | null | undefined,
+  multiSelectedIds: (string | number)[] = [],
+): T[] {
+  const ids =
+    multiSelectedIds.length > 0
+      ? multiSelectedIds.map(String)
+      : selectedId != null && selectedId !== ""
+        ? [String(selectedId)]
+        : [];
+  if (ids.length === 0) return [];
+  const idSet = new Set(ids);
+  return allFeatures.filter((f) => f.id != null && idSet.has(String(f.id)));
+}
+
 export function getNudgeDelta(
   key: string,
   isShift: boolean,

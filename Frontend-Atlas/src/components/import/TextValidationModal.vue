@@ -233,7 +233,6 @@ import {
   getWordTypeOptionLabel,
   getWordTypeOptionStyle,
   getCustomStyleOptionLabel,
-  hasCustomStylePoint,
   type CustomLabelStyle,
 } from "../../utils/labelPresentation";
 import { TrashIcon } from "@heroicons/vue/24/outline";
@@ -242,7 +241,6 @@ import { IMPORT_GUIDE_PAGES } from "../../utils/guides";
 import { toTextRegions, type TextValidationEntry } from "../../utils/textValidation";
 import {
   WORD_TYPE_STYLES,
-  WORD_TYPE_TAXONOMY,
   formatWordText,
   normalizeWordType,
 } from "../../utils/wordStyles";

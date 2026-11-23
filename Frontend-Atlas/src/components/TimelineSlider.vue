@@ -2,7 +2,7 @@
   <div class="timeline-container">
     <div class="slider-wrap">
       <div ref="axisRef" class="slider-axis">
-        <!-- Légende discrète + Filtres par date -->
+        <!-- Discreet legend + Date filters -->
         <div
           v-if="!isZoomMode"
           class="flex items-center justify-start gap-4 pb-1.5 text-[11px] text-base-content opacity-70 select-none flex-wrap"
@@ -12,11 +12,11 @@
             <span>Cartes</span>
           </span>
           <span v-if="groupedElementMarkers.length > 0" class="inline-flex items-center gap-1.5">
-            <span class="inline-flex items-center justify-center w-3.5 h-3.5 rounded-full border border-slate-600 text-[10px] font-bold text-red-700 leading-none">!</span>
+            <span class="inline-block w-2.5 h-2.5 rounded-full bg-info"></span>
             <span>Dates personnalisées</span>
           </span>
 
-          <!-- 3 Boutons Filtrer par date placés à droite de Dates personnalisées -->
+          <!-- 3 Date filter buttons placed to the right of Custom dates -->
           <div class="inline-flex items-center gap-2 ml-2 pl-2 border-l border-base-300 relative z-[7000] pointer-events-auto">
             <span class="text-xs font-semibold text-base-content/80 select-none">
               Filtrer par date :
@@ -605,7 +605,7 @@ const groupedElementMarkers = computed<GroupedElementMarker[]>(() => {
   const sortedYears = Array.from(yearMap.keys()).sort((a, b) => a - b);
   if (sortedYears.length === 0) return [];
 
-  // 2. Regroupe par proximite uniquement en cas de collision visuelle (< PIN_COLLISION_THRESHOLD_PX)
+  // 2. Group by proximity only in case of visual collision (< PIN_COLLISION_THRESHOLD_PX)
   const thresholdPercent = (PIN_COLLISION_THRESHOLD_PX / axisWidthPx.value) * 100;
 
   interface ClusterData {
@@ -634,7 +634,7 @@ const groupedElementMarkers = computed<GroupedElementMarker[]>(() => {
     const lastCluster = clusters[clusters.length - 1];
     const lastClusterPercent = positionForYear(lastCluster.minYear);
 
-    // En cas de collision avec le groupe precedent : fusion dans le cluster
+    // In case of collision with previous group: merge into cluster
     if (percent - lastClusterPercent < thresholdPercent) {
       lastCluster.maxYear = Math.max(lastCluster.maxYear, year);
       lastCluster.years.push(year);
@@ -782,7 +782,7 @@ const yearLabels = computed<YearLabelItem[]>(() => {
 
   const minGapPercent = (YEAR_LABEL_MIN_GAP_PX / axisWidthPx.value) * 100;
 
-  // 1. Initialise avec une entree distincte par annee
+  // 1. Initialize with distinct entry per year
   let entries: {
     startYear: number;
     endYear: number;
@@ -793,8 +793,8 @@ const yearLabels = computed<YearLabelItem[]>(() => {
     years: [y],
   }));
 
-  // 2. Detection de collision : si les etiquettes saturent les 4 lignes a une position donnee,
-  // fusionne l'ensemble des entrees en collision dans cette zone en un seul intervalle global (ex: 1600 - 1605)
+  // 2. Collision detection: if labels saturate all 4 lanes at a given location,
+  // merge all colliding entries in that zone into a single overall interval (e.g. 1600 - 1605)
   let maxPasses = 50;
   while (maxPasses-- > 0) {
     const laneEnds: number[] = new Array(YEAR_LABEL_MAX_LANES).fill(-Infinity);
@@ -817,7 +817,7 @@ const yearLabels = computed<YearLabelItem[]>(() => {
       }
 
       if (bestLane === -1) {
-        // Aucune des 4 lignes n'est libre a cet endroit : collision !
+        // None of the 4 lanes is free at this spot: collision!
         collisionIndex = i;
         break;
       }
@@ -826,13 +826,13 @@ const yearLabels = computed<YearLabelItem[]>(() => {
     }
 
     if (collisionIndex === -1) {
-      // Toutes les dates tiennent sur les 4 lignes sans superposition
+      // All dates fit across the 4 lanes without overlap
       break;
     }
 
-    // Lorsqu'il n'y a plus de place sur les 4 lignes et qu'une collision survient,
-    // on identifie tout le groupe d'elements contigus dans le meme espace
-    // pour fusionner l'ensemble du cluster en un seul intervalle complet (ex: 1600 - 1605)
+    // When no space is left across the 4 lanes and collision occurs,
+    // identify the contiguous group of items in that space
+    // to merge the entire cluster into one complete interval (e.g. 1600 - 1605)
     let startIdx = collisionIndex;
     while (startIdx > 0) {
       const curPos = positionForYear(entries[startIdx].startYear);
@@ -873,7 +873,7 @@ const yearLabels = computed<YearLabelItem[]>(() => {
     entries.splice(startIdx, endIdx - startIdx + 1, merged);
   }
 
-  // 3. Attribution definitive des lignes aux etiquettes resolues
+  // 3. Final lane assignment for resolved labels
   const laneEnds: number[] = new Array(YEAR_LABEL_MAX_LANES).fill(-Infinity);
   return entries.map((entry) => {
     const startPos = positionForYear(entry.startYear);

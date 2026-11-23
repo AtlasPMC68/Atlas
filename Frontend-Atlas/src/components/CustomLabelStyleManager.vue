@@ -12,7 +12,7 @@
       <h3 class="text-xl font-bold shrink-0 pr-10">Modification des styles de libellé</h3>
 
       <div class="grid grid-cols-1 md:grid-cols-[1fr_0.75fr_1.45fr] gap-5 items-start min-h-0 flex-1 overflow-y-auto pr-1">
-        <!-- Colonne gauche : Liste des styles personnalisés -->
+        <!-- Left column: Custom styles list -->
         <div class="flex flex-col gap-2.5 min-w-0">
           <div class="flex items-center justify-between gap-2">
             <h4 class="section-title">Styles personnalisés</h4>
@@ -190,7 +190,7 @@
             </span>
           </div>
 
-          <!-- Options typographiques uniformisées -->
+          <!-- Standardized typography options -->
           <div class="editor-section-compact">
             <span class="field-label">Mise en forme</span>
             <div class="grid grid-cols-3 gap-2 w-full">

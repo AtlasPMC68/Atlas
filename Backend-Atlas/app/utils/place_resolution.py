@@ -508,7 +508,7 @@ def find_nearby_candidate_place(
     if direct_match:
         return direct_match
 
-    # Scission lexicale pour blocs fusionnés (ex: 'Fort Ruidt Fort Moose' ou multi-lignes)
+    # Lexical split for merged blocks (e.g. 'Fort Ruidt Fort Moose' or multi-line)
     subparts = _split_into_potential_subparts(text)
     if len(subparts) > 1:
         for subpart in subparts:
@@ -541,7 +541,7 @@ def _find_single_nearby_candidate_place(
         token
         for token in normalized_query.split()
         if len(token) >= 3
-        and token not in _GENERIC_ADMIN_TERMS
+        and token not in _IGNORABLE_TOKENS
     ]
 
     cells = _get_spatial_cells(lat, lon, radius_km)
@@ -602,7 +602,7 @@ def _find_single_nearby_candidate_place(
             for variant in variants:
                 var_tokens = [
                     t for t in variant.split()
-                    if len(t) >= 3 and t not in _GENERIC_ADMIN_TERMS
+                    if len(t) >= 3 and t not in _IGNORABLE_TOKENS
                 ]
                 if not var_tokens:
                     continue
@@ -702,7 +702,7 @@ def resolve_place(
                 return None
             cands = [cand for k in close for cand in _CITY_INDEX.get(k, [])]
             # Ensure candidate names are compatible with the query (avoid matching 'New City' on 'New York')
-            q_toks = [t for t in key.split() if len(t) >= 3 and t not in _GENERIC_ADMIN_TERMS]
+            q_toks = [t for t in key.split() if len(t) >= 3 and t not in _IGNORABLE_TOKENS]
             if q_toks:
                 compatible = []
                 for cand in cands:
@@ -715,7 +715,7 @@ def resolve_place(
                     for c_var in c_variants:
                         c_toks = [
                             t for t in c_var.split()
-                            if len(t) >= 3 and t not in _GENERIC_ADMIN_TERMS
+                            if len(t) >= 3 and t not in _IGNORABLE_TOKENS
                         ]
                         if not c_toks:
                             continue

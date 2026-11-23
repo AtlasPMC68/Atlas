@@ -108,7 +108,6 @@ const emit = defineEmits<{
   (e: "edit-feature-request", feature: Feature): void;
   (e: "select-feature", featureId: string | null): void;
   (e: "select-features", featureIds: string[]): void;
-  (e: "delete-selected"): void;
   (e: "move-selected", dx: number, dy: number): void;
   (e: "select-all"): void;
   (e: "duplicate-feature", feature: Feature): void;
@@ -1851,7 +1850,7 @@ function clearSelection(oldId?: string | null) {
 
   // Edit and rotate modes were enabled for the previous zone only (pmIgnore on
   // every other layer): leave them, or its vertex handles stay on the map.
-  if (oldId != null && id !== oldId) {
+  if (oldId != null && selectedFeatureId.value !== oldId) {
     const pm = (map as MapWithPm)?.pm;
     leavingModesForSelectionChange = true;
     try {

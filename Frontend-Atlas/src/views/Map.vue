@@ -238,18 +238,7 @@
             v-show="isTimelineVisible"
             class="map-timeline-filter flex flex-row gap-1 items-center text-xs font-medium whitespace-nowrap"
           >
-            <span>Filtrer par date</span>
-            <input
-              v-model="useTimelineFilter"
-              type="checkbox"
-              aria-label="Filtrer par date"
-              role="switch"
-              class="timeline-filter-toggle"
-            />
-            <span class="ml-auto inline-flex items-center gap-1 text-base-content/60">
-              Guide du projet
-              <GuideLink guide="projet" tooltip-position="left" />
-            </span>
+
           </div>
         </div>
       </div>
@@ -333,7 +322,6 @@ import keycloak from "../keycloak";
 import L, { type Map as LeafletMap } from "leaflet";
 import { captureMapThumbnail } from "../utils/mapThumbnail";
 import Alert from "../components/Alert.vue";
-import GuideLink from "../components/GuideLink.vue";
 import { clearAlert, showAlert } from "../composables/useAlert";
 import { FeatureHistoryService } from "../services/FeatureHistoryService";
 import {
@@ -344,7 +332,7 @@ import {
   getFeatureMapIds,
 } from "../utils/featureHelpers";
 import { nudgeFeatureByPixels } from "../utils/mapDragUtils";
-import { getNudgeDelta } from "../utils/selectionUtils";
+import { getNudgeDelta, getSelectedTargetFeatures } from "../utils/selectionUtils";
 import {
   Bars3Icon,
   ChevronLeftIcon,
@@ -414,27 +402,16 @@ const featureVisibilityControlsRef = ref<InstanceType<
   typeof FeatureVisibilityControls
 > | null>(null);
 
-function parseOptionalYear(value: unknown): number | null {
-  if (value === null || value === undefined || value === "") return null;
-  const num = Number(value);
-  if (!Number.isFinite(num)) return null;
-  return Math.trunc(num);
-}
-
 function getFeatureCustomYears(f: Feature): {
   startYear: number | null;
   endYear: number | null;
 } {
   const startYear =
-    parseOptionalYear(f.properties?.startYear) ??
-    (f.properties?.startDate
-      ? parseOptionalYear(toYear(f.properties.startDate))
-      : null);
+    toYear(f.properties?.startYear) ??
+    (f.properties?.startDate ? toYear(f.properties.startDate) : null);
   const endYear =
-    parseOptionalYear(f.properties?.endYear) ??
-    (f.properties?.endDate
-      ? parseOptionalYear(toYear(f.properties.endDate))
-      : null);
+    toYear(f.properties?.endYear) ??
+    (f.properties?.endDate ? toYear(f.properties.endDate) : null);
 
   return { startYear, endYear };
 }
@@ -532,12 +509,12 @@ function selectFeature(id: string | null) {
         ? (periodByMapId.value.get(featMapKeyNorm) ??
            periodByMapId.value.get(featMapKey!) ??
            enrichedPeriods.value.find(
-             (p) =>
+             (p: SliderPeriod) =>
                String(p.id).trim().toLowerCase() === featMapKeyNorm ||
                p.title?.trim().toLowerCase() === featMapKeyNorm,
            ) ??
            mapPeriods.value.find(
-             (p) =>
+             (p: MapPeriod) =>
                String(p.id).trim().toLowerCase() === featMapKeyNorm ||
                p.title?.trim().toLowerCase() === featMapKeyNorm,
            ))
@@ -563,13 +540,13 @@ function selectFeature(id: string | null) {
       if (period?.title) {
         currentMapTitle.value = period.title;
       } else if (targetYear != null) {
-        const matchingPeriod = enrichedPeriods.value.find((p) =>
+        const matchingPeriod = enrichedPeriods.value.find((p: SliderPeriod) =>
           p.startYear != null && p.endYear != null && isPeriodActiveAt(
             p.startYear,
             p.endYear,
             targetYear!,
             periodStartYears.value,
-          )
+          ),
         );
         if (matchingPeriod?.title) {
           currentMapTitle.value = matchingPeriod.title;
@@ -582,7 +559,6 @@ function selectFeature(id: string | null) {
 const features = ref<Feature[]>([]);
 const selectedFeatureId = ref<string | null>(null);
 const multiSelectedFeatureIds = ref<string[]>([]);
-const copiedFeature = ref<Feature | null>(null);
 const copiedFeatures = ref<Feature[]>([]);
 
 // Presentation mode & Visibility states (Points 1, 6)
@@ -625,11 +601,11 @@ function toggleLegend() {
 
 function toggleFullscreen() {
   if (!document.fullscreenElement) {
-    document.documentElement.requestFullscreen?.().catch((err) => {
+    document.documentElement.requestFullscreen?.().catch((err: unknown) => {
       console.error("Fullscreen error:", err);
     });
   } else {
-    document.exitFullscreen?.().catch((err) => {
+    document.exitFullscreen?.().catch((err: unknown) => {
       console.error("Exit fullscreen error:", err);
     });
   }
@@ -734,7 +710,6 @@ function copySelectedFeature(): boolean {
   if (validFeatures.length === 0) return false;
 
   copiedFeatures.value = validFeatures;
-  copiedFeature.value = validFeatures[0];
 
   if (validFeatures.length === 1) {
     const feature = validFeatures[0];
@@ -761,12 +736,7 @@ function getCenterOffsetDelta(map: any, offsetPx = 24): { deltaLng: number; delt
 }
 
 function pasteCopiedFeature() {
-  const sources =
-    copiedFeatures.value.length > 0
-      ? copiedFeatures.value
-      : copiedFeature.value
-        ? [copiedFeature.value]
-        : [];
+  const sources = copiedFeatures.value;
   const map = leafletMap.value;
   if (sources.length === 0 || !map) return;
 
@@ -775,7 +745,7 @@ function pasteCopiedFeature() {
   const pastedFeatures: Feature[] = [];
   const newIds: string[] = [];
 
-  sources.forEach((source) => {
+  sources.forEach((source: Feature) => {
     if (!source.geometry) return;
     const pasted = cloneFeatureWithOffset(source, deltaLng, deltaLat);
     pastedFeatures.push(pasted);
@@ -838,7 +808,7 @@ function startSidebarResize(event: MouseEvent) {
   window.addEventListener("mouseup", stopSidebarResize);
 }
 
-const featureVisibility = ref<Map<string, boolean>>(new Map());
+const featureVisibility = ref>(new Map());
 const pendingDeletions = ref<string[]>([]);
 const persistedFeatureIds = ref<Set<string>>(new Set());
 const isSaving = ref(false);
@@ -868,7 +838,7 @@ const timelineMode = ref<TimelineFilterMode>(
     ? storedTimelineMode
     : "specific",
 );
-watch(timelineMode, (mode) => {
+watch(timelineMode, (mode: TimelineFilterMode) => {
   try {
     localStorage.setItem("atlas_timeline_filter_mode", mode);
   } catch {
@@ -1023,18 +993,25 @@ const sortedTimelineMilestones = computed<TimelineMilestone[]>(() => {
     }
   }
 
-  return list.sort((a, b) => a.year - b.year || (a.type === "map" ? -1 : 1));
+  return list.sort(
+    (a: TimelineMilestone, b: TimelineMilestone) =>
+      a.year - b.year || (a.type === "map" ? -1 : 1),
+  );
 });
 
 const prevMilestone = computed<TimelineMilestone | null>(() => {
   const currentY = selectedYear.value;
-  const earlier = sortedTimelineMilestones.value.filter((m) => m.year < currentY);
+  const earlier = sortedTimelineMilestones.value.filter(
+    (m: TimelineMilestone) => m.year < currentY,
+  );
   return earlier.length > 0 ? earlier[earlier.length - 1] : null;
 });
 
 const nextMilestone = computed<TimelineMilestone | null>(() => {
   const currentY = selectedYear.value;
-  const later = sortedTimelineMilestones.value.filter((m) => m.year > currentY);
+  const later = sortedTimelineMilestones.value.filter(
+    (m: TimelineMilestone) => m.year > currentY,
+  );
   return later.length > 0 ? later[0] : null;
 });
 
@@ -1108,12 +1085,12 @@ const timelineMarkerYears = computed(() => {
     markers.add(p.startYear);
     markers.add(p.endYear);
   });
-  customFeatureYears.value.forEach((y) => markers.add(y));
-  return [...markers].sort((a, b) => a - b);
+  customFeatureYears.value.forEach((y: number) => markers.add(y));
+  return [...markers].sort((a: number, b: number) => a - b);
 });
 
 const periodStartYears = computed(() => {
-  const years = new Set(
+  const years = new Set<number>(
     enrichedPeriods.value.map((p: SliderPeriod) => p.startYear),
   );
   features.value.forEach((f: Feature) => {
@@ -1139,30 +1116,36 @@ const periodStartDates = computed(() => {
 const activeMapPeriod = computed<SliderPeriod | null>(() => {
   if (selectedYear.value == null || selectedYear.value < 0) return null;
   if (selectedExactDate.value) {
-    const match = enrichedPeriods.value.find((p) =>
-      p.startDate && p.endDate && isPeriodActiveAt(
-        p.startDate,
-        p.endDate,
-        selectedExactDate.value!,
-        periodStartDates.value,
-      ),
+    const match = enrichedPeriods.value.find(
+      (p: SliderPeriod) =>
+        p.startDate &&
+        p.endDate &&
+        isPeriodActiveAt(
+          p.startDate,
+          p.endDate,
+          selectedExactDate.value!,
+          periodStartDates.value,
+        ),
     );
     if (match) return match;
   }
-  const match = enrichedPeriods.value.find((p) =>
-    p.startYear != null && p.endYear != null && isPeriodActiveAt(
-      p.startYear,
-      p.endYear,
-      selectedYear.value,
-      periodStartYears.value,
-    ),
+  const match = enrichedPeriods.value.find(
+    (p: SliderPeriod) =>
+      p.startYear != null &&
+      p.endYear != null &&
+      isPeriodActiveAt(
+        p.startYear,
+        p.endYear,
+        selectedYear.value,
+        periodStartYears.value,
+      ),
   );
   return match ?? null;
 });
 
 watch(
   activeMapPeriod,
-  (newPeriod) => {
+  (newPeriod: SliderPeriod | null) => {
     if (newPeriod?.title) {
       currentMapTitle.value = newPeriod.title;
     }
@@ -1226,13 +1209,13 @@ const filteredFeatures = computed(() => {
           : [];
 
     if (targetMapKeys.length > 0) {
-      return targetMapKeys.some((effectiveMapKey) => {
+      return targetMapKeys.some((effectiveMapKey: string) => {
         const normalizedMapId = String(effectiveMapKey).trim().toLowerCase();
         const period =
           periodByMapId.value.get(effectiveMapKey) ??
           periodByMapId.value.get(normalizedMapId) ??
           enrichedPeriods.value.find(
-            (p) =>
+            (p: SliderPeriod) =>
               String(p.id).trim().toLowerCase() === normalizedMapId ||
               p.title?.trim().toLowerCase() === normalizedMapId,
           );
@@ -1513,14 +1496,25 @@ async function loadProjectMapsForTimeline() {
       }>,
     );
 
-    mapPeriods.value = rows.map((row, idx) => ({
-      id: row.id,
-      title: row.title,
-      startDate: row.startDate ?? null,
-      endDate: row.endDate ?? null,
-      exactDate: Boolean(row.exactDate),
-      color: PERIOD_COLORS[idx % PERIOD_COLORS.length],
-    }));
+    mapPeriods.value = rows.map(
+      (
+        row: {
+          id: string;
+          title: string;
+          startDate?: string | null;
+          endDate?: string | null;
+          exactDate?: boolean;
+        },
+        idx: number,
+      ) => ({
+        id: row.id,
+        title: row.title,
+        startDate: row.startDate ?? null,
+        endDate: row.endDate ?? null,
+        exactDate: Boolean(row.exactDate),
+        color: PERIOD_COLORS[idx % PERIOD_COLORS.length],
+      }),
+    );
   } catch (e) {
     console.error("Failed to load map periods for timeline:", e);
     mapPeriods.value = [];
@@ -1598,7 +1592,7 @@ async function onDeleteFeature(
       const fid = String(featureIdOrIds);
       if (
         multiSelectedFeatureIds.value.length > 0 &&
-        multiSelectedFeatureIds.value.some((id) => String(id) === fid)
+        multiSelectedFeatureIds.value.some((id: string) => String(id) === fid)
       ) {
         idsToDelete = multiSelectedFeatureIds.value.map(String);
       } else {
@@ -1656,9 +1650,9 @@ async function onDeleteMap(
     const nextFeatures: Feature[] = [];
     for (const feature of features.value) {
       const existingMapIds = getFeatureMapIds(feature);
-      if (existingMapIds.some((id) => id.trim().toLowerCase() === mapIdNorm)) {
+      if (existingMapIds.some((id: string) => id.trim().toLowerCase() === mapIdNorm)) {
         const remainingMapIds = existingMapIds.filter(
-          (id) => id.trim().toLowerCase() !== mapIdNorm,
+          (id: string) => id.trim().toLowerCase() !== mapIdNorm,
         );
         if (remainingMapIds.length > 0) {
           const newPrimaryMapId = remainingMapIds[0];
@@ -1735,8 +1729,11 @@ async function onUpdateFeature(
 
     // Positionne immédiatement la timeline sur la nouvelle année personnalisée si présente
     const firstCustomYears = list
-      .map((item) => getFeatureCustomYears(item))
-      .find((y) => y.startYear != null || y.endYear != null);
+      .map((item: Feature) => getFeatureCustomYears(item))
+      .find(
+        (y: { startYear: number | null; endYear: number | null }) =>
+          y.startYear != null || y.endYear != null,
+      );
     const targetYear = firstCustomYears?.startYear ?? firstCustomYears?.endYear;
     if (targetYear != null) {
       selectedExactDate.value = null;
@@ -1817,7 +1814,9 @@ async function onConfirmTextValidation(validatedItems: TextValidationEntry[]) {
   isSavingTextValidation.value = true;
   try {
     const validatedMap = new Map<string, TextValidationEntry>(
-      validatedItems.map((i): [string, TextValidationEntry] => [i.id, i]),
+      validatedItems.map(
+        (i: TextValidationEntry): [string, TextValidationEntry] => [i.id, i],
+      ),
     );
     const openedIds = new Set<string>(
       textValidationEntries.value.map((i: TextValidationEntry) => i.id),
@@ -2144,7 +2143,7 @@ function reconcileVisibility(list: Feature[]) {
       next.set(id, initialVisible);
     }
   }
-  const ids = new Set(list.map((f) => f.id));
+  const ids = new Set(list.map((f: Feature) => f.id));
   for (const k of next.keys()) {
     if (!ids.has(k)) next.delete(k);
   }
@@ -2166,8 +2165,8 @@ async function loadInitialFeatures() {
 
     persistedFeatureIds.value = new Set(
       allFeatures
-        .map((feature) => String(feature.id))
-        .filter((id) => isUuid(id)),
+        .map((feature: Feature) => String(feature.id))
+        .filter((id: string) => isUuid(id)),
     );
     applyFeatureSnapshot(featureHistoryService.reset(allFeatures), false);
     pendingDeletions.value = [];
@@ -2449,7 +2448,7 @@ const handleKeyboardShortcuts = (e: KeyboardEvent) => {
     return;
   }
 
-  if (isMod && key === "v" && (copiedFeatures.value.length > 0 || copiedFeature.value)) {
+  if (isMod && key === "v" && copiedFeatures.value.length > 0) {
     e.preventDefault();
     pasteCopiedFeature();
     return;
@@ -2475,14 +2474,10 @@ const handleKeyboardShortcuts = (e: KeyboardEvent) => {
     (selectedFeatureId.value || multiSelectedFeatureIds.value.length > 0)
   ) {
     e.preventDefault();
-    const ids =
-      multiSelectedFeatureIds.value.length > 0
-        ? multiSelectedFeatureIds.value
-        : selectedFeatureId.value
-          ? [selectedFeatureId.value]
-          : [];
-    const targetFeatures = features.value.filter((f: Feature) =>
-      ids.includes(String(f.id)),
+    const targetFeatures = getSelectedTargetFeatures(
+      features.value,
+      selectedFeatureId.value,
+      multiSelectedFeatureIds.value,
     );
     if (targetFeatures.length > 0) {
       featureVisibilityControlsRef.value?.showDeleteFeatureDialog(
@@ -2673,7 +2668,7 @@ async function saveFeaturesToProject(
   const pendingDeleteSet = new Set(deletionIds);
   const savedFeatures = (
     snakeToCamel(await response.json()) as Feature[]
-  ).filter((feature) => !pendingDeleteSet.has(String(feature.id)));
+  ).filter((feature: Feature) => !pendingDeleteSet.has(String(feature.id)));
   features.value = savedFeatures;
   reconcileVisibility(savedFeatures);
 
