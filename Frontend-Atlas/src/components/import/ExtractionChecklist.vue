@@ -51,7 +51,7 @@
       />
     </ChecklistGroup>
 
-    <!-- Points de contrôle -->
+    <!-- Control points -->
     <ChecklistGroup
       title="Points de contrôle"
       :tone="pointsLocked ? 'locked' : steps.sift.status === 'done' ? 'progress' : 'pending'"
@@ -85,7 +85,7 @@
       />
     </ChecklistGroup>
 
-    <!-- Points de vérification (dev-test only): held out of every fit, they
+    <!-- Check points (dev-test only): held out of every fit, they
          are what the test plan measures placement with. -->
     <ChecklistGroup
       v-if="showChecks"

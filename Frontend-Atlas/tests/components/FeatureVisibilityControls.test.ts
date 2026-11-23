@@ -803,7 +803,7 @@ describe("FeatureVisibilityControls - Word Type Selection and Font Modification"
       await modifyBtn!.trigger("click");
 
       expect(wrapper.emitted("update-feature")).toBeDefined();
-      // createFeaturesForSelectedMaps retourne un seul objet Feature avec mapIds quand plusieurs maps sont choisies
+      // createFeaturesForSelectedMaps returns a single Feature object with mapIds when multiple maps are selected
       const emitted = wrapper.emitted("update-feature")![0][0] as Feature;
       expect(emitted.mapId).toBe("map-1");
       expect(emitted.mapIds).toEqual(["map-1", "map-2"]);

@@ -20,7 +20,7 @@
           @select-feature="selectFeature"
           @select-features="onSelectFeatures"
           @toggle-feature="toggleFeatureVisibility"
-          @open-add-image-feature-dialog="addFeatureImageDialogRef?.open()"
+          @open-add-image-feature-dialog="mapDialogsRef?.openAddImageDialog()"
           @save-map="onSaveMap"
           @delete-feature="onDeleteFeature"
           @delete-map="onDeleteMap"
@@ -111,180 +111,71 @@
           </div>
         </div>
 
-        <!-- Horizontal resize handle for timeline (Point 7) -->
-        <div
-          v-show="isTimelineVisible"
-          role="separator"
-          aria-label="Redimensionner l'échelle de temps"
-          aria-orientation="horizontal"
-          tabindex="0"
-          class="h-1.5 w-full shrink-0 cursor-row-resize bg-base-300/50 hover:bg-primary/50 focus:bg-primary/50 transition-colors z-[1002]"
-          data-testid="timeline-resize-handle"
-          @mousedown.prevent="startTimelineResize"
-          @keydown.up.prevent="resizeTimelineBy(10)"
-          @keydown.down.prevent="resizeTimelineBy(-10)"
-        />
-
         <!-- Timeline panel with hide toggle and duplication button (Points 5, 6, 7) -->
-        <div
-          class="map-timeline-toolbar relative z-[2000] flex flex-col bg-base-100 border-t border-base-300 overflow-visible"
-          :style="isTimelineVisible && timelineHeight ? { height: `${timelineHeight}px` } : {}"
-        >
-          <!-- Top bar with Filter Modes and Map Duplication -->
-          <div
-            class="map-timeline-topbar shrink-0 relative flex items-center justify-between px-3 py-1.5 border-b border-base-200 text-xs font-medium whitespace-nowrap bg-base-100 z-0"
-          >
-            <!-- Left section: Nom du projet -->
-            <div class="flex items-center gap-2 min-w-0 pr-4">
-              <span
-                v-if="currentMapTitle"
-                class="text-sm font-bold text-base-content select-none truncate max-w-xs md:max-w-sm"
-                :title="currentMapTitle"
-              >
-                {{ currentMapTitle }}
-              </span>
-            </div>
-
-            <!-- Center section: Flèches précédent / suivant parfaitement centrées sur toute la largeur -->
-            <div
-              v-if="sortedTimelineMilestones.length > 0"
-              class="absolute left-1/2 -translate-x-1/2 inline-flex items-center rounded border border-base-300 bg-base-200/90 overflow-hidden shadow-xs pointer-events-auto"
-            >
-              <button
-                type="button"
-                class="px-2.5 py-1 text-base-content hover:bg-base-300 active:bg-base-300/80 disabled:opacity-30 disabled:pointer-events-none border-r border-base-300 transition-colors flex items-center justify-center"
-                :disabled="!hasPrevMilestone"
-                :title="
-                  prevMilestone
-                    ? `Précédent : ${prevMilestone.label} (${prevMilestone.year})`
-                    : 'Aucun jalon précédent'
-                "
-                aria-label="Jalon précédent"
-                data-testid="prev-map-button"
-                @click="goToPrevMilestone"
-              >
-                <ChevronLeftIcon class="w-3.5 h-3.5 stroke-[2.5]" />
-              </button>
-              <button
-                type="button"
-                class="px-2.5 py-1 text-base-content hover:bg-base-300 active:bg-base-300/80 disabled:opacity-30 disabled:pointer-events-none transition-colors flex items-center justify-center"
-                :disabled="!hasNextMilestone"
-                :title="
-                  nextMilestone
-                    ? `Suivant : ${nextMilestone.label} (${nextMilestone.year})`
-                    : 'Aucun jalon suivant'
-                "
-                aria-label="Jalon suivant"
-                data-testid="next-map-button"
-                @click="goToNextMilestone"
-              >
-                <ChevronRightIcon class="w-3.5 h-3.5 stroke-[2.5]" />
-              </button>
-            </div>
-
-            <!-- Right section: Masquer la légende & Masquer la ligne du temps -->
-            <div class="flex items-center gap-3 ml-auto">
-              <button
-                type="button"
-                class="btn btn-ghost btn-xs text-base-content/70 hover:text-base-content gap-1"
-                data-testid="hide-legend-button"
-                :title="isLegendVisible ? 'Masquer la légende' : 'Afficher la légende'"
-                @click="toggleLegend"
-              >
-                <EyeSlashIcon v-if="isLegendVisible" class="w-3.5 h-3.5" />
-                <EyeIcon v-else class="w-3.5 h-3.5" />
-                <span>{{ isLegendVisible ? "Masquer la légende" : "Afficher la légende" }}</span>
-              </button>
-              <button
-                type="button"
-                class="btn btn-ghost btn-xs text-base-content/70 hover:text-base-content gap-1"
-                data-testid="hide-timeline-button"
-                :title="isTimelineVisible ? 'Masquer la ligne du temps' : 'Afficher la ligne du temps'"
-                @click="toggleTimeline"
-              >
-                <EyeSlashIcon v-if="isTimelineVisible" class="w-3.5 h-3.5" />
-                <EyeIcon v-else class="w-3.5 h-3.5" />
-                <span>{{ isTimelineVisible ? "Masquer la ligne du temps" : "Afficher la ligne du temps" }}</span>
-              </button>
-            </div>
-          </div>
-
-          <!-- Middle scrollable area containing the timeline tracks, ticks, labels, and legend -->
-          <div
-            v-show="isTimelineVisible"
-            class="map-timeline-slider flex-1 min-h-0 w-full overflow-visible px-3 pt-3 pb-1 relative z-20"
-          >
-            <TimelineSlider
-              v-model:year="selectedYear"
-              v-model:mode="timelineMode"
-              :selected-feature-id="selectedFeatureId"
-              :multi-selected-feature-ids="multiSelectedFeatureIds"
-              @exact-date-change="onExactDateChange"
-              @select-date="onTimelineDateSelect"
-              @select-map="selectMap"
-              @edit-map="openEditMapDialog"
-              @edit-element="onEditElementFromTimeline"
-              @select-element="onSelectElementFromTimeline"
-              @select-elements="onSelectFeatures"
-              :min="timelineMinYear"
-              :max="timelineMaxYear"
-              :marker-years="timelineMarkerYears"
-              :map-periods="enrichedPeriods"
-              :element-markers="timelineElementMarkers"
-              :current-exact-date="selectedExactDate"
-            />
-          </div>
-          <div
-            v-show="isTimelineVisible"
-            class="map-timeline-filter flex flex-row gap-1 items-center text-xs font-medium whitespace-nowrap"
-          >
-
-          </div>
-        </div>
+        <MapTimelinePanel
+          :is-timeline-visible="isTimelineVisible"
+          :is-legend-visible="isLegendVisible"
+          :timeline-height="timelineHeight"
+          :current-map-title="currentMapTitle"
+          :sorted-timeline-milestones="sortedTimelineMilestones"
+          :prev-milestone="prevMilestone"
+          :next-milestone="nextMilestone"
+          :has-prev-milestone="hasPrevMilestone"
+          :has-next-milestone="hasNextMilestone"
+          :year="selectedYear"
+          :mode="timelineMode"
+          :selected-feature-id="selectedFeatureId"
+          :multi-selected-feature-ids="multiSelectedFeatureIds"
+          :min="timelineMinYear"
+          :max="timelineMaxYear"
+          :marker-years="timelineMarkerYears"
+          :map-periods="enrichedPeriods"
+          :element-markers="timelineElementMarkers"
+          :current-exact-date="selectedExactDate"
+          @update:year="selectedYear = $event"
+          @update:mode="timelineMode = $event"
+          @exact-date-change="onExactDateChange"
+          @select-date="onTimelineDateSelect"
+          @select-map="selectMap"
+          @edit-map="openEditMapDialog"
+          @edit-element="onEditElementFromTimeline"
+          @select-element="onSelectElementFromTimeline"
+          @select-elements="onSelectFeatures"
+          @prev-milestone="goToPrevMilestone"
+          @next-milestone="goToNextMilestone"
+          @toggle-legend="toggleLegend"
+          @toggle-timeline="toggleTimeline"
+          @start-resize="startTimelineResize"
+          @resize-by="resizeTimelineBy"
+        />
       </div>
     </div>
 
     <Alert />
   </div>
 
-  <AddImageDialog
-    ref="addFeatureImageDialogRef"
-    :is-adding="isAdding"
-    @submit="onAddFeatureImage"
-  />
-
-  <AddMapDialog
-    ref="addMapDialogRef"
-    :is-creating-map="isCreatingMap"
-    @submit="createMapForProject"
-  />
-
-  <DuplicateMapDialog
-    ref="duplicateMapDialogRef"
+  <MapDialogs
+    ref="mapDialogsRef"
     :map-periods="mapPeriods"
-    :is-duplicating="isDuplicatingMap"
-    @submit="onDuplicateMapSubmit"
-  />
-
-  <EditMapPeriodDialog ref="editMapPeriodDialogRef" @save="saveMapPeriod" />
-
-  <CreateProjectDialog
-    ref="createProjectDialogRef"
-    @created="onProjectCreated"
-    @error="onCreateProjectError"
-    @closed="onCreateProjectDialogClosed"
-  />
-
-  <TextValidationModal
-    :is-open="showTextValidationModal"
-    :map-id="activeValidationMapId"
-    :image-url="validationImageUrl"
-    :map-title="validationMapTitle"
-    :initial-items="textValidationEntries"
-    :is-submitting="isSavingTextValidation"
+    :is-adding="isAdding"
+    :is-creating-map="isCreatingMap"
+    :is-duplicating-map="isDuplicatingMap"
+    :show-text-validation-modal="showTextValidationModal"
+    :active-validation-map-id="activeValidationMapId"
+    :validation-image-url="validationImageUrl"
+    :validation-map-title="validationMapTitle"
+    :text-validation-entries="textValidationEntries"
+    :is-saving-text-validation="isSavingTextValidation"
     :custom-label-styles="customLabelStyles"
-    @confirm="onConfirmTextValidation"
-    @cancel="showTextValidationModal = false"
+    @add-feature-image="onAddFeatureImage"
+    @create-map="createMapForProject"
+    @duplicate-map="onDuplicateMapSubmit"
+    @save-map-period="saveMapPeriod"
+    @project-created="onProjectCreated"
+    @project-error="onCreateProjectError"
+    @project-dialog-closed="onCreateProjectDialogClosed"
+    @confirm-text-validation="onConfirmTextValidation"
+    @cancel-text-validation="showTextValidationModal = false"
     @save-label-styles="saveCustomLabelStyles"
   />
 </template>
@@ -292,13 +183,9 @@
 <script setup lang="ts">
 import { ref, onMounted, computed, onUnmounted, watch, nextTick } from "vue";
 import { useRoute, useRouter } from "vue-router";
-import AddImageDialog from "../components/add/AddImage.vue";
-import AddMapDialog from "../components/add/AddMap.vue";
-import DuplicateMapDialog from "../components/add/DuplicateMapDialog.vue";
-import EditMapPeriodDialog from "../components/add/EditMapPeriodDialog.vue";
+import MapDialogs from "../components/MapDialogs.vue";
+import MapTimelinePanel from "../components/MapTimelinePanel.vue";
 import MapGeoJSON from "../components/MapGeoJSON.vue";
-import TimelineSlider from "../components/TimelineSlider.vue";
-import type { TimelineMarkerItem } from "../components/TimelineSlider.vue";
 import FeatureVisibilityControls from "../components/FeatureVisibilityControls.vue";
 import Legend from "../components/legend/Legend.vue";
 import { Feature } from "../typescript/feature";
@@ -346,8 +233,6 @@ import type {
   CreatedProjectRef,
   CreateProjectDialogExposed,
 } from "../typescript/project";
-import CreateProjectDialog from "../components/CreateProjectDialog.vue";
-import TextValidationModal from "../components/import/TextValidationModal.vue";
 import {
   type TextValidationEntry,
   featureToValidationEntry,
@@ -360,6 +245,12 @@ import {
   applyCustomLabelStyleToFeature,
   removeCustomLabelStyleFromFeature,
 } from "../utils/featureTextEditing";
+import {
+  useMapTimeline,
+  getFeatureCustomYears,
+  type TimelineFilterMode,
+  type TimelineMilestone,
+} from "../composables/useMapTimeline";
 
 const route = useRoute();
 const router = useRouter();
@@ -378,43 +269,15 @@ const mapGeoJsonRef = ref<{
   ) => void;
   multiSelectedIds: { value: Set<string> };
 } | null>(null);
-const addMapDialogRef = ref<{
-  open: () => void;
-  close: () => void;
-} | null>(null);
-const duplicateMapDialogRef = ref<{
-  open: (preselectedMapId?: string) => void;
-  close: () => void;
-  setError: (msg: string) => void;
-} | null>(null);
+
+const mapDialogsRef = ref<InstanceType<typeof MapDialogs> | null>(null);
 const isDuplicatingMap = ref(false);
-const editMapPeriodDialogRef = ref<{
-  open: (period: MapPeriod) => void;
-  close: () => void;
-  setSaving: (value: boolean) => void;
-  setError: (message: string) => void;
-} | null>(null);
-const addFeatureImageDialogRef = ref<{
-  open: () => void;
-  close: () => void;
-} | null>(null);
+const isAdding = ref(false);
+const isCreatingMap = ref(false);
+
 const featureVisibilityControlsRef = ref<InstanceType<
   typeof FeatureVisibilityControls
 > | null>(null);
-
-function getFeatureCustomYears(f: Feature): {
-  startYear: number | null;
-  endYear: number | null;
-} {
-  const startYear =
-    toYear(f.properties?.startYear) ??
-    (f.properties?.startDate ? toYear(f.properties.startDate) : null);
-  const endYear =
-    toYear(f.properties?.endYear) ??
-    (f.properties?.endDate ? toYear(f.properties.endDate) : null);
-
-  return { startYear, endYear };
-}
 
 function onEditFeatureRequest(feature: Feature) {
   featureVisibilityControlsRef.value?.showEditFeatureDialog(feature);
@@ -808,14 +671,12 @@ function startSidebarResize(event: MouseEvent) {
   window.addEventListener("mouseup", stopSidebarResize);
 }
 
-const featureVisibility = ref>(new Map());
+const featureVisibility = ref<Map<string, boolean>>(new Map());
 const pendingDeletions = ref<string[]>([]);
 const persistedFeatureIds = ref<Set<string>>(new Set());
 const isSaving = ref(false);
 const { currentUser, fetchCurrentUser } = useCurrentUser();
 const leafletMap = ref<LeafletMap | null>(null);
-const isAdding = ref(false);
-const isCreatingMap = ref(false);
 const mapPeriods = ref<MapPeriod[]>([]);
 const {
   customLabelStyles,
@@ -823,226 +684,44 @@ const {
   saveCustomLabelStyles: persistCustomLabelStyles,
 } = useProjectLabelStyles();
 
-const zoneFeatures = computed(() =>
-  filteredFeatures.value.filter(
-    (f: Feature) => f.properties?.mapElementType === "zone",
-  ),
-);
+const currentMapTitle = ref<string | undefined>(undefined);
+const currentMapDescription = ref<string | undefined>(undefined);
 
-const selectedYear = ref(-1);
-const selectedExactDate = ref<string | null>(null);
-export type TimelineFilterMode = "specific" | "cumulative" | "global";
-const storedTimelineMode = typeof window !== "undefined" ? localStorage.getItem("atlas_timeline_filter_mode") : null;
-const timelineMode = ref<TimelineFilterMode>(
-  storedTimelineMode === "specific" || storedTimelineMode === "cumulative" || storedTimelineMode === "global"
-    ? storedTimelineMode
-    : "specific",
-);
-watch(timelineMode, (mode: TimelineFilterMode) => {
-  try {
-    localStorage.setItem("atlas_timeline_filter_mode", mode);
-  } catch {
-    // Ignore storage errors in restricted contexts
-  }
-});
-
-const enrichedPeriods = computed<SliderPeriod[]>(() => {
-  const mapIdsWithFeatures = new Set<string>();
-  for (const f of features.value) {
-    const mid = getFeatureMapId(f);
-    if (mid) mapIdsWithFeatures.add(mid.toLowerCase());
-    const mapTitle =
-      ("mapTitle" in f ? (f as { mapTitle?: string }).mapTitle : undefined) ||
-      f.properties?.mapTitle;
-    if (mapTitle) mapIdsWithFeatures.add(String(mapTitle).trim().toLowerCase());
-  }
-
-  const periods: SliderPeriod[] = [];
-  for (const p of mapPeriods.value) {
-    const pIdNorm = String(p.id).trim().toLowerCase();
-    const pTitleNorm = p.title ? p.title.trim().toLowerCase() : "";
-    if (
-      mapIdsWithFeatures.size > 0 &&
-      !mapIdsWithFeatures.has(pIdNorm) &&
-      (!pTitleNorm || !mapIdsWithFeatures.has(pTitleNorm))
-    ) {
-      continue;
-    }
-    const startYear = toYear(p.startDate);
-    const endYear = toYear(p.endDate);
-    if (startYear != null && endYear != null) {
-      periods.push({
-        ...p,
-        startYear,
-        endYear,
-      });
-    }
-  }
-  return periods;
-});
-
-const periodByMapId = computed(() => {
-  const map = new Map<string, SliderPeriod>();
-  for (const p of mapPeriods.value) {
-    const startYear = toYear(p.startDate);
-    const endYear = toYear(p.endDate);
-    if (startYear != null && endYear != null) {
-      const enriched: SliderPeriod = {
-        ...p,
-        startYear,
-        endYear,
-      };
-      map.set(p.id, enriched);
-      map.set(String(p.id).trim().toLowerCase(), enriched);
-      if (p.title) {
-        map.set(p.title, enriched);
-        map.set(p.title.trim().toLowerCase(), enriched);
-      }
-    }
-  }
-  return map;
-});
-
-const customFeatureYears = computed<number[]>(() => {
-  const years: number[] = [];
-  features.value.forEach((f: Feature) => {
-    const { startYear, endYear } = getFeatureCustomYears(f);
-    if (startYear != null) years.push(startYear);
-    if (endYear != null) years.push(endYear);
-  });
-  return years;
-});
-
-const timelineElementMarkers = computed<TimelineMarkerItem[]>(() => {
-  const list: TimelineMarkerItem[] = [];
-
-  features.value.forEach((f: Feature) => {
-    const { startYear, endYear } = getFeatureCustomYears(f);
-    const effectiveStart = startYear ?? endYear;
-    if (effectiveStart == null) return;
-
-    const rawName =
-      f.properties?.name?.trim() ||
-      f.name?.trim() ||
-      f.properties?.labelText?.trim();
-    const hasName = Boolean(rawName);
-    const effectiveName = hasName && rawName ? rawName : "Nom manquant";
-
-    list.push({
-      id: String(
-        f.id ??
-          f.properties?.id ??
-          f.properties?.name ??
-          f.properties?.labelText ??
-          "",
-      ),
-      name: effectiveName,
-      isNameMissing: !hasName,
-      year: effectiveStart,
-      startYear: startYear != null ? startYear : effectiveStart,
-      endYear: endYear != null ? endYear : null,
-      type:
-        f.properties?.mapElementType ||
-        (isTextFeature(f) ? "Texte" : "Élément"),
-      color:
-        f.properties?.colorHex ||
-        (f.properties?.colorRgb ? rgbToHex(f.properties.colorRgb) : undefined),
-      mapId: null,
-      mapTitle: "Éléments généraux",
-      isCustom: true,
-    });
-  });
-
-  return list;
-});
-
-interface TimelineMilestone {
-  year: number;
-  label: string;
-  type: "map" | "element";
-  id?: string;
-}
-
-const sortedTimelineMilestones = computed<TimelineMilestone[]>(() => {
-  const list: TimelineMilestone[] = [];
-  const seen = new Set<string>();
-
-  for (const p of enrichedPeriods.value) {
-    const key = `map-${p.id}-${p.startYear}`;
-    if (!seen.has(key)) {
-      seen.add(key);
-      list.push({
-        year: p.startYear,
-        label: p.title || `Carte (${p.startYear})`,
-        type: "map",
-        id: String(p.id),
-      });
-    }
-  }
-
-  for (const item of timelineElementMarkers.value) {
-    const key = `element-${item.id}-${item.year}`;
-    if (!seen.has(key)) {
-      seen.add(key);
-      list.push({
-        year: item.year,
-        label: item.name || `Élément (${item.year})`,
-        type: "element",
-        id: String(item.id),
-      });
-    }
-  }
-
-  return list.sort(
-    (a: TimelineMilestone, b: TimelineMilestone) =>
-      a.year - b.year || (a.type === "map" ? -1 : 1),
-  );
-});
-
-const prevMilestone = computed<TimelineMilestone | null>(() => {
-  const currentY = selectedYear.value;
-  const earlier = sortedTimelineMilestones.value.filter(
-    (m: TimelineMilestone) => m.year < currentY,
-  );
-  return earlier.length > 0 ? earlier[earlier.length - 1] : null;
-});
-
-const nextMilestone = computed<TimelineMilestone | null>(() => {
-  const currentY = selectedYear.value;
-  const later = sortedTimelineMilestones.value.filter(
-    (m: TimelineMilestone) => m.year > currentY,
-  );
-  return later.length > 0 ? later[0] : null;
-});
-
-const hasPrevMilestone = computed<boolean>(() => prevMilestone.value != null);
-const hasNextMilestone = computed<boolean>(() => nextMilestone.value != null);
-
-function goToPrevMilestone() {
-  if (!prevMilestone.value) return;
-  selectedExactDate.value = null;
-  selectedYear.value = prevMilestone.value.year;
-  nextTick(() => {
+const {
+  selectedYear,
+  selectedExactDate,
+  timelineMode,
+  enrichedPeriods,
+  periodByMapId,
+  customFeatureYears,
+  timelineElementMarkers,
+  sortedTimelineMilestones,
+  prevMilestone,
+  nextMilestone,
+  hasPrevMilestone,
+  hasNextMilestone,
+  goToPrevMilestone,
+  goToNextMilestone,
+  onTimelineDateSelect,
+  allTimelineStartYears,
+  allTimelineEndYears,
+  timelineMinYear,
+  timelineMaxYear,
+  timelineMarkerYears,
+  periodStartYears,
+  periodStartDates,
+  activeMapPeriod,
+  filteredFeatures,
+  onExactDateChange,
+} = useMapTimeline({
+  features,
+  mapPeriods,
+  currentMapTitle,
+  onFitVisibleFeatures: () => {
     mapGeoJsonRef.value?.fitToVisibleFeatures(undefined, true);
-  });
-}
+  },
+});
 
-function goToNextMilestone() {
-  if (!nextMilestone.value) return;
-  selectedExactDate.value = null;
-  selectedYear.value = nextMilestone.value.year;
-  nextTick(() => {
-    mapGeoJsonRef.value?.fitToVisibleFeatures(undefined, true);
-  });
-}
-
-function onTimelineDateSelect() {
-  nextTick(() => {
-    mapGeoJsonRef.value?.fitToVisibleFeatures(undefined, true);
-  });
-}
-
-// Automatically adjusts map focus/zoom to visible features when date, exact date, or filter mode changes
 watch(
   [selectedYear, selectedExactDate, timelineMode],
   async () => {
@@ -1054,204 +733,11 @@ watch(
   { flush: "post" },
 );
 
-const allTimelineStartYears = computed(() => {
-  const years = enrichedPeriods.value.map((p: SliderPeriod) => p.startYear);
-  return [...years, ...customFeatureYears.value];
-});
-
-const allTimelineEndYears = computed(() => {
-  const years = enrichedPeriods.value.map((p: SliderPeriod) => p.endYear);
-  return [...years, ...customFeatureYears.value];
-});
-
-const timelineMinYear = computed(() =>
-  allTimelineStartYears.value.length
-    ? Math.min(...allTimelineStartYears.value)
-    : 1400,
+const zoneFeatures = computed(() =>
+  filteredFeatures.value.filter(
+    (f: Feature) => f.properties?.mapElementType === "zone",
+  ),
 );
-
-const timelineMaxYear = computed(() =>
-  allTimelineEndYears.value.length
-    ? Math.max(...allTimelineEndYears.value)
-    : new Date().getFullYear(),
-);
-
-const timelineMarkerYears = computed(() => {
-  const markers = new Set<number>([
-    timelineMinYear.value,
-    timelineMaxYear.value,
-  ]);
-  enrichedPeriods.value.forEach((p: SliderPeriod) => {
-    markers.add(p.startYear);
-    markers.add(p.endYear);
-  });
-  customFeatureYears.value.forEach((y: number) => markers.add(y));
-  return [...markers].sort((a: number, b: number) => a - b);
-});
-
-const periodStartYears = computed(() => {
-  const years = new Set<number>(
-    enrichedPeriods.value.map((p: SliderPeriod) => p.startYear),
-  );
-  features.value.forEach((f: Feature) => {
-    const { startYear, endYear } = getFeatureCustomYears(f);
-    const effectiveStart = startYear ?? endYear;
-    if (effectiveStart != null) years.add(effectiveStart);
-  });
-  return years;
-});
-
-const periodStartDates = computed(() => {
-  const dates = new Set<string>(
-    enrichedPeriods.value
-      .map((p: SliderPeriod) => p.startDate)
-      .filter((date: string | null): date is string => Boolean(date)),
-  );
-  features.value.forEach((f: Feature) => {
-    if (f.properties?.startDate) dates.add(f.properties.startDate);
-  });
-  return dates;
-});
-
-const activeMapPeriod = computed<SliderPeriod | null>(() => {
-  if (selectedYear.value == null || selectedYear.value < 0) return null;
-  if (selectedExactDate.value) {
-    const match = enrichedPeriods.value.find(
-      (p: SliderPeriod) =>
-        p.startDate &&
-        p.endDate &&
-        isPeriodActiveAt(
-          p.startDate,
-          p.endDate,
-          selectedExactDate.value!,
-          periodStartDates.value,
-        ),
-    );
-    if (match) return match;
-  }
-  const match = enrichedPeriods.value.find(
-    (p: SliderPeriod) =>
-      p.startYear != null &&
-      p.endYear != null &&
-      isPeriodActiveAt(
-        p.startYear,
-        p.endYear,
-        selectedYear.value,
-        periodStartYears.value,
-      ),
-  );
-  return match ?? null;
-});
-
-watch(
-  activeMapPeriod,
-  (newPeriod: SliderPeriod | null) => {
-    if (newPeriod?.title) {
-      currentMapTitle.value = newPeriod.title;
-    }
-  },
-  { immediate: true },
-);
-
-const filteredFeatures = computed(() => {
-  return features.value.filter((feature: Feature) => {
-    // Global mode: all features visible without date filtering
-    if (timelineMode.value === "global") return true;
-
-    const { startYear: featStartYear, endYear: featEndYear } =
-      getFeatureCustomYears(feature);
-    const hasCustomYears = featStartYear != null || featEndYear != null;
-
-    let isCustomActive = false;
-    if (hasCustomYears) {
-      const sy = featStartYear ?? (featEndYear as number);
-      const ey = featEndYear ?? sy;
-
-      // Cumulative mode: features that have appeared up to selectedYear
-      if (timelineMode.value === "cumulative") {
-        isCustomActive = sy <= selectedYear.value;
-      } else if (
-        selectedExactDate.value &&
-        feature.properties?.startDate &&
-        feature.properties?.endDate
-      ) {
-        // Specific mode: active at selected date
-        isCustomActive = isPeriodActiveAt(
-          feature.properties.startDate,
-          feature.properties.endDate,
-          selectedExactDate.value,
-          periodStartDates.value,
-        );
-      } else {
-        isCustomActive = isPeriodActiveAt(
-          sy,
-          ey,
-          selectedYear.value,
-          periodStartYears.value,
-        );
-      }
-    }
-
-    // Custom date: detached from any map; visibility determined solely by custom period
-    if (hasCustomYears) {
-      return isCustomActive;
-    }
-
-    const featureMapIds = getFeatureMapIds(feature);
-    const featureMapTitle =
-      ("mapTitle" in feature ? (feature as { mapTitle?: string }).mapTitle : undefined) ||
-      feature.properties?.mapTitle;
-    const targetMapKeys =
-      featureMapIds.length > 0
-        ? featureMapIds
-        : featureMapTitle
-          ? [featureMapTitle]
-          : [];
-
-    if (targetMapKeys.length > 0) {
-      return targetMapKeys.some((effectiveMapKey: string) => {
-        const normalizedMapId = String(effectiveMapKey).trim().toLowerCase();
-        const period =
-          periodByMapId.value.get(effectiveMapKey) ??
-          periodByMapId.value.get(normalizedMapId) ??
-          enrichedPeriods.value.find(
-            (p: SliderPeriod) =>
-              String(p.id).trim().toLowerCase() === normalizedMapId ||
-              p.title?.trim().toLowerCase() === normalizedMapId,
-          );
-
-        if (!period) return true;
-        if (timelineMode.value === "cumulative") {
-          return (
-            period.startYear == null || period.startYear <= selectedYear.value
-          );
-        } else if (
-          selectedExactDate.value &&
-          period.startDate &&
-          period.endDate
-        ) {
-          return isPeriodActiveAt(
-            period.startDate,
-            period.endDate,
-            selectedExactDate.value,
-            periodStartDates.value,
-          );
-        } else if (period.startYear == null || period.endYear == null) {
-          return true;
-        } else {
-          return isPeriodActiveAt(
-            period.startYear,
-            period.endYear,
-            selectedYear.value,
-            periodStartYears.value,
-          );
-        }
-      });
-    }
-
-    return true;
-  });
-});
 
 const combinedFeatureVisibility = computed(() => {
   const combined = new Map<string, boolean>();
@@ -1268,7 +754,7 @@ const combinedFeatureVisibility = computed(() => {
       return;
     }
 
-    const explicitlyVisible = featureVisibility.value.get(id) ?? true;
+    const explicitlyVisible = featureVisibility.valueOf.get(id) ?? true;
     const isTimelineVisible = visibleByTimeline.has(id);
 
     combined.set(id, explicitlyVisible && isTimelineVisible);
@@ -1277,16 +763,8 @@ const combinedFeatureVisibility = computed(() => {
   return combined;
 });
 
-function onExactDateChange(nextDate: string | null) {
-  selectedExactDate.value = nextDate;
-}
-
-const createProjectDialogRef = ref<CreateProjectDialogExposed | null>(null);
 const pendingCopiedFeatures = ref<Feature[] | null>(null);
 const shouldSaveAfterCopy = ref(false);
-
-const currentMapTitle = ref<string | undefined>(undefined);
-const currentMapDescription = ref<string | undefined>(undefined);
 
 const featureHistoryService = new FeatureHistoryService(5);
 const canUndo = featureHistoryService.canUndo;
@@ -1387,14 +865,14 @@ function getImageNaturalSize(
 
 async function onAddFeatureImage(file: File) {
   if (!keycloak.token) {
-    addFeatureImageDialogRef.value?.close();
+    mapDialogsRef.value?.closeAddImageDialog();
     return;
   }
 
   if (!projectId.value) {
     const resolved = await resolveRouteContext();
     if (!resolved || !projectId.value) {
-      addFeatureImageDialogRef.value?.close();
+      mapDialogsRef.value?.closeAddImageDialog();
       return;
     }
   }
@@ -1428,7 +906,7 @@ async function onAddFeatureImage(file: File) {
     }
 
     await loadInitialFeatures();
-    addFeatureImageDialogRef.value?.close();
+    mapDialogsRef.value?.closeAddImageDialog();
   } catch (e) {
     console.error("Upload image failed:", e);
   } finally {
@@ -1727,7 +1205,7 @@ async function onUpdateFeature(
         : `Modification de ${list.length} éléments`;
     commitFeatureSnapshot(nextFeatures, label);
 
-    // Positionne immédiatement la timeline sur la nouvelle année personnalisée si présente
+    // Immediately set timeline to the new custom year if present
     const firstCustomYears = list
       .map((item: Feature) => getFeatureCustomYears(item))
       .find(
@@ -1804,7 +1282,7 @@ function onOpenTextValidation(mapId: string | null) {
   }
 
   textValidationEntries.value = targetFeatures.map((f: Feature) =>
-    featureToValidationEntry(f, featureVisibility.value.get(f.id) !== false),
+    featureToValidationEntry(f, featureVisibility.valueOf.get(f.id) !== false),
   );
 
   showTextValidationModal.value = true;
@@ -1824,7 +1302,7 @@ async function onConfirmTextValidation(validatedItems: TextValidationEntry[]) {
 
     for (const id of openedIds) {
       if (!validatedMap.has(id)) {
-        featureVisibility.value.delete(id);
+        featureVisibility.valueOf.delete(id);
       }
     }
 
@@ -1834,11 +1312,11 @@ async function onConfirmTextValidation(validatedItems: TextValidationEntry[]) {
         const validated = validatedMap.get(f.id);
         if (!validated) return f;
 
-        featureVisibility.value.set(f.id, validated.selected);
+        featureVisibility.valueOf.set(f.id, validated.selected);
         return applyValidationToFeature(f, validated);
       });
 
-    featureVisibility.value = new Map(featureVisibility.value);
+    featureVisibility.valueOf = new Map(featureVisibility.valueOf);
     commitFeatureSnapshot(nextFeatures, "Validation des textes");
     await onSaveMap(nextFeatures);
     showTextValidationModal.value = false;
@@ -1872,7 +1350,7 @@ async function requireProjectId(): Promise<string> {
 }
 
 function openAddMapDialog() {
-  addMapDialogRef.value?.open();
+  mapDialogsRef.value?.openAddMapDialog();
 }
 
 function selectMap(mapId: string) {
@@ -1924,7 +1402,7 @@ function openEditMapDialog(mapId: string) {
     showAlert("error", "Impossible de trouver la carte à modifier.");
     return;
   }
-  editMapPeriodDialogRef.value?.open(period);
+  mapDialogsRef.value?.openEditMapPeriodDialog(period);
 }
 
 async function saveMapPeriod(payload: {
@@ -1934,8 +1412,8 @@ async function saveMapPeriod(payload: {
   endDate: string;
   exactDate: boolean;
 }) {
-  editMapPeriodDialogRef.value?.setSaving(true);
-  editMapPeriodDialogRef.value?.setError("");
+  mapDialogsRef.value?.setEditMapPeriodSaving(true);
+  mapDialogsRef.value?.setEditMapPeriodError("");
   try {
     const targetProjectId = await requireProjectId();
     const response = await apiFetch(
@@ -2006,16 +1484,16 @@ async function saveMapPeriod(payload: {
     }
 
     await loadProjectMapsForTimeline();
-    editMapPeriodDialogRef.value?.close();
+    mapDialogsRef.value?.closeEditMapPeriodDialog();
     showAlert("success", "Nom et période de la carte mis à jour.");
   } catch (error) {
     console.error("Failed to update map metadata:", error);
-    editMapPeriodDialogRef.value?.setError(
+    mapDialogsRef.value?.setEditMapPeriodError(
       "Erreur lors de l'enregistrement du nom et de la période.",
     );
     showAlert("error", "Erreur lors de la mise à jour de la carte.");
   } finally {
-    editMapPeriodDialogRef.value?.setSaving(false);
+    mapDialogsRef.value?.setEditMapPeriodSaving(false);
   }
 }
 
@@ -2053,7 +1531,7 @@ async function createMapForProject(formPayload: {
     }
 
     const payload = snakeToCamel(await res.json()) as { mapId: string };
-    addMapDialogRef.value?.close();
+    mapDialogsRef.value?.closeAddMapDialog();
     router.push(`/televersement/${payload.mapId}?projectId=${targetProjectId}`);
   } catch (e) {
     console.error("Failed to create map for project:", e);
@@ -2068,7 +1546,7 @@ function openDuplicateMapDialog(defaultSourceMapId?: string) {
     : route.params.mapId;
   const targetId =
     defaultSourceMapId || routeMapId || mapPeriods.value[0]?.id || "";
-  duplicateMapDialogRef.value?.open(targetId);
+  mapDialogsRef.value?.openDuplicateMapDialog(targetId);
 }
 
 async function onDuplicateMapSubmit(payload: {
@@ -2106,7 +1584,7 @@ async function onDuplicateMapSubmit(payload: {
     }
 
     const resData = await res.json().catch(() => ({}));
-    duplicateMapDialogRef.value?.close();
+    mapDialogsRef.value?.closeDuplicateMapDialog();
     showAlert("success", `Carte dupliquée avec succès : "${payload.newTitle}"`);
 
     await loadProjectMapsForTimeline();
@@ -2124,7 +1602,7 @@ async function onDuplicateMapSubmit(payload: {
     }
   } catch (error: any) {
     console.error("Failed to duplicate map:", error);
-    duplicateMapDialogRef.value?.setError(
+    mapDialogsRef.value?.setDuplicateMapError(
       error?.message || "Erreur lors de la duplication de la carte.",
     );
     showAlert("error", "Erreur lors de la duplication de la carte.");
@@ -2134,7 +1612,7 @@ async function onDuplicateMapSubmit(payload: {
 }
 
 function reconcileVisibility(list: Feature[]) {
-  const next = new Map<string, boolean>(featureVisibility.value);
+  const next = new Map<string, boolean>(featureVisibility.valueOf);
   for (const f of list) {
     const id = f?.id;
     if (id != null && next.get(id) === undefined) {
@@ -2147,13 +1625,13 @@ function reconcileVisibility(list: Feature[]) {
   for (const k of next.keys()) {
     if (!ids.has(k)) next.delete(k);
   }
-  featureVisibility.value = next;
+  featureVisibility.valueOf = next;
 }
 
 async function loadInitialFeatures() {
   if (!projectId.value) {
     features.value = [];
-    featureVisibility.value = new Map();
+    featureVisibility.valueOf = new Map();
     return;
   }
 
@@ -2236,7 +1714,7 @@ async function loadCurrentMapInfo(): Promise<void> {
 async function openCreateCopyDialog() {
   await loadCurrentMapInfo();
 
-  createProjectDialogRef.value?.open({
+  mapDialogsRef.value?.openCreateProjectDialog({
     title: currentMapTitle.value,
     description: currentMapDescription.value,
     isPrivate: true,
@@ -2244,9 +1722,9 @@ async function openCreateCopyDialog() {
 }
 
 function toggleFeatureVisibility(featureId: string, visible: boolean) {
-  const next = new Map<string, boolean>(featureVisibility.value);
+  const next = new Map<string, boolean>(featureVisibility.valueOf);
   next.set(featureId, visible);
-  featureVisibility.value = next;
+  featureVisibility.valueOf = next;
 }
 
 function isEditableTarget(target: EventTarget | null): boolean {
@@ -2624,7 +2102,7 @@ watch(
   ) => {
     if (!newMapId || newMapId === oldMapId) return;
 
-    featureVisibility.value = new Map();
+    featureVisibility.valueOf = new Map();
     await loadCurrentMapInfo();
 
     if (shouldSaveAfterCopy.value) {
@@ -2740,7 +2218,7 @@ async function onSaveMap(featuresOverride?: Feature[]) {
       properties: {
         ...feature.properties,
         isVisible:
-          featureVisibility.value.get(feature.id) ??
+          featureVisibility.valueOf.get(feature.id) ??
           feature.properties?.isVisible ??
           true,
       },
