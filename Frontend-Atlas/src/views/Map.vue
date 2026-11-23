@@ -473,8 +473,9 @@ function onEditFeatureRequest(feature: Feature) {
 
 function onSelectMap(mapId: string) {
   const period = mapPeriods.value.find((p: MapPeriod) => String(p.id) === String(mapId));
-  if (period && period.startYear != null) {
-    selectedYear.value = period.startYear;
+  const year = period ? ((period as any).startYear ?? toYear(period.startDate)) : null;
+  if (period && year != null) {
+    selectedYear.value = year;
     if (period.startDate && (period as any).exactDate) {
       selectedExactDate.value = period.startDate;
     } else {
@@ -498,8 +499,9 @@ function onSelectFeatures(ids: string[]) {
     const mapId = selectedFeats.find((f: Feature) => f.mapId)?.mapId;
     if (mapId) {
       const period = mapPeriods.value.find((p: MapPeriod) => String(p.id) === String(mapId));
-      if (period && period.startYear != null && timelineMode.value !== "global" && selectedYear.value !== period.startYear) {
-        selectedYear.value = period.startYear;
+      const year = period ? ((period as any).startYear ?? toYear(period.startDate)) : null;
+      if (period && year != null && timelineMode.value !== "global" && selectedYear.value !== year) {
+        selectedYear.value = year;
       }
     }
   }

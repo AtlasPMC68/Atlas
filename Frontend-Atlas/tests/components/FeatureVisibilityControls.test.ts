@@ -188,7 +188,7 @@ describe("FeatureVisibilityControls - Text Validation Button", () => {
       },
     });
 
-    const titleBtn = wrapper.find('button[title*="Carte Québec 1900"]');
+    const titleBtn = wrapper.find('[data-testid="map-title-btn-map-1"]');
     await titleBtn.trigger("click");
     expect(wrapper.emitted("select-map")).toEqual([["map-1"]]);
 

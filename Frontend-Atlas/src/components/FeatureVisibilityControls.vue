@@ -105,6 +105,7 @@
                       type="button"
                       class="text-sm font-bold text-gray-900 truncate text-left hover:text-primary flex-1 min-w-0"
                       :title="`${mapGroup.title} (clic pour sélectionner, double-clic pour modifier)`"
+                      :data-testid="`map-title-btn-${mapGroup.id}`"
                       @click.stop="emit('select-map', mapGroup.id)"
                       @dblclick.stop="emit('edit-map', mapGroup.id)"
                     >
@@ -792,7 +793,7 @@
 
   <!-- Delete feature confirmation dialog -->
   <dialog ref="deleteFeatureDialogRef" class="modal">
-    <div class="modal-box max-w-md">
+    <div class="modal-box max-w-lg">
       <h3 class="text-lg font-bold flex items-center gap-2">
         <ExclamationTriangleIcon v-if="hasMultiMapFeatureToDelete" class="w-5 h-5 text-warning shrink-0" />
         {{ hasMultiMapFeatureToDelete ? "Élément partagé sur plusieurs cartes" : "Supprimer l'élément" }}
@@ -812,7 +813,7 @@
         Cette action est irréversible.
       </p>
 
-      <div class="modal-action flex-wrap gap-2">
+      <div class="modal-action flex items-center justify-end gap-2 flex-wrap">
         <button
           class="btn btn-ghost"
           :disabled="isDeletingFeature"
@@ -832,7 +833,7 @@
         </button>
         <button
           class="btn btn-error"
-          :class="{ 'btn-outline': hasMultiMapFeatureToDelete }"
+          :class="hasMultiMapFeatureToDelete ? 'btn-outline text-error hover:!text-white' : 'text-white'"
           data-testid="confirm-delete-feature-btn"
           :disabled="isDeletingFeature"
           @click="onDeleteFeature"
@@ -841,7 +842,7 @@
             v-if="isDeletingFeature"
             class="loading loading-spinner loading-xs"
           ></span>
-          <span v-else class="text-white">
+          <span v-else>
             {{ hasMultiMapFeatureToDelete ? "Supprimer de toutes les cartes" : "Supprimer" }}
           </span>
         </button>

@@ -370,14 +370,29 @@ export function cloneFeatureWithOffset(
   clonedProps.endDate = null;
   clonedProps.exactDate = false;
 
-  // Clear default name
-  clonedProps.name = "";
-  if (targetType === "label") {
-    clonedProps.labelText = "";
+  // Preserve feature name, labelText and typography styles for text elements, clear for geometry shapes
+  const isText = targetType === "label" || isTextFeature(source);
+  const baseName = isText ? (source.properties?.name || source.name || "") : "";
+  const baseLabel = isText ? (source.properties?.labelText || baseName) : "";
+  clonedProps.name = baseName;
+  if (isText && baseLabel) {
+    clonedProps.labelText = baseLabel;
   } else {
     delete clonedProps.labelText;
     delete clonedProps.wordType;
     delete clonedProps.rawType;
+  }
+  if (source.properties?.wordType) {
+    clonedProps.wordType = source.properties.wordType;
+  }
+  if (source.properties?.rawType) {
+    clonedProps.rawType = source.properties.rawType;
+  }
+  if (source.properties?.customLabelStyleId) {
+    clonedProps.customLabelStyleId = source.properties.customLabelStyleId;
+  }
+  if (source.properties?.customLabelStyle) {
+    clonedProps.customLabelStyle = source.properties.customLabelStyle;
   }
 
   clonedProps.mapElementType = targetType;
@@ -388,13 +403,13 @@ export function cloneFeatureWithOffset(
     mapId: null,
     mapIds: [],
     ...(("map_id" in source || "map_id" in clonedProps) ? { map_id: null } : {}),
-    name: "",
+    name: baseName,
     geometry: newGeometry,
     properties: {
       ...clonedProps,
-      name: "",
+      name: baseName,
       mapElementType: targetType,
-      ...(targetType === "label" ? { labelText: "" } : {}),
+      ...(isText && baseLabel ? { labelText: baseLabel } : {}),
     },
     createdAt: now,
     updatedAt: now,

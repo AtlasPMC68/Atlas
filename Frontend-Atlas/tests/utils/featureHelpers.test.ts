@@ -251,9 +251,9 @@ describe("featureHelpers - copy / paste functionality", () => {
       };
 
       const clonedText = cloneFeatureWithOffset(textFeature, 0.1, 0.1);
-      expect(clonedText.name).toBe("");
-      expect(clonedText.properties.name).toBe("");
-      expect(clonedText.properties.labelText).toBe("");
+      expect(clonedText.name).toBe("Nouvelle-France");
+      expect(clonedText.properties.name).toBe("Nouvelle-France");
+      expect(clonedText.properties.labelText).toBe("Nouvelle-France");
       expect(clonedText.properties.mapElementType).toBe("label");
       expect(clonedText.properties.sizePx).toBe(16);
       expect(clonedText.mapId).toBeNull();
