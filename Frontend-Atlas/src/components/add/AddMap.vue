@@ -3,7 +3,10 @@
     <div class="modal-box p-0">
       <form @submit.prevent="createMapForProject">
         <div class="card-body">
-          <h3 class="text-lg font-bold">Ajouter une carte au projet</h3>
+          <h3 class="text-lg font-bold flex items-center gap-2">
+            Ajouter une carte au projet
+            <GuideLink guide="importation" :page="IMPORT_GUIDE_PAGES.addMap" tooltip-position="right" />
+          </h3>
 
           <fieldset class="fieldset" :disabled="isCreatingMap">
             <label class="label">Nom de la carte</label>
@@ -94,6 +97,8 @@
 <script setup lang="ts">
 import { ref } from "vue";
 import { yearToIsoEnd, yearToIsoStart } from "../../utils/dateUtils";
+import GuideLink from "../GuideLink.vue";
+import { IMPORT_GUIDE_PAGES } from "../../utils/guides";
 
 type AddMapPayload = {
   title: string;

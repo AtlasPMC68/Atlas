@@ -19,6 +19,7 @@ import { TrashIcon } from "@heroicons/vue/24/solid";
 import { clearAlert, showAlert } from "../composables/useAlert";
 import Alert from "../components/Alert.vue";
 import CreateProjectDialog from "../components/CreateProjectDialog.vue";
+import GuideLink from "../components/GuideLink.vue";
 
 const maps = ref<MapData[]>([]);
 const router = useRouter();
@@ -267,13 +268,16 @@ async function fetchMapsAndRender() {
             placeholder="Rechercher un projet par titre ou description"
           />
         </label>
-        <button
-          class="btn-primary flex items-center"
-          @click="openCreateProjectDialog"
-        >
-          <PlusIcon class="h-5 w-5" />
-          Nouveau projet
-        </button>
+        <div class="flex items-center gap-3">
+          <button
+            class="btn-primary flex items-center"
+            @click="openCreateProjectDialog"
+          >
+            <PlusIcon class="h-5 w-5" />
+            Nouveau projet
+          </button>
+          <GuideLink guide="demarrage" tooltip-position="bottom" />
+        </div>
       </div>
     </div>
     <CreateProjectDialog
