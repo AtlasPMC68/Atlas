@@ -20,8 +20,9 @@
         ✕
       </button>
 
-      <h2 id="text-validation-title" class="text-xl font-semibold">
+      <h2 id="text-validation-title" class="text-xl font-semibold flex items-center gap-2">
         Validation des textes non reconnus
+        <GuideLink guide="importation" :page="IMPORT_GUIDE_PAGES.validation" tooltip-position="right" />
       </h2>
 
       <p class="text-sm opacity-70">
@@ -239,6 +240,8 @@ import {
   type CustomLabelStyle,
 } from "../../utils/labelPresentation";
 import { TrashIcon } from "@heroicons/vue/24/outline";
+import GuideLink from "../GuideLink.vue";
+import { IMPORT_GUIDE_PAGES } from "../../utils/guides";
 import { toTextRegions, type TextValidationEntry } from "../../utils/textValidation";
 import {
   WORD_TYPE_STYLES,

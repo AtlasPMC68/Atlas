@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { RocketLaunchIcon } from "@heroicons/vue/24/outline";
-import { EyeIcon } from "@heroicons/vue/24/outline";
+import { EyeIcon, BookOpenIcon } from "@heroicons/vue/24/outline";
+import { GUIDES } from "../utils/guides";
 </script>
 
 <template>
@@ -53,6 +54,16 @@ import { EyeIcon } from "@heroicons/vue/24/outline";
             <EyeIcon class="w-5 h-5 mr-2" />
             Voir la démo
           </RouterLink>
+          <a
+            :href="GUIDES.demarrage.url"
+            target="_blank"
+            rel="noopener"
+            class="btn btn-outline btn-primary px-8 py-4 text-lg hover:scale-105 transform transition-all inline-flex items-center justify-center"
+            data-testid="home-guide-button"
+          >
+            <BookOpenIcon class="w-5 h-5 mr-2" />
+            Guide de démarrage
+          </a>
         </div>
       </div>
     </div>

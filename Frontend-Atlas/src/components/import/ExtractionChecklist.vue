@@ -2,7 +2,10 @@
   <div class="flex flex-col gap-3.5">
     <div class="flex justify-between items-start gap-3">
       <div>
-        <h2 class="m-0 text-[19px] font-bold text-gray-900">Paramètres d'extraction</h2>
+        <h2 class="m-0 text-[19px] font-bold text-gray-900 flex items-center gap-2">
+          Paramètres d'extraction
+          <GuideLink guide="importation" :page="IMPORT_GUIDE_PAGES.saisie" tooltip-position="bottom" />
+        </h2>
         <p class="m-0 mt-0.5 text-[13px] text-gray-500">
           {{
             ready
@@ -223,6 +226,8 @@
 import { computed } from "vue";
 import { CheckIcon } from "@heroicons/vue/24/solid";
 import { PlayIcon } from "@heroicons/vue/24/outline";
+import GuideLink from "../GuideLink.vue";
+import { IMPORT_GUIDE_PAGES } from "../../utils/guides";
 import ChecklistGroup from "./ChecklistGroup.vue";
 import ChecklistItem from "./ChecklistItem.vue";
 import {

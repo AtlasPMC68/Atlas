@@ -1,0 +1,13 @@
+name: Proposer une idée
+description: Une fonctionnalité ou une amélioration qui vous serait utile en classe.
+title: "[Idée] "
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: idee
+    attributes:
+      label: Quelle est votre idée ?
+      description: Expliquez ce que vous aimeriez pouvoir faire, et pourquoi ce serait utile pour vous ou vos élèves.
+      placeholder: "Ex. : J'aimerais pouvoir imprimer la carte avec sa légende pour la distribuer en classe."
+    validations:
+      required: true

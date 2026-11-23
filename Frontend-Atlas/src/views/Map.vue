@@ -97,6 +97,10 @@
               role="switch"
               class="timeline-filter-toggle"
             />
+            <span class="ml-auto inline-flex items-center gap-1 text-base-content/60">
+              Guide du projet
+              <GuideLink guide="projet" tooltip-position="left" />
+            </span>
           </div>
         </div>
       </div>
@@ -169,6 +173,7 @@ import keycloak from "../keycloak";
 import L, { type Map as LeafletMap } from "leaflet";
 import { captureMapThumbnail } from "../utils/mapThumbnail";
 import Alert from "../components/Alert.vue";
+import GuideLink from "../components/GuideLink.vue";
 import { clearAlert, showAlert } from "../composables/useAlert";
 import { FeatureHistoryService } from "../services/FeatureHistoryService";
 import {

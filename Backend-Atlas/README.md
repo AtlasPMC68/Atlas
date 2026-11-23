@@ -1,69 +1,22 @@
-# Backend - Maps Processing API
+# Backend Atlas
 
-## Installation & Local Setup
+API FastAPI, workers Celery et worker de lecture de texte (Florence-2) d'Atlas.
 
-1. Create a virtual environment:
-   ```sh
-   python -m venv .venv
-   ```
+Le backend se lance avec le reste d'Atlas, dans Docker : voir le [guide de développement](../docs/developpement.md). Le rôle de chaque service est décrit dans l'[architecture](../docs/architecture.md).
 
-2. Activate the virtual environment:
-   - **Windows:**
-     ```powershell
-     .venv\Scripts\activate
-     ```
-   - **macOS / Linux:**
-     ```sh
-     source .venv/bin/activate
-     ```
+| Dossier | Contenu |
+|---|---|
+| [`app/routers/`](app/routers/) | Points d'entrée de l'API |
+| [`app/services/`](app/services/) | Logique métier |
+| [`app/models/`](app/models/), [`app/schemas/`](app/schemas/) | Modèles SQLAlchemy et schémas Pydantic |
+| [`app/utils/`](app/utils/) | Extraction des couleurs, des formes et du texte |
+| [`app/utils/georeferencing/`](app/utils/georeferencing/) | Géoréférencement ([documentation](../dev-docs/georeferencing.md)) |
+| [`app/tasks.py`](app/tasks.py) | Tâches Celery |
+| [`db/`](db/) | Migrations SQL |
+| [`ocr-florence/`](ocr-florence/) | Worker Florence-2 (image Docker séparée) |
+| [`tests/`](tests/) | Tests pytest et cas de géoréférencement |
+| [`scripts/`](scripts/) | Outils de développement |
 
-3. Install dependencies:
-   ```sh
-   pip install -r requirements.txt
-   ```
+## Outil de test du géoréférencement
 
-4. Start the development server:
-   ```sh
-   uvicorn app.main:app --reload
-   ```
-
-## Health Checks
-
-In another terminal, test the API status:
-
-```sh
-curl http://localhost:8000/ping
-```
-Expected response:
-```json
-"pong"
-```
-
-### Database Connection Test
-
-```sh
-curl http://localhost:8000/db-test
-```
-Expected response:
-```json
-{"db_status": "connected", "result": [1]}
-```
-
-## Georeferencing Tests
-
-The testing tool (regression and exploration) is described in [`dev-docs/dev-test-tool.md`](../dev-docs/dev-test-tool.md).
-To intentionally replace the best result (`best`) of a test case with its latest run (even if lower scoring), see section 5: `scripts/force_promote_georef_best.py`.
-
-## Geographic Entities Dataset Generation
-
-To update or regenerate the offline gazetteer dataset (`app/data/geographic_entities.json`) using `geonamescache` and Natural Earth GeoJSON layers:
-
-- **Windows (PowerShell):**
-  ```powershell
-  Get-Content scripts\update_geographic_entities.py | docker exec -i atlas-backend python -
-  ```
-
-- **macOS / Linux:**
-  ```sh
-  docker exec -i atlas-backend python < scripts/update_geographic_entities.py
-  ```
+L'outil de création et d'évaluation des cas de test est décrit dans [`dev-docs/dev-test-tool.md`](../dev-docs/dev-test-tool.md). Pour remplacer volontairement le meilleur résultat (`best`) d'un cas par sa dernière exécution, même moins bonne, voir la section 5 de ce document (`scripts/force_promote_georef_best.py`).
