@@ -1,4 +1,5 @@
 import L from "leaflet";
+import type { Feature } from "../typescript/feature";
 
 export type PmDraggableLayer = L.Layer & {
   pm?: { enableLayerDrag?: () => void; disableLayerDrag?: () => void };
@@ -196,3 +197,45 @@ export function enablePixelSpaceDrag(
     dragState = null;
   };
 }
+
+/**
+ * Translates a Feature's coordinates in pixel space by (dx, dy) on the given Leaflet map.
+ */
+export function nudgeFeatureByPixels(
+  feature: Feature,
+  leafletMap: L.Map,
+  dx: number,
+  dy: number,
+): Feature {
+  if (!feature.geometry) return feature;
+
+  const shiftLatLng = (lat: number, lng: number): [number, number] => {
+    const pt = leafletMap.latLngToContainerPoint([lat, lng]);
+    const newPt = L.point(pt.x + dx, pt.y + dy);
+    const ll = leafletMap.containerPointToLatLng(newPt);
+    return [ll.lat, ll.lng];
+  };
+
+  const shiftCoords = (coords: unknown): unknown => {
+    if (!Array.isArray(coords)) return coords;
+    if (typeof coords[0] === "number") {
+      const [sLat, sLng] = shiftLatLng(
+        coords[1] as number,
+        coords[0] as number,
+      );
+      return [sLng, sLat];
+    }
+    return coords.map(shiftCoords);
+  };
+
+  return {
+    ...feature,
+    geometry: {
+      ...feature.geometry,
+      coordinates: shiftCoords(
+        feature.geometry.coordinates,
+      ) as typeof feature.geometry.coordinates,
+    } as any,
+  };
+}
+

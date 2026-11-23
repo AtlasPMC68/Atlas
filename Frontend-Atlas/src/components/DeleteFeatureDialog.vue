@@ -356,8 +356,10 @@ function open(featureOrFeatures: Feature | Feature[] | string | string[]) {
     getFeatureMapIds(f).forEach((id) => allMapIds.add(String(id)));
   });
 
-  if (props.activeMapId && allMapIds.has(String(props.activeMapId))) {
-    newSelection.add(String(props.activeMapId));
+  if (props.activeMapId) {
+    if (allMapIds.has(String(props.activeMapId))) {
+      newSelection.add(String(props.activeMapId));
+    }
   } else {
     allMapIds.forEach((id) => newSelection.add(id));
   }

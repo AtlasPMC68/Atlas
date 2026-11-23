@@ -260,6 +260,29 @@ describe("featureHelpers - copy / paste functionality", () => {
       expect(clonedText.properties.mapId).toBeNull();
     });
 
+    it("preserves empty name (name: '') without injecting any default fallback name", () => {
+      const sourceWithEmptyName: Feature = {
+        id: "feat-empty-name",
+        type: "Feature",
+        name: "",
+        mapId: "map-123",
+        geometry: {
+          type: "Point",
+          coordinates: [-71.2, 46.8],
+        },
+        properties: {
+          name: "",
+          labelText: "",
+          mapElementType: "label",
+        },
+      };
+
+      const clone = cloneFeatureWithOffset(sourceWithEmptyName, 0.1, 0.2, "clone-123", "2026-05-01T12:00:00Z");
+
+      expect(clone.name).toBe("");
+      expect(clone.properties.name).toBe("");
+    });
+
     it("assigns mapId: null to all cloned elements (zones, lines, shapes)", () => {
       const sourceZoneWithMap: Feature = {
         ...zoneFeature,

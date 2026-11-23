@@ -159,3 +159,103 @@ export function doesLayerIntersectBounds(
 
   return false;
 }
+
+export interface SelectionModifierState {
+  selectedId?: string | number | null;
+  multiSelectedIds?: (string | number)[];
+  lastAnchorId?: string | number | null;
+  orderedIds?: (string | number)[];
+}
+
+export interface SelectionModifierResult {
+  selectedId: string | null;
+  multiSelectedIds: string[];
+  newAnchorId: string;
+  isModified: boolean;
+}
+
+/**
+ * Standardized handler for Shift (range selection) and Ctrl/Meta (toggle selection) modifiers
+ * across map layers, sidebar lists, legend, and timeline popovers.
+ */
+export function applySelectionModifier(
+  clickedId: string | number,
+  isCtrl: boolean,
+  isShift: boolean,
+  state: SelectionModifierState,
+): SelectionModifierResult {
+  const targetId = String(clickedId);
+
+  if (isCtrl) {
+    const currentList = (state.multiSelectedIds ?? []).map(String);
+    const next = new Set<string>(currentList);
+    if (state.selectedId != null && state.selectedId !== "") {
+      next.add(String(state.selectedId));
+    } else if (state.lastAnchorId != null && state.lastAnchorId !== "") {
+      next.add(String(state.lastAnchorId));
+    }
+    if (next.has(targetId)) {
+      next.delete(targetId);
+    } else {
+      next.add(targetId);
+    }
+    return {
+      selectedId: null,
+      multiSelectedIds: Array.from(next),
+      newAnchorId: targetId,
+      isModified: true,
+    };
+  }
+
+  if (isShift) {
+    const orderedIds = (state.orderedIds ?? []).map(String);
+    const anchorId =
+      state.selectedId != null && state.selectedId !== ""
+        ? String(state.selectedId)
+        : state.lastAnchorId != null && state.lastAnchorId !== ""
+          ? String(state.lastAnchorId)
+          : state.multiSelectedIds && state.multiSelectedIds.length > 0
+            ? String(state.multiSelectedIds[0])
+            : null;
+    const range = getContinuousRangeSelection(orderedIds, anchorId, targetId);
+    return {
+      selectedId: null,
+      multiSelectedIds: range,
+      newAnchorId: anchorId || targetId,
+      isModified: true,
+    };
+  }
+
+  return {
+    selectedId: targetId,
+    multiSelectedIds: [],
+    newAnchorId: targetId,
+    isModified: false,
+  };
+}
+
+/**
+ * Calculates geometric nudge delta (dx, dy) in pixels based on arrow keys.
+ */
+export function getNudgeDelta(
+  key: string,
+  isShift: boolean,
+  baseNudgePx = 1,
+  shiftNudgePx = 10,
+): { dx: number; dy: number } | null {
+  const lower = key.toLowerCase();
+  const step = isShift ? shiftNudgePx : baseNudgePx;
+  switch (lower) {
+    case "arrowright":
+      return { dx: step, dy: 0 };
+    case "arrowleft":
+      return { dx: -step, dy: 0 };
+    case "arrowdown":
+      return { dx: 0, dy: step };
+    case "arrowup":
+      return { dx: 0, dy: -step };
+    default:
+      return null;
+  }
+}
+

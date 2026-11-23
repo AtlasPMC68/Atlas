@@ -67,6 +67,7 @@ import type { Feature } from "../../typescript/feature";
 import { rgbToRgba } from "../../utils/utils";
 import { createFeatureDoubleClickHandler } from "../../utils/featureInteraction";
 import {
+  applySelectionModifier,
   getContinuousRangeSelection,
 } from "../../utils/selectionUtils";
 
@@ -120,32 +121,17 @@ const { handleClick: onFeatureClick, handleDblClick: onFeatureDblClick } =
       const isCtrl = Boolean(mouseEv?.ctrlKey || mouseEv?.metaKey);
       const isShift = Boolean(mouseEv?.shiftKey);
 
-      if (isCtrl) {
-        const currentList = props.multiSelectedFeatureIds ?? [];
-        const next = new Set<string>(currentList);
-        if (props.selectedFeatureId) next.add(String(props.selectedFeatureId));
-        if (next.has(featureId)) {
-          next.delete(featureId);
-        } else {
-          next.add(featureId);
-        }
-        lastSelectedAnchorId.value = featureId;
-        emit("select-feature", null);
-        emit("select-features", Array.from(next));
+      if (isCtrl || isShift) {
+        const result = applySelectionModifier(featureId, isCtrl, isShift, {
+          selectedId: props.selectedFeatureId,
+          multiSelectedIds: props.multiSelectedFeatureIds ?? [],
+          lastAnchorId: lastSelectedAnchorId.value,
+          orderedIds: visibleZoneFeatures.value.map((f: Feature) => String(f.id)),
+        });
+        lastSelectedAnchorId.value = result.newAnchorId;
+        emit("select-feature", result.selectedId);
+        emit("select-features", result.multiSelectedIds);
         return;
-      }
-
-      if (isShift) {
-        const orderedIds = visibleZoneFeatures.value.map((f: Feature) => String(f.id));
-        const range = getContinuousRangeSelection(
-          orderedIds,
-          lastSelectedAnchorId.value,
-          featureId,
-        );
-        if (range.length > 1) {
-          emit("select-features", range);
-          return;
-        }
       }
 
       lastSelectedAnchorId.value = featureId;

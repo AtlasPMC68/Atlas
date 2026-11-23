@@ -98,6 +98,12 @@
                   @click.stop
                   @change="toggleItemSelection(item)"
                 />
+                <span
+                  v-if="itemHasPoint(item)"
+                  class="inline-block h-2.5 w-2.5 rounded-full shrink-0 border border-base-content"
+                  :style="{ backgroundColor: getItemPointColor(item) }"
+                  title="Avec point sur la carte"
+                ></span>
                 <input
                   v-model="item.text"
                   type="text"
@@ -148,7 +154,7 @@
                     :value="`custom:${style.id}`"
                     :style="getCustomStyleObject(style)"
                   >
-                    {{ style.name }}
+                    {{ getCustomStyleOptionLabel(style) }}
                   </option>
                   <option
                     v-for="(_, typeKey) in WORD_TYPE_STYLES"
@@ -237,12 +243,15 @@ import {
   getEntryTypography,
   getWordTypeOptionLabel,
   getWordTypeOptionStyle,
+  getCustomStyleOptionLabel,
+  hasCustomStylePoint,
   type CustomLabelStyle,
 } from "../../utils/labelPresentation";
 import { TrashIcon } from "@heroicons/vue/24/outline";
 import { toTextRegions, type TextValidationEntry } from "../../utils/textValidation";
 import {
   WORD_TYPE_STYLES,
+  WORD_TYPE_TAXONOMY,
   formatWordText,
   normalizeWordType,
 } from "../../utils/wordStyles";
@@ -490,6 +499,29 @@ function itemRightInputStyle(item: TextValidationEntry): CSSProperties {
     textTransform: typo.textTransform,
     fontStyle: typo.fontStyle,
   };
+}
+
+function itemHasPoint(item: TextValidationEntry): boolean {
+  if (item.customLabelStyle) {
+    return hasCustomStylePoint(item.customLabelStyle);
+  }
+  if (item.customLabelStyleId) {
+    const style = availableCustomLabelStyles.value?.find((s) => s.id === item.customLabelStyleId);
+    if (style) return hasCustomStylePoint(style);
+  }
+  const tax = WORD_TYPE_TAXONOMY[normalizeWordType(item.wordType)];
+  return tax?.mapElementType === "point";
+}
+
+function getItemPointColor(item: TextValidationEntry): string {
+  if (item.customLabelStyle) {
+    return item.customLabelStyle.pointColor || item.customLabelStyle.color || "#000000";
+  }
+  if (item.customLabelStyleId) {
+    const style = availableCustomLabelStyles.value?.find((s) => s.id === item.customLabelStyleId);
+    if (style) return style.pointColor || style.color || "#000000";
+  }
+  return "#000000";
 }
 
 function onTextInput(item: TextValidationEntry) {

@@ -158,7 +158,7 @@
 
               <div class="flex flex-col gap-2 mt-2 max-h-64 overflow-y-auto overflow-x-hidden p-1 -m-1">
                 <div
-                  v-for="mapGroup in getItemsByMap(marker.items)"
+                  v-for="mapGroup in (marker.mapGroups || getItemsByMap(marker.items))"
                   :key="mapGroup.mapId || 'general'"
                   class="flex flex-col"
                 >
@@ -313,6 +313,7 @@
 import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { PencilSquareIcon } from "@heroicons/vue/24/outline";
 import { parseIsoDateUtc, toIsoDateUtc } from "../utils/dateUtils";
+import { applySelectionModifier } from "../utils/selectionUtils";
 import type { DayTick, SliderPeriod, TimelineElementMarker } from "../typescript/map";
 
 export type TimelineMarkerItem = TimelineElementMarker & {
@@ -323,6 +324,7 @@ export interface GroupedElementMarker {
   year: number;
   endYear?: number | null;
   items: TimelineMarkerItem[];
+  mapGroups?: MarkerMapGroup[];
   hasCustomItem: boolean;
   label: string;
   tooltip: string;
@@ -420,15 +422,11 @@ function onPopoverItemClick(item: TimelineMarkerItem, year: number, event?: Mous
   selectYear(year);
   const isCtrl = Boolean(event?.ctrlKey || event?.metaKey);
   if (isCtrl) {
-    const current = new Set(props.multiSelectedFeatureIds ?? []);
-    if (props.selectedFeatureId) current.add(String(props.selectedFeatureId));
-    const targetId = String(item.id);
-    if (current.has(targetId)) {
-      current.delete(targetId);
-    } else {
-      current.add(targetId);
-    }
-    emit("select-elements", Array.from(current));
+    const result = applySelectionModifier(item.id, true, false, {
+      selectedId: props.selectedFeatureId,
+      multiSelectedIds: props.multiSelectedFeatureIds,
+    });
+    emit("select-elements", result.multiSelectedIds);
     return;
   }
   emit("select-element", item.id);
@@ -694,6 +692,7 @@ const groupedElementMarkers = computed<GroupedElementMarker[]>(() => {
       year: representativeYear,
       endYear: maxEndYear,
       items,
+      mapGroups: getItemsByMap(items),
       hasCustomItem,
       label: items.length === 1 ? items[0].name : `${items.length} éléments`,
       tooltip,

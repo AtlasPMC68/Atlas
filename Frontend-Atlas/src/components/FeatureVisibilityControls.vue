@@ -361,7 +361,10 @@
                     <span
                       v-if="isEditingPoint"
                       class="inline-block h-3 w-3 rounded-full shrink-0 border border-base-content"
-                      :style="{ backgroundColor: pointPreviewFillColor }"
+                      :style="{
+                        backgroundColor: pointPreviewFillColor,
+                        borderColor: pointPreviewStrokeColor || undefined,
+                      }"
                     ></span>
                     <span class="whitespace-pre-line break-words">
                       {{ editDraft.labelText || editDraft.name || "Exemple de texte" }}
@@ -401,7 +404,7 @@
                     :style="getCustomStyleObject(style)"
                     class="text-sm"
                   >
-                    {{ style.name }}
+                    {{ getCustomStyleOptionLabel(style) }}
                   </option>
                   <option
                     v-for="(_, typeKey) in WORD_TYPE_STYLES"
@@ -875,7 +878,6 @@ import {
   MapIcon,
   PencilSquareIcon,
   PhotoIcon,
-  Square2StackIcon,
   TrashIcon,
 } from "@heroicons/vue/24/outline";
 import {
@@ -894,6 +896,8 @@ import {
   getWordTypeOptionLabel,
   getWordTypeOptionStyle,
   getCustomStyleObject,
+  getCustomStyleOptionLabel,
+  hasCustomStylePoint,
 } from "../utils/labelPresentation";
 import CustomLabelStyleManager from "./CustomLabelStyleManager.vue";
 import DeleteFeatureDialog from "./DeleteFeatureDialog.vue";
@@ -927,6 +931,7 @@ import { FolderArrowDownIcon, PlusIcon, DocumentDuplicateIcon } from "@heroicons
 import { showAlert } from "../composables/useAlert";
 import { createFeatureDoubleClickHandler } from "../utils/featureInteraction";
 import {
+  applySelectionModifier,
   getContinuousRangeSelection,
 } from "../utils/selectionUtils";
 
@@ -1003,10 +1008,27 @@ function onFeatureEndYearInput() {
 
 const isTextElement = computed(() => isTextFeature(featureToEdit.value));
 
+const activeCustomLabelStyle = computed<CustomLabelStyle | undefined>(() => {
+  const selection = editDraft.value.labelStyleSelection ?? "";
+  const customId = selection.startsWith("custom:")
+    ? selection.slice("custom:".length)
+    : editDraft.value.customLabelStyleId;
+  if (customId) {
+    return (
+      availableCustomLabelStyles.value.find(
+        (item: CustomLabelStyle) => item.id === customId,
+      ) ?? editDraft.value.customLabelStyle ?? undefined
+    );
+  }
+  return editDraft.value.customLabelStyle ?? undefined;
+});
+
 const isEditingPoint = computed(() => {
   if (!featureToEdit.value) return false;
   if (isTextElement.value) {
-    if (editDraft.value.customLabelStyle) return false;
+    if (activeCustomLabelStyle.value) {
+      return hasCustomStylePoint(activeCustomLabelStyle.value);
+    }
     const entry = WORD_TYPE_TAXONOMY[editDraft.value.wordType as keyof typeof WORD_TYPE_TAXONOMY];
     return (entry?.mapElementType ?? getMapElementType(featureToEdit.value)) === "point";
   }
@@ -1053,12 +1075,7 @@ function onTextSizeChange() {
 
 const editTextStyle = computed<CSSProperties>(() => {
   if (!isTextElement.value) return {};
-  const selection = editDraft.value.labelStyleSelection ?? "";
-  const style = selection.startsWith("custom:")
-    ? availableCustomLabelStyles.value.find(
-        (item: CustomLabelStyle) => item.id === selection.slice("custom:".length),
-      ) ?? editDraft.value.customLabelStyle
-    : editDraft.value.customLabelStyle;
+  const style = activeCustomLabelStyle.value;
 
   if (style) {
     return getLabelStylePreviewCss(style, { limitSize: true, maxPx: 18 });
@@ -1091,6 +1108,7 @@ const defaultTextSizePx = computed(() =>
 
 const hasGeometryControls = computed(() => {
   if (!featureToEdit.value) return false;
+  if (activeCustomLabelStyle.value || editDraft.value.customLabelStyleId) return false;
   return isEditingPoint.value || !isTextElement.value;
 });
 
@@ -1108,22 +1126,46 @@ const geometrySectionHint = computed(() => {
 });
 
 const pointPreviewFillColor = computed(() => {
+  if (activeCustomLabelStyle.value) {
+    return (
+      activeCustomLabelStyle.value.pointColor ||
+      activeCustomLabelStyle.value.color ||
+      "#000000"
+    );
+  }
   return editDraft.value.colorHex || "#000000";
 });
 
 const pointPreviewFillOpacity = computed(() => {
+  if (activeCustomLabelStyle.value) {
+    return activeCustomLabelStyle.value.pointFillOpacity ?? 0.5;
+  }
   return normalizeOpacity(editDraft.value.fillOpacity) ?? 0.5;
 });
 
 const pointPreviewStrokeColor = computed(() => {
+  if (activeCustomLabelStyle.value) {
+    return (
+      activeCustomLabelStyle.value.pointStrokeColor ||
+      activeCustomLabelStyle.value.pointColor ||
+      activeCustomLabelStyle.value.color ||
+      "#000000"
+    );
+  }
   return editDraft.value.strokeColorHex || editDraft.value.colorHex || "#000000";
 });
 
 const pointPreviewStrokeOpacity = computed(() => {
+  if (activeCustomLabelStyle.value) {
+    return activeCustomLabelStyle.value.pointStrokeOpacity ?? 1;
+  }
   return normalizeOpacity(editDraft.value.strokeOpacity) ?? 1;
 });
 
 const pointPreviewStrokeWidth = computed(() => {
+  if (activeCustomLabelStyle.value) {
+    return activeCustomLabelStyle.value.pointStrokeWidth ?? 1;
+  }
   return normalizeStrokeWidth(editDraft.value.strokeWidth) ?? 1;
 });
 
@@ -1407,6 +1449,14 @@ async function showEditFeatureDialog(feature: Feature) {
   const state = prepareFeatureForEdit(feature);
   featureToEdit.value = state.feature;
   editDraft.value = state.draft;
+  if (editDraft.value.customLabelStyleId) {
+    const matched = availableCustomLabelStyles.value.find(
+      (s: CustomLabelStyle) => s.id === editDraft.value.customLabelStyleId,
+    );
+    if (matched) {
+      editDraft.value.customLabelStyle = matched;
+    }
+  }
   previousFeatureStartYear = editDraft.value.startYear ?? null;
 
   await nextTick();
@@ -1449,37 +1499,17 @@ const { handleClick: onFeatureItemClick, handleDblClick: onFeatureItemDblClick }
       const isCtrl = Boolean(mouseEv?.ctrlKey || mouseEv?.metaKey);
       const isShift = Boolean(mouseEv?.shiftKey);
 
-      if (isCtrl) {
-        const currentList = props.multiSelectedFeatureIds ?? [];
-        const next = new Set<string>(currentList);
-        if (props.selectedFeatureId) {
-          next.add(props.selectedFeatureId);
-        } else if (lastSelectedAnchorId.value) {
-          next.add(lastSelectedAnchorId.value);
-        }
-        if (next.has(featureId)) {
-          next.delete(featureId);
-        } else {
-          next.add(featureId);
-        }
-        lastSelectedAnchorId.value = featureId;
-        emit("select-feature", null);
-        emit("select-features", Array.from(next));
+      if (isCtrl || isShift) {
+        const result = applySelectionModifier(featureId, isCtrl, isShift, {
+          selectedId: props.selectedFeatureId,
+          multiSelectedIds: props.multiSelectedFeatureIds ?? [],
+          lastAnchorId: lastSelectedAnchorId.value,
+          orderedIds: visibleListFeatureIds.value,
+        });
+        lastSelectedAnchorId.value = result.newAnchorId;
+        emit("select-feature", result.selectedId);
+        emit("select-features", result.multiSelectedIds);
         return;
-      }
-
-      if (isShift) {
-        const range = getContinuousRangeSelection(
-          visibleListFeatureIds.value,
-          lastSelectedAnchorId.value,
-          featureId,
-        );
-        if (range.length > 0) {
-          lastSelectedAnchorId.value = lastSelectedAnchorId.value || featureId;
-          emit("select-feature", null);
-          emit("select-features", range);
-          return;
-        }
       }
 
       lastSelectedAnchorId.value = featureId;
@@ -1500,8 +1530,10 @@ async function onEditFeature() {
   if (!featureToEdit.value) return;
   isEditing.value = true;
 
+  const currentCustomStyle = activeCustomLabelStyle.value ?? editDraft.value.customLabelStyle;
   const updatedFeature = coerceEditedFeature(featureToEdit.value, {
     ...editDraft.value,
+    customLabelStyle: currentCustomStyle,
   });
 
   const allUpdated = createFeaturesForSelectedMaps(

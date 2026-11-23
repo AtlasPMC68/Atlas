@@ -87,6 +87,18 @@ export function getLabelStylePreviewCss(
   return css;
 }
 
+export function hasCustomStylePoint(
+  style: CustomLabelStyle | Partial<LabelStyle> | undefined | null,
+): boolean {
+  if (!style) return false;
+  return Boolean(style.hasPoint || style.mapElementType === "point");
+}
+
+export function getCustomStyleOptionLabel(style: CustomLabelStyle): string {
+  const cleanName = style.name?.startsWith("• ") ? style.name.slice(2) : (style.name || "");
+  return hasCustomStylePoint(style) ? `• ${cleanName}` : cleanName;
+}
+
 export function formatCustomStyleOptionLabel(
   style: CustomLabelStyle,
   verbose = true,

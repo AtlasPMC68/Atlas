@@ -376,6 +376,8 @@ import {
   getFeatureMapId,
   getFeatureMapIds,
 } from "../utils/featureHelpers";
+import { nudgeFeatureByPixels } from "../utils/mapDragUtils";
+import { getNudgeDelta } from "../utils/selectionUtils";
 import {
   Bars3Icon,
   ChevronLeftIcon,
@@ -1403,44 +1405,6 @@ function nudgeSelectedFeatures(dx: number, dy: number) {
   commitFeatureSnapshot(nextFeatures);
 }
 
-function nudgeFeatureByPixels(
-  feature: Feature,
-  leafletMap: L.Map,
-  dx: number,
-  dy: number,
-): Feature {
-  if (!feature.geometry) return feature;
-
-  const shiftLatLng = (lat: number, lng: number): [number, number] => {
-    const pt = leafletMap.latLngToContainerPoint([lat, lng]);
-    const newPt = L.point(pt.x + dx, pt.y + dy);
-    const ll = leafletMap.containerPointToLatLng(newPt);
-    return [ll.lat, ll.lng];
-  };
-
-  const shiftCoords = (coords: unknown): unknown => {
-    if (!Array.isArray(coords)) return coords;
-    if (typeof coords[0] === "number") {
-      const [sLat, sLng] = shiftLatLng(
-        coords[1] as number,
-        coords[0] as number,
-      );
-      return [sLng, sLat];
-    }
-    return coords.map(shiftCoords);
-  };
-
-  return {
-    ...feature,
-    geometry: {
-      ...feature.geometry,
-      coordinates: shiftCoords(
-        feature.geometry.coordinates,
-      ) as typeof feature.geometry.coordinates,
-    } as any,
-  };
-}
-
 function onUndo() {
   if (!canUndo.value) return;
   resetMapSelection();
@@ -2175,16 +2139,22 @@ async function onDuplicateMapSubmit(payload: {
       throw new Error(errData?.detail || `Erreur serveur (${res.status})`);
     }
 
+    const resData = await res.json().catch(() => ({}));
     duplicateMapDialogRef.value?.close();
     showAlert("success", `Carte dupliquée avec succès : "${payload.newTitle}"`);
 
     await loadProjectMapsForTimeline();
     await loadInitialFeatures();
 
-    const yearMatch = payload.startDate.match(/^-?\d+/);
-    if (yearMatch) {
-      selectedYear.value = parseInt(yearMatch[0], 10);
-      selectedExactDate.value = payload.exactDate ? payload.startDate : null;
+    const newMapId = resData?.map_id ?? resData?.id;
+    if (newMapId) {
+      selectMap(String(newMapId));
+    } else {
+      const yearMatch = payload.startDate.match(/^-?\d+/);
+      if (yearMatch) {
+        selectedYear.value = parseInt(yearMatch[0], 10);
+        selectedExactDate.value = payload.exactDate ? payload.startDate : null;
+      }
     }
   } catch (error: any) {
     console.error("Failed to duplicate map:", error);
@@ -2561,18 +2531,14 @@ const handleKeyboardShortcuts = (e: KeyboardEvent) => {
     return;
   }
 
-  const NUDGE_PX = e.shiftKey ? 10 : 1;
+  const nudge = getNudgeDelta(key, e.shiftKey);
   if (
-    ["arrowup", "arrowdown", "arrowleft", "arrowright"].includes(key) &&
+    nudge &&
     (selectedFeatureId.value || multiSelectedFeatureIds.value.length > 0)
   ) {
     e.preventDefault();
     if (!leafletMap.value) return;
-    const dx =
-      key === "arrowright" ? NUDGE_PX : key === "arrowleft" ? -NUDGE_PX : 0;
-    const dy =
-      key === "arrowdown" ? NUDGE_PX : key === "arrowup" ? -NUDGE_PX : 0;
-    nudgeSelectedFeatures(dx, dy);
+    nudgeSelectedFeatures(nudge.dx, nudge.dy);
     return;
   }
 };
@@ -2595,7 +2561,13 @@ function onDocumentClick(e: MouseEvent) {
     target.closest(".element-marker-pin") ||
     target.closest(".element-marker-popover") ||
     target.closest(".modal") ||
-    target.closest("dialog")
+    target.closest("dialog") ||
+    target.closest(".leaflet-control") ||
+    target.closest(".leaflet-pm-toolbar") ||
+    target.closest(".leaflet-draw") ||
+    target.closest(".feature-floating-actions-container") ||
+    target.closest(".label-quick-actions") ||
+    target.closest(".label-action-btn")
   ) {
     return;
   }

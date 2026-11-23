@@ -194,10 +194,10 @@ function onStartDateInput() {
 }
 
 function onSourceMapChange() {
-  const source = props.mapPeriods.find((p: { id: any; }) => p.id === selectedSourceMapId.value);
+  const source = props.mapPeriods.find((p: MapPeriod) => p.id === selectedSourceMapId.value);
   if (!source) return;
 
-  if (!newTitle.value || props.mapPeriods.some((p: { title: any; }) => `${p.title} (copie)` === newTitle.value)) {
+  if (!newTitle.value || props.mapPeriods.some((p: MapPeriod) => `${p.title} (copie)` === newTitle.value)) {
     newTitle.value = `${source.title} (copie)`;
   }
 
@@ -251,7 +251,7 @@ function handleSubmit() {
 
 function open(preselectedMapId?: string) {
   error.value = "";
-  if (preselectedMapId && props.mapPeriods.some((p: { id: string; }) => p.id === preselectedMapId)) {
+  if (preselectedMapId && props.mapPeriods.some((p: MapPeriod) => p.id === preselectedMapId)) {
     selectedSourceMapId.value = preselectedMapId;
   } else if (props.mapPeriods.length > 0) {
     selectedSourceMapId.value = props.mapPeriods[0].id;

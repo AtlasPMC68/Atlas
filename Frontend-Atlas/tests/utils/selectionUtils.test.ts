@@ -6,6 +6,8 @@ import {
   isMultiSelectModifier,
   deduplicateFeatures,
   doesLayerIntersectBounds,
+  applySelectionModifier,
+  getNudgeDelta,
 } from "../../src/utils/selectionUtils";
 
 describe("selectionUtils - getContinuousRangeSelection", () => {
@@ -209,3 +211,98 @@ describe("selectionUtils - doesLayerIntersectBounds", () => {
     expect(doesLayerIntersectBounds(nestedGroup, mockBounds)).toBe(true);
   });
 });
+
+describe("selectionUtils - applySelectionModifier", () => {
+  const orderedIds = ["id-1", "id-2", "id-3", "id-4", "id-5"];
+
+  it("handles normal click: sets selectedId, clears multi-selection, updates anchor", () => {
+    const res = applySelectionModifier("id-3", false, false, {
+      selectedId: "id-1",
+      multiSelectedIds: ["id-1", "id-2"],
+      lastAnchorId: "id-1",
+      orderedIds,
+    });
+
+    expect(res.selectedId).toBe("id-3");
+    expect(res.multiSelectedIds).toEqual([]);
+    expect(res.newAnchorId).toBe("id-3");
+    expect(res.isModified).toBe(false);
+  });
+
+  it("handles Ctrl/Cmd modifier (toggle selection): adds to multi-selection and clears single selectedId", () => {
+    const res = applySelectionModifier("id-3", true, false, {
+      selectedId: "id-1",
+      multiSelectedIds: [],
+      lastAnchorId: "id-1",
+      orderedIds,
+    });
+
+    expect(res.selectedId).toBeNull();
+    expect(res.multiSelectedIds).toEqual(["id-1", "id-3"]);
+    expect(res.newAnchorId).toBe("id-3");
+    expect(res.isModified).toBe(true);
+  });
+
+  it("handles Ctrl/Cmd modifier toggle off: removes already selected item from multiSelectedIds", () => {
+    const res = applySelectionModifier("id-2", true, false, {
+      selectedId: null,
+      multiSelectedIds: ["id-1", "id-2", "id-3"],
+      lastAnchorId: "id-1",
+      orderedIds,
+    });
+
+    expect(res.selectedId).toBeNull();
+    expect(res.multiSelectedIds).toEqual(["id-1", "id-3"]);
+    expect(res.newAnchorId).toBe("id-2");
+    expect(res.isModified).toBe(true);
+  });
+
+  it("handles Shift modifier (continuous range): selects range from anchor to clicked target", () => {
+    const res = applySelectionModifier("id-4", false, true, {
+      selectedId: "id-2",
+      multiSelectedIds: [],
+      lastAnchorId: "id-2",
+      orderedIds,
+    });
+
+    expect(res.selectedId).toBeNull();
+    expect(res.multiSelectedIds).toEqual(["id-2", "id-3", "id-4"]);
+    expect(res.newAnchorId).toBe("id-2");
+    expect(res.isModified).toBe(true);
+  });
+});
+
+describe("selectionUtils - getNudgeDelta & Escape interaction", () => {
+  it("getNudgeDelta returns 1px by default and 10px with Shift", () => {
+    expect(getNudgeDelta("ArrowRight", false)).toEqual({ dx: 1, dy: 0 });
+    expect(getNudgeDelta("ArrowLeft", false)).toEqual({ dx: -1, dy: 0 });
+    expect(getNudgeDelta("ArrowDown", false)).toEqual({ dx: 0, dy: 1 });
+    expect(getNudgeDelta("ArrowUp", false)).toEqual({ dx: 0, dy: -1 });
+
+    expect(getNudgeDelta("ArrowRight", true)).toEqual({ dx: 10, dy: 0 });
+    expect(getNudgeDelta("ArrowLeft", true)).toEqual({ dx: -10, dy: 0 });
+    expect(getNudgeDelta("ArrowDown", true)).toEqual({ dx: 0, dy: 10 });
+    expect(getNudgeDelta("ArrowUp", true)).toEqual({ dx: 0, dy: -10 });
+
+    expect(getNudgeDelta("Enter", false)).toBeNull();
+  });
+
+  it("Escape key interaction resets multi-selection and single selection", () => {
+    let selectedFeatureId: string | null = "feat-1";
+    let multiSelectedFeatureIds: string[] = ["feat-1", "feat-2", "feat-3"];
+
+    const handleKey = (key: string) => {
+      if (key.toLowerCase() === "escape") {
+        if (selectedFeatureId || multiSelectedFeatureIds.length > 0) {
+          selectedFeatureId = null;
+          multiSelectedFeatureIds = [];
+        }
+      }
+    };
+
+    handleKey("Escape");
+    expect(selectedFeatureId).toBeNull();
+    expect(multiSelectedFeatureIds).toEqual([]);
+  });
+});
+

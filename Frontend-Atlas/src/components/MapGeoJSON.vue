@@ -75,6 +75,7 @@ import {
 } from "../utils/labelPresentation";
 import { updateMapLabelVisibility } from "../services/MapLabelVisibilityService";
 import {
+  applySelectionModifier,
   getContinuousRangeSelection,
   deduplicateFeatures,
   doesLayerIntersectBounds,
@@ -377,36 +378,16 @@ const featureLayerManager = {
       const isCtrl = Boolean(orig?.ctrlKey || orig?.metaKey);
       const isShift = Boolean(orig?.shiftKey);
 
-      if (isCtrl) {
-        const currentList = props.multiSelectedFeatureIds ?? Array.from(multiSelectedIds.value);
-        const next = new Set<string>(currentList);
-        if (props.selectedFeatureId) {
-          next.add(props.selectedFeatureId);
-        } else if (lastMapAnchorId) {
-          next.add(lastMapAnchorId);
-        }
-        if (next.has(id)) {
-          next.delete(id);
-        } else {
-          next.add(id);
-        }
-        lastMapAnchorId = id;
-        emit("select-feature", null);
-        emit("select-features", Array.from(next));
-        return;
-      }
-
-      if (isShift) {
-        const orderedIds = props.features.map((f: Feature) => String(f.id));
-        const anchorId =
-          props.selectedFeatureId ||
-          lastMapAnchorId ||
-          (props.multiSelectedFeatureIds?.[0] ?? null);
-        const range = getContinuousRangeSelection(orderedIds, anchorId, id);
-
-        lastMapAnchorId = anchorId || id;
-        emit("select-feature", null);
-        emit("select-features", range);
+      if (isCtrl || isShift) {
+        const result = applySelectionModifier(id, isCtrl, isShift, {
+          selectedId: props.selectedFeatureId,
+          multiSelectedIds: props.multiSelectedFeatureIds ?? Array.from(multiSelectedIds.value),
+          lastAnchorId: lastMapAnchorId,
+          orderedIds: props.features.map((f: Feature) => String(f.id)),
+        });
+        lastMapAnchorId = result.newAnchorId;
+        emit("select-feature", result.selectedId);
+        emit("select-features", result.multiSelectedIds);
         return;
       }
 
