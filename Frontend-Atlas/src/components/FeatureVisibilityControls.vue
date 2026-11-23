@@ -395,6 +395,7 @@
                   v-model="editDraft.labelStyleSelection"
                   data-testid="word-type-select"
                   class="select select-bordered flex-1 min-w-0 h-[50px] text-sm"
+                  :style="selectedWordTypeSelectStyle"
                   @change="onLabelStyleSelectionChange"
                 >
                   <option
@@ -1105,6 +1106,13 @@ watch(
 const defaultTextSizePx = computed(() =>
   getDefaultTextSizePx(editDraft.value.wordType),
 );
+
+const selectedWordTypeSelectStyle = computed<CSSProperties>(() => {
+  if (activeCustomLabelStyle.value) {
+    return getCustomStyleObject(activeCustomLabelStyle.value);
+  }
+  return getWordTypeOptionStyle(editDraft.value.wordType);
+});
 
 const hasGeometryControls = computed(() => {
   if (!featureToEdit.value) return false;

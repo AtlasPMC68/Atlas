@@ -187,8 +187,6 @@ describe("TextValidationModal", () => {
     expect(wrapper.text()).toContain("Paris");
     // Item 1 has a nearby place suggestion, offered as a one-click button
     expect(wrapper.text()).toContain("Lieu suggéré");
-    // Item 2 was renamed, so what the OCR read stays visible
-    expect(wrapper.text()).toContain("Texte détecté : « Riv Sauvage »");
   });
 
   it("allows user to accept suggested city in 1 click and toggle back", async () => {

@@ -98,12 +98,6 @@
                   @click.stop
                   @change="toggleItemSelection(item)"
                 />
-                <span
-                  v-if="itemHasPoint(item)"
-                  class="inline-block h-2.5 w-2.5 rounded-full shrink-0 border border-base-content"
-                  :style="{ backgroundColor: getItemPointColor(item) }"
-                  title="Avec point sur la carte"
-                ></span>
                 <input
                   v-model="item.text"
                   type="text"
@@ -127,13 +121,6 @@
                 </button>
               </div>
 
-              <!-- What the OCR read, once the text has been changed -->
-              <p
-                v-if="item.originalText && item.originalText !== item.text"
-                class="text-xs text-base-content/60"
-              >
-                Texte détecté : « {{ item.originalText }} »
-              </p>
 
               <!-- Word type -->
               <div
@@ -146,6 +133,7 @@
                   v-model="item.labelStyleSelection"
                   class="select select-sm select-bordered flex-1 min-w-0"
                   data-testid="item-word-type-select"
+                  :style="getItemWordTypeSelectStyle(item)"
                   @change="onItemLabelStyleChange(item)"
                 >
                   <option
@@ -501,27 +489,17 @@ function itemRightInputStyle(item: TextValidationEntry): CSSProperties {
   };
 }
 
-function itemHasPoint(item: TextValidationEntry): boolean {
-  if (item.customLabelStyle) {
-    return hasCustomStylePoint(item.customLabelStyle);
+function getItemWordTypeSelectStyle(item: TextValidationEntry): CSSProperties {
+  const selection = item.labelStyleSelection ?? "";
+  if (selection.startsWith("custom:")) {
+    const style = availableCustomLabelStyles.value?.find(
+      (candidate: CustomLabelStyle) => candidate.id === selection.slice("custom:".length),
+    ) ?? item.customLabelStyle;
+    if (style) return getCustomStyleObject(style);
+  } else if (item.customLabelStyle) {
+    return getCustomStyleObject(item.customLabelStyle);
   }
-  if (item.customLabelStyleId) {
-    const style = availableCustomLabelStyles.value?.find((s) => s.id === item.customLabelStyleId);
-    if (style) return hasCustomStylePoint(style);
-  }
-  const tax = WORD_TYPE_TAXONOMY[normalizeWordType(item.wordType)];
-  return tax?.mapElementType === "point";
-}
-
-function getItemPointColor(item: TextValidationEntry): string {
-  if (item.customLabelStyle) {
-    return item.customLabelStyle.pointColor || item.customLabelStyle.color || "#000000";
-  }
-  if (item.customLabelStyleId) {
-    const style = availableCustomLabelStyles.value?.find((s) => s.id === item.customLabelStyleId);
-    if (style) return style.pointColor || style.color || "#000000";
-  }
-  return "#000000";
+  return getWordTypeOptionStyle(item.wordType || "city");
 }
 
 function onTextInput(item: TextValidationEntry) {

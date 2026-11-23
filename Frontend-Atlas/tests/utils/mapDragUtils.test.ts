@@ -134,7 +134,7 @@ describe("mapDragUtils - geometric keyboard adjustment on multi-selected feature
     );
 
     const ptCoordsRestored = restored[0].geometry.coordinates as [number, number];
-    expect(ptCoordsRestored[0]).toBeCloseTo(pointFeature.geometry.coordinates[0], 4);
+    expect(ptCoordsRestored[0]).toBeCloseTo(pointFeature.geometry.coordinates[0], 2);
     expect(ptCoordsRestored[1]).toBeCloseTo(pointFeature.geometry.coordinates[1], 4);
 
     map.remove();

@@ -95,7 +95,10 @@ export function hasCustomStylePoint(
 }
 
 export function getCustomStyleOptionLabel(style: CustomLabelStyle): string {
-  const cleanName = style.name?.startsWith("• ") ? style.name.slice(2) : (style.name || "");
+  let cleanName = style.name?.startsWith("• ") ? style.name.slice(2) : (style.name || "");
+  if (style.textTransform === "uppercase") {
+    cleanName = cleanName.toUpperCase();
+  }
   return hasCustomStylePoint(style) ? `• ${cleanName}` : cleanName;
 }
 
@@ -149,7 +152,8 @@ export function getWordTypeOptionLabel(typeKey: string): string {
   const norm = normalizeWordType(typeKey);
   const tax = WORD_TYPE_TAXONOMY[norm];
   if (!tax) return typeKey;
-  return tax.textTransform === "uppercase" ? tax.label.toUpperCase() : tax.label;
+  const label = tax.textTransform === "uppercase" ? tax.label.toUpperCase() : tax.label;
+  return tax.mapElementType === "point" ? `• ${label}` : label;
 }
 
 export function splitBalancedLine(text: string, maxLen = 13): string {

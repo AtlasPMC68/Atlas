@@ -1,6 +1,9 @@
 <template>
   <dialog ref="dialogRef" class="modal" data-testid="delete-feature-dialog">
-    <div class="modal-box max-w-lg relative">
+    <div
+      class="modal-box relative"
+      :class="hasMultiMapFeature ? 'w-11/12 max-w-2xl' : 'max-w-lg'"
+    >
       <button
         type="button"
         class="btn btn-sm btn-circle btn-ghost absolute right-4 top-4 z-10"
@@ -98,7 +101,7 @@
         Cette action est irréversible.
       </p>
 
-      <div class="modal-action mt-6 flex flex-col-reverse sm:flex-row sm:items-center gap-2">
+      <div class="modal-action mt-6 flex flex-col-reverse sm:flex-row sm:flex-wrap sm:items-center gap-2">
         <button
           type="button"
           class="modal-secondary-btn sm:mr-auto"
