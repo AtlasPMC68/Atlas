@@ -73,11 +73,9 @@
 import { computed, ref, watch } from "vue";
 import type { Feature } from "../../typescript/feature";
 import { rgbToRgba } from "../../utils/utils";
-import { EyeIcon, EyeSlashIcon } from "@heroicons/vue/24/outline";
 import { createFeatureDoubleClickHandler } from "../../utils/featureInteraction";
 import {
   getContinuousRangeSelection,
-  isRangeSelectModifier,
 } from "../../utils/selectionUtils";
 
 const props = withDefaults(
@@ -93,7 +91,7 @@ const props = withDefaults(
 );
 
 const emit = defineEmits<{
-  (event: "select-feature", featureId: string): void;
+  (event: "select-feature", featureId: string | null): void;
   (event: "select-features", featureIds: string[]): void;
   (event: "edit-feature", feature: Feature): void;
 }>();
@@ -171,10 +169,6 @@ const { handleClick: onFeatureClick, handleDblClick: onFeatureDblClick } =
     },
     getId: (feature: Feature) => feature.id ?? feature.properties?.name,
   });
-
-function toggleLegend() {
-  isLegendVisible.value = !isLegendVisible.value;
-}
 
 const visibleZoneFeatures = computed(() =>
   props.zoneFeatures.filter((feature: Feature) => {

@@ -848,7 +848,6 @@ import {
   ChatBubbleLeftEllipsisIcon,
   ChevronDownIcon,
   DocumentCheckIcon,
-  ExclamationTriangleIcon,
   InformationCircleIcon,
   MapIcon,
   PencilSquareIcon,
@@ -1537,6 +1536,18 @@ async function onDeleteMap() {
 const deleteFeatureDialogRef = ref<InstanceType<typeof DeleteFeatureDialog> | null>(null);
 
 function showDeleteFeatureDialog(featureOrFeatures: Feature | Feature[]) {
+  if (
+    !Array.isArray(featureOrFeatures) &&
+    props.multiSelectedFeatureIds &&
+    props.multiSelectedFeatureIds.length > 1 &&
+    props.multiSelectedFeatureIds.includes(String(featureOrFeatures.id))
+  ) {
+    const multiFeatures = props.features.filter((f: Feature) =>
+      props.multiSelectedFeatureIds!.includes(String(f.id)),
+    );
+    deleteFeatureDialogRef.value?.open(multiFeatures.length > 0 ? multiFeatures : featureOrFeatures);
+    return;
+  }
   deleteFeatureDialogRef.value?.open(featureOrFeatures);
 }
 

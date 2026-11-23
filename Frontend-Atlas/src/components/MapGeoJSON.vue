@@ -630,6 +630,21 @@ function extendBoundsWithGeometry(bounds: L.LatLngBounds, geom: any) {
   }
 }
 
+function getMapOverviewBounds(): L.LatLngBounds {
+  const bounds = L.latLngBounds([]);
+  featureLayerManager.layers.forEach((layer) => {
+    if (map && map.hasLayer(layer)) {
+      extendBoundsWithLayer(bounds, layer);
+    }
+  });
+  if (!bounds.isValid()) {
+    (props.features ?? []).forEach((f: Feature) => {
+      if (f.geometry) extendBoundsWithGeometry(bounds, f.geometry);
+    });
+  }
+  return bounds;
+}
+
 function fitToFeatures(ids: string[] | Set<string>, animate = true) {
   if (!map) return;
   const idArray = Array.from(ids instanceof Set ? ids : (ids ?? []));
@@ -652,15 +667,46 @@ function fitToFeatures(ids: string[] | Set<string>, animate = true) {
 
   if (!bounds.isValid()) return;
 
-  const onlyTextOrPoints = idArray.every((id) => {
-    const f = (props.features ?? []).find((feat: Feature) => String(feat.id) === String(id));
-    if (!f) return false;
-    const t = getMapElementType(f);
-    return t === "label" || t === "point";
-  });
+  const currentViewBounds = map.getBounds();
+  const currentZoom = map.getZoom();
 
-  const focusMaxZoom = onlyTextOrPoints ? 7 : 10;
-  map.fitBounds(bounds, { padding: [80, 80], maxZoom: focusMaxZoom, animate });
+  // Niveau de zoom global de la carte
+  const overviewBounds = getMapOverviewBounds();
+  let mapLevelZoom = currentZoom;
+  if (overviewBounds.isValid()) {
+    try {
+      const calculatedZoom = map.getBoundsZoom(overviewBounds, false, L.point(50, 50));
+      if (Number.isFinite(calculatedZoom)) {
+        mapLevelZoom = Math.min(calculatedZoom, 6);
+      }
+    } catch {
+      // ignore
+    }
+  } else {
+    mapLevelZoom = Math.min(currentZoom, 5);
+  }
+
+  // Règle fixe :
+  // 1) Si l'élément est dans le champ de vision actuel :
+  //    Le zoom RESTE au même niveau que l'actuel (aucun zoom de trop proche).
+  // 2) Sinon :
+  //    Le zoom est au niveau global de la carte (mapLevelZoom).
+  const isInsideFieldOfView =
+    currentViewBounds.contains(bounds.getCenter()) || currentViewBounds.intersects(bounds);
+
+  if (isInsideFieldOfView) {
+    if (!currentViewBounds.pad(-0.05).contains(bounds)) {
+      map.panTo(bounds.getCenter(), { animate });
+    }
+    return;
+  }
+
+  // Hors du champ de vision : vue positionnée au niveau de la carte
+  if (idArray.length > 1) {
+    map.fitBounds(bounds, { padding: [80, 80], maxZoom: mapLevelZoom, animate });
+  } else {
+    map.setView(bounds.getCenter(), mapLevelZoom, { animate });
+  }
 }
 
 function clearDraftLayers() {
