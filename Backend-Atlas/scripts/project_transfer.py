@@ -20,8 +20,10 @@ What is not:
                   Celery tasks. Their map is exported without features.
   * the owner     on import, the project always belongs to --owner ("demo").
 
-Rows keep their UUIDs, so importing the same project twice is detected and
-refused. Rows are serialised with to_jsonb() and restored with
+On import, the project, its maps and its features get new UUIDs (--keep-ids
+to keep the exported ones), so the same file can be imported several times:
+each import creates a new copy. With --keep-ids, an import whose ids already
+exist is refused. Rows are serialised with to_jsonb() and restored with
 jsonb_populate_record(), so columns added by future migrations are carried
 over without changing this script.
 """
@@ -35,6 +37,7 @@ import os
 import re
 import sys
 import unicodedata
+import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -252,19 +255,33 @@ def load_payload(path: str) -> dict:
     return payload
 
 
-def check_conflicts(conn: psycopg.Connection, payload: dict, owner_id) -> list[str]:
+def assign_new_ids(payload: dict) -> dict:
+    """Give the project, its maps and its features fresh UUIDs.
+
+    The old ids also appear inside JSON columns (features.data carries
+    project_id and properties.map_id) and in reference image file names, so
+    every occurrence is replaced, not only the id columns. UUIDs are unique
+    strings, so a plain textual replacement cannot hit anything else.
+    """
+    mapping = {payload["project"]["id"]: str(uuid.uuid4())}
+    for row in payload["maps"] + payload["features"]:
+        mapping[row["id"]] = str(uuid.uuid4())
+
+    pattern = re.compile("|".join(map(re.escape, mapping)))
+    text = json.dumps(
+        {k: payload[k] for k in ("project", "maps", "features", "reference_images")},
+        ensure_ascii=False,
+    )
+    remapped = json.loads(pattern.sub(lambda m: mapping[m.group(0)], text))
+    return {**payload, **remapped}
+
+
+def check_conflicts(conn: psycopg.Connection, payload: dict) -> list[str]:
     problems = []
     project = payload["project"]
 
     if conn.execute("SELECT 1 FROM projects WHERE id = %s", (project["id"],)).fetchone():
         problems.append(f"Le projet {project['id']} existe déjà (déjà importé ?).")
-
-    same_title = conn.execute(
-        "SELECT id FROM projects WHERE user_id = %s AND lower(title) = lower(%s)",
-        (owner_id, project["title"]),
-    ).fetchone()
-    if same_title:
-        problems.append(f"Un projet nommé « {project['title']} » existe déjà pour ce propriétaire ({same_title['id']}).")
 
     map_ids = [m["id"] for m in payload["maps"]]
     if map_ids:
@@ -298,6 +315,8 @@ def insert_row(conn: psycopg.Connection, table: str, row: dict) -> None:
 
 def import_project(args: argparse.Namespace) -> None:
     payload = load_payload(args.file)
+    if not args.keep_ids:
+        payload = assign_new_ids(payload)
     project = payload["project"]
     maps = payload["maps"]
     features = payload["features"]
@@ -319,7 +338,7 @@ def import_project(args: argparse.Namespace) -> None:
                 "Il doit s'être connecté au moins une fois à la plateforme."
             )
 
-        problems = check_conflicts(conn, payload, owner["id"])
+        problems = check_conflicts(conn, payload)
         if problems:
             die("Import annulé :\n  - " + "\n  - ".join(problems))
 
@@ -377,6 +396,11 @@ def main() -> None:
     imp.add_argument("file", help="Fichier JSON produit par l'export")
     imp.add_argument("--owner", default="demo", help="Utilisateur propriétaire (défaut : demo)")
     imp.add_argument("-y", "--yes", action="store_true", help="Ne pas demander de confirmation")
+    imp.add_argument(
+        "--keep-ids",
+        action="store_true",
+        help="Garder les UUID de l'export au lieu d'en générer de nouveaux",
+    )
     imp.set_defaults(func=import_project)
 
     args = parser.parse_args()
