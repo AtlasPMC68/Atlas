@@ -878,6 +878,7 @@ import {
   MapIcon,
   PencilSquareIcon,
   PhotoIcon,
+  Square2StackIcon,
   TrashIcon,
 } from "@heroicons/vue/24/outline";
 import {
@@ -932,7 +933,6 @@ import { showAlert } from "../composables/useAlert";
 import { createFeatureDoubleClickHandler } from "../utils/featureInteraction";
 import {
   applySelectionModifier,
-  getContinuousRangeSelection,
 } from "../utils/selectionUtils";
 
 const props = defineProps<{

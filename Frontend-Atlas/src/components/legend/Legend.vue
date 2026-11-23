@@ -68,7 +68,6 @@ import { rgbToRgba } from "../../utils/utils";
 import { createFeatureDoubleClickHandler } from "../../utils/featureInteraction";
 import {
   applySelectionModifier,
-  getContinuousRangeSelection,
 } from "../../utils/selectionUtils";
 
 const props = withDefaults(

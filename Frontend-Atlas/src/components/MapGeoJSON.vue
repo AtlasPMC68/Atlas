@@ -76,7 +76,6 @@ import {
 import { updateMapLabelVisibility } from "../services/MapLabelVisibilityService";
 import {
   applySelectionModifier,
-  getContinuousRangeSelection,
   deduplicateFeatures,
   doesLayerIntersectBounds,
 } from "../utils/selectionUtils";

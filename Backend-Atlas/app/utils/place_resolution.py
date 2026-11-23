@@ -374,6 +374,18 @@ def _parse_pop(val: Any) -> int:
         return 0
 
 
+_GENERIC_ADMIN_TERMS: Set[str] = {
+    "de", "del", "des", "du", "d", "la", "le", "les", "l", "of", "the",
+    "province", "territoire", "territory", "state", "etat", "état",
+    "city", "ville", "town", "township", "village", "county", "comte", "comté",
+    "municipality", "municipalite", "municipalité", "borough",
+}
+
+_CITY_BASE_EXCEPTIONS: Set[str] = {
+    "quebec", "mexico", "panama", "guatemala", "luxembourg", "vatican",
+    "kansas", "oklahoma", "carson", "taipei", "kuwait", "djibouti",
+}
+
 _gc = geonamescache.GeonamesCache()
 _CITY_INDEX: Dict[str, List[Dict[str, Any]]] = {}
 _SPATIAL_CITY_GRID: Dict[Tuple[int, int], List[Dict[str, Any]]] = {}
@@ -398,7 +410,7 @@ for _info in _gc.get_cities().values():
     _CITY_INDEX.setdefault(_ck, []).append(_city)
     if _ck.endswith(" city"):
         _base = _ck[:-5].strip()
-        if _base:
+        if _base and (_base in _CITY_BASE_EXCEPTIONS or len(_base.split()) >= 2):
             _CITY_INDEX.setdefault(_base, []).append(_city)
 
     _gid = _city.get("geonameid") or (_name, _lat, _lon)
@@ -464,11 +476,7 @@ def find_nearby_candidate_place(
         token
         for token in normalized_query.split()
         if len(token) >= 3
-        and token
-        not in {
-            "de", "del", "des", "du", "la", "le", "les", "of", "the",
-            "province", "territoire", "territory", "state", "état",
-        }
+        and token not in _GENERIC_ADMIN_TERMS
     ]
 
     cells = _get_spatial_cells(lat, lon, radius_km)
@@ -525,19 +533,50 @@ def find_nearby_candidate_place(
         )
 
         if query_tokens:
-            variant_tokens = {token for variant in variants for token in variant.split()}
-            token_matches = [
-                max(
-                    (
-                        difflib.SequenceMatcher(None, query_token, candidate_token).ratio()
-                        for candidate_token in variant_tokens
-                    ),
-                    default=0.0,
-                )
-                for query_token in query_tokens
-            ]
-            if all(score >= min_similarity for score in token_matches):
-                similarity = max(similarity, min(token_matches))
+            best_token_score = 0.0
+            for variant in variants:
+                var_tokens = [
+                    t for t in variant.split()
+                    if len(t) >= 3 and t not in _GENERIC_ADMIN_TERMS
+                ]
+                if not var_tokens:
+                    continue
+
+                # 1. Forward match: every query token must match at least one candidate token
+                forward_matches = [
+                    max(
+                        (
+                            difflib.SequenceMatcher(None, q_tok, c_tok).ratio()
+                            for c_tok in var_tokens
+                        ),
+                        default=0.0,
+                    )
+                    for q_tok in query_tokens
+                ]
+                if not all(score >= min_similarity for score in forward_matches):
+                    continue
+
+                # 2. Backward match: every candidate token must match at least one query token
+                # This prevents "Atlantique" matching "Atlantic City", or "New York" matching "New City"
+                backward_matches = [
+                    max(
+                        (
+                            difflib.SequenceMatcher(None, c_tok, q_tok).ratio()
+                            for q_tok in query_tokens
+                        ),
+                        default=0.0,
+                    )
+                    for c_tok in var_tokens
+                ]
+                if not all(score >= min_similarity for score in backward_matches):
+                    continue
+
+                token_score = min(min(forward_matches), min(backward_matches))
+                if token_score > best_token_score:
+                    best_token_score = token_score
+
+            if best_token_score >= min_similarity:
+                similarity = max(similarity, best_token_score)
 
         if similarity >= min_similarity:
             distance = haversine_distance_km(lat, lon, candidate["lat"], candidate["lon"])
@@ -597,6 +636,32 @@ def resolve_place(
             if not close:
                 return None
             cands = [cand for k in close for cand in _CITY_INDEX.get(k, [])]
+            # Ensure candidate names are compatible with the query (avoid matching 'New City' on 'New York')
+            q_toks = [t for t in key.split() if len(t) >= 3 and t not in _GENERIC_ADMIN_TERMS]
+            if q_toks:
+                compatible = []
+                for cand in cands:
+                    c_name = _normalize(cand.get("name") or "")
+                    c_name_fr = _normalize(cand.get("name_fr") or "")
+                    cand_toks = {
+                        t
+                        for n in (c_name, c_name_fr)
+                        for t in n.split()
+                        if len(t) >= 3 and t not in _GENERIC_ADMIN_TERMS
+                    }
+                    if not cand_toks:
+                        compatible.append(cand)
+                        continue
+                    # All query tokens must match candidate tokens
+                    if all(
+                        max((difflib.SequenceMatcher(None, q, c).ratio() for c in cand_toks), default=0.0) >= cutoff
+                        for q in q_toks
+                    ) and all(
+                        max((difflib.SequenceMatcher(None, c, q).ratio() for q in q_toks), default=0.0) >= cutoff
+                        for c in cand_toks
+                    ):
+                        compatible.append(cand)
+                cands = compatible
 
         best = resolve_best_candidate(
             cands,

@@ -782,7 +782,7 @@ function copySelectedFeature(): boolean {
   return true;
 }
 
-function getCenterOffsetDelta(map: L.Map, offsetPx = 24): { deltaLng: number; deltaLat: number } {
+function getCenterOffsetDelta(map: any, offsetPx = 24): { deltaLng: number; deltaLat: number } {
   const centerPoint = map.getSize().divideBy(2);
   const targetPoint = L.point(centerPoint.x + offsetPx, centerPoint.y + offsetPx);
   const c1 = map.containerPointToLatLng(centerPoint);
