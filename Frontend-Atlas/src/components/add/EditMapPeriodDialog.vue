@@ -57,7 +57,7 @@
           </label>
         </fieldset>
 
-        <p v-if="errorMessage" class="text-sm text-error mt-2">{{ errorMessage }}</p>
+        <p v-if="errorMessage" class="text-xs text-red-700 bg-white border border-red-500 rounded px-2 py-1 mt-1">{{ errorMessage }}</p>
         <div class="modal-action">
           <button type="button" class="btn btn-ghost" :disabled="saving" @click="close">
             Annuler

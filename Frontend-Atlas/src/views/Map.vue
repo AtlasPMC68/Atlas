@@ -26,6 +26,7 @@
           @delete-map="onDeleteMap"
           @add-map="openAddMapDialog"
           @duplicate-map="() => openDuplicateMapDialog()"
+          @select-map="onSelectMap"
           @edit-map="openEditMapDialog"
           @save-label-styles="saveCustomLabelStyles"
           @update-feature="onUpdateFeature"
@@ -271,6 +272,7 @@
               :multi-selected-feature-ids="multiSelectedFeatureIds"
               @exact-date-change="onExactDateChange"
               @select-date="onTimelineDateSelect"
+              @select-map="onSelectMap"
               @edit-map="openEditMapDialog"
               @edit-element="onEditElementFromTimeline"
               @select-element="onSelectElementFromTimeline"
@@ -469,29 +471,37 @@ function onEditFeatureRequest(feature: Feature) {
   featureVisibilityControlsRef.value?.showEditFeatureDialog(feature);
 }
 
-function onSelectFeatures(ids: string[]) {
-  multiSelectedFeatureIds.value = ids;
-  if (ids.length > 0) selectedFeatureId.value = null;
+function onSelectMap(mapId: string) {
+  const period = mapPeriods.value.find((p: MapPeriod) => String(p.id) === String(mapId));
+  if (period && period.startYear != null) {
+    selectedYear.value = period.startYear;
+    if (period.startDate && (period as any).exactDate) {
+      selectedExactDate.value = period.startDate;
+    } else {
+      selectedExactDate.value = null;
+    }
+    nextTick(() => {
+      mapGeoJsonRef.value?.fitToVisibleFeatures(undefined, true);
+    });
+  }
 }
 
-async function onDeleteSelectedFeatures() {
-  const idsToDelete =
-    multiSelectedFeatureIds.value.length > 0
-      ? multiSelectedFeatureIds.value
-      : selectedFeatureId.value
-        ? [selectedFeatureId.value]
-        : [];
-  if (idsToDelete.length === 0) return;
-  const idsSet = new Set(idsToDelete);
-  const nextFeatures = features.value.filter(
-    (f: Feature) => !idsSet.has(String(f.id)),
-  );
-  multiSelectedFeatureIds.value = [];
-  selectedFeatureId.value = null;
-  if (trackingEnabled.value) {
-    commitFeatureSnapshot(nextFeatures);
-  } else {
-    applyFeatureSnapshot(nextFeatures, false);
+function onSelectFeatures(ids: string[]) {
+  if (ids.length === 1) {
+    selectFeature(ids[0]);
+    return;
+  }
+  multiSelectedFeatureIds.value = ids;
+  if (ids.length > 0) {
+    selectedFeatureId.value = null;
+    const selectedFeats = features.value.filter((f: Feature) => ids.includes(String(f.id)));
+    const mapId = selectedFeats.find((f: Feature) => f.mapId)?.mapId;
+    if (mapId) {
+      const period = mapPeriods.value.find((p: MapPeriod) => String(p.id) === String(mapId));
+      if (period && period.startYear != null && timelineMode.value !== "global" && selectedYear.value !== period.startYear) {
+        selectedYear.value = period.startYear;
+      }
+    }
   }
 }
 
@@ -1110,7 +1120,7 @@ watch(
   [selectedYear, selectedExactDate, timelineMode],
   async () => {
     await nextTick();
-    if (!selectedFeatureId.value) {
+    if (!selectedFeatureId.value && multiSelectedFeatureIds.value.length === 0) {
       mapGeoJsonRef.value?.fitToVisibleFeatures(undefined, true);
     }
   },
@@ -1414,7 +1424,7 @@ function nudgeSelectedFeatures(dx: number, dy: number) {
 
 function nudgeFeatureByPixels(
   feature: Feature,
-  leafletMap: L.Map,
+  leafletMap: any,
   dx: number,
   dy: number,
 ): Feature {

@@ -66,12 +66,17 @@
               :key="mapGroup.id ?? 'general'"
               class="flex flex-col gap-2"
             >
-              <div class="flex items-center justify-between rounded-lg px-2 py-1 bg-gray-100 hover:bg-gray-200/80 border border-gray-300 group transition-colors">
+              <div
+                class="flex items-center justify-between rounded-lg px-2 py-1 bg-gray-100 hover:bg-gray-200/80 border border-gray-300 group transition-colors cursor-pointer"
+                :class="{ 'ring-2 ring-primary border-primary bg-primary/5': props.activeMapId && mapGroup.id === props.activeMapId }"
+                @click="mapGroup.id !== null && emit('select-map', mapGroup.id)"
+                @dblclick="mapGroup.id !== null && emit('edit-map', mapGroup.id)"
+              >
                 <div class="flex items-center gap-1.5 flex-1 min-w-0">
                   <button
                     type="button"
                     class="flex h-6 w-6 shrink-0 items-center justify-center rounded text-gray-500 hover:text-gray-800 hover:bg-gray-300/60 transition-colors focus:outline-none"
-                    @click="toggleMapCollapse(mapGroup.id)"
+                    @click.stop="toggleMapCollapse(mapGroup.id)"
                     :title="isMapCollapsed(mapGroup.id) ? `Développer ${mapGroup.title}` : `Réduire ${mapGroup.title}`"
                     :aria-label="isMapCollapsed(mapGroup.id) ? `Développer ${mapGroup.title}` : `Réduire ${mapGroup.title}`"
                   >
@@ -82,6 +87,7 @@
                   </button>
                   <label
                     class="label cursor-pointer justify-start gap-2 flex-1 min-w-0 p-0"
+                    @click.stop
                   >
                     <input
                       type="checkbox"
@@ -98,8 +104,9 @@
                       v-if="mapGroup.id !== null"
                       type="button"
                       class="text-sm font-bold text-gray-900 truncate text-left hover:text-primary flex-1 min-w-0"
-                      :title="`Modifier ${mapGroup.title}`"
-                      @click.stop="emit('edit-map', mapGroup.id)"
+                      :title="`${mapGroup.title} (clic pour sélectionner, double-clic pour modifier)`"
+                      @click.stop="emit('select-map', mapGroup.id)"
+                      @dblclick.stop="emit('edit-map', mapGroup.id)"
                     >
                       {{ mapGroup.title }}
                     </button>
@@ -363,7 +370,7 @@
                 </div>
                 <span
                   v-if="isPreviewClamped"
-                  class="text-xs font-medium text-error"
+                  class="text-xs text-red-700 bg-white border border-red-500 rounded px-2 py-1 mt-1"
                   data-testid="preview-limit-notice"
                 >
                   L'aperçu est plafonné pour tenir dans la fenêtre.
@@ -458,7 +465,7 @@
 
               <span
                 v-if="isTextSizeOverMax"
-                class="text-xs font-medium text-error"
+                class="text-xs text-red-700 bg-white border border-red-500 rounded px-2 py-1 mt-1"
                 data-testid="text-size-max-warning"
               >
                 La taille maximale autorisée est de {{ MAX_TEXT_SIZE_PX }} px (la valeur a été plafonnée).
@@ -658,7 +665,7 @@
             </div>
             <span
               v-if="hasCustomDate"
-              class="text-xs text-amber-700 bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 rounded px-2 py-1 mt-1"
+              class="text-xs text-red-700 bg-white border border-red-500 rounded px-2 py-1 mt-1"
             >
               Période personnalisée active : aucune carte ne peut être associée. Effacez les dates pour sélectionner une carte.
             </span>
@@ -983,7 +990,11 @@ const areAllMapsSelected = computed(() => {
 });
 
 const hasCustomDate = computed(() => {
-  return editDraft.value.startYear != null || editDraft.value.endYear != null;
+  const s = editDraft.value.startYear;
+  const e = editDraft.value.endYear;
+  const hasStart = s !== null && s !== undefined && (typeof s !== "string" || (s as string).trim() !== "");
+  const hasEnd = e !== null && e !== undefined && (typeof e !== "string" || (e as string).trim() !== "");
+  return hasStart || hasEnd;
 });
 
 function toggleSelectAllMaps() {
@@ -1171,6 +1182,7 @@ const emit = defineEmits([
   "validate-texts",
   "select-feature",
   "select-features",
+  "select-map",
   "edit-map",
   "save-label-styles",
 ]);

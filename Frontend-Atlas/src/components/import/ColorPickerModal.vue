@@ -164,7 +164,7 @@
     </template>
 
     <template #error-area>
-      <p v-if="sampleError" class="text-sm text-error">{{ sampleError }}</p>
+      <p v-if="sampleError" class="text-xs text-red-700 bg-white border border-red-500 rounded px-2 py-1 mt-1">{{ sampleError }}</p>
     </template>
   </BasePickerModal>
 </template>

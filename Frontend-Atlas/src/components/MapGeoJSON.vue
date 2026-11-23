@@ -603,6 +603,55 @@ function extendBoundsWithLayer(bounds: L.LatLngBounds, layer: L.Layer) {
   }
 }
 
+function focusOnFeatures(ids: string[]) {
+  if (!map || ids.length === 0) return;
+
+  const targetFeatures = ids
+    .map(
+      (id) =>
+        props.features.find((f: Feature) => String(f.id) === String(id)) ||
+        localFeaturesSnapshot.value.find((f: Feature) => String(f.id) === String(id)),
+    )
+    .filter((f): f is Feature => Boolean(f));
+
+  const bounds = L.latLngBounds([]);
+
+  for (const id of ids) {
+    const layer = featureLayerManager.layers.get(String(id));
+    if (layer) {
+      extendBoundsWithLayer(bounds, layer);
+    }
+  }
+
+  for (const feat of targetFeatures) {
+    const featId = String(feat.id);
+    if (!featureLayerManager.layers.has(featId) && feat.geometry) {
+      try {
+        if (feat.geometry.type === "Point") {
+          const [lng, lat] = feat.geometry.coordinates as [number, number];
+          bounds.extend([lat, lng]);
+        } else {
+          const geoLayer = L.geoJSON(feat);
+          const b = geoLayer.getBounds();
+          if (b.isValid()) bounds.extend(b);
+        }
+      } catch {
+        // ignore
+      }
+    }
+  }
+
+  if (!bounds.isValid()) return;
+
+  const allTextOrPoint = targetFeatures.every((f) => {
+    const type = getMapElementType(f);
+    return type === "point" || type === "label" || f.geometry?.type === "Point";
+  });
+
+  const focusMaxZoom = allTextOrPoint ? 7 : 10;
+  map.fitBounds(bounds, { padding: [80, 80], maxZoom: focusMaxZoom, animate: true });
+}
+
 function clearDraftLayers() {
   drawing.clearDrawnItems();
 }
@@ -637,6 +686,7 @@ defineExpose({
   clearDraftLayers,
   resetSelection,
   fitToVisibleFeatures,
+  focusOnFeatures,
   multiSelectedIds,
 });
 
@@ -1923,19 +1973,7 @@ function applySelectionEffects(id: string) {
 
   // Smoothly pan/zoom map to focus on the selected feature
   if (map) {
-    const bounds = L.latLngBounds([]);
-    if (layer) {
-      extendBoundsWithLayer(bounds, layer);
-    } else if (selectedFeature?.geometry?.type === "Point") {
-      const [lng, lat] = selectedFeature.geometry.coordinates as [number, number];
-      bounds.extend([lat, lng]);
-    }
-    if (bounds.isValid()) {
-      // For text and point features, apply a maxZoom ceiling of 7 so the user retains
-      // a readable regional visual context around the label rather than zooming in to street level.
-      const focusMaxZoom = isTextOrPoint ? 7 : 10;
-      map.fitBounds(bounds, { padding: [80, 80], maxZoom: focusMaxZoom, animate: true });
-    }
+    focusOnFeatures([id]);
   }
 
   updateLabelVisibility();
@@ -2025,6 +2063,11 @@ watch(
   (newIds) => {
     multiSelectedIds.value = new Set(newIds ?? []);
     updateMultiSelection(newIds ?? []);
+    if (newIds && newIds.length > 0) {
+      nextTick(() => {
+        focusOnFeatures(newIds);
+      });
+    }
   },
   { immediate: true },
 );

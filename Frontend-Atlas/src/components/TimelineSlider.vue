@@ -67,7 +67,7 @@
                 ? getDayZoomPeriodStyle(period)
                 : getPeriodStyle(period.startYear, period.endYear, period.color, period.row)
             "
-            @click="selectYear(period.startYear)"
+            @click="onPeriodClick(period)"
             @mouseenter="hoveredPeriodId = period.id"
             @mouseleave="hoveredPeriodId = null"
             @dblclick.stop="emit('edit-map', period.id)"
@@ -350,11 +350,17 @@ const emit = defineEmits([
   "update:mode",
   "exact-date-change",
   "edit-map",
+  "select-map",
   "edit-element",
   "select-element",
   "select-elements",
   "select-date",
 ]);
+
+function onPeriodClick(period: SliderPeriod) {
+  selectYear(period.startYear);
+  emit("select-map", period.id);
+}
 
 function setMode(newMode: "specific" | "cumulative" | "global") {
   emit("update:mode", newMode);

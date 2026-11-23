@@ -178,7 +178,7 @@ describe("TimelineSlider element markers (pins)", () => {
     expect(popover.exists()).toBe(true);
     expect(popover.text()).toContain("Éléments généraux");
     expect(popover.text()).not.toContain("CARTE2 ON EFFACE IDIA");
-    expect(popover.text()).toContain("Lightseagreen");
+    expect(popover.text()).toContain("lightseagreen");
   });
 
   it("clicking an element pin selects the year immediately", async () => {

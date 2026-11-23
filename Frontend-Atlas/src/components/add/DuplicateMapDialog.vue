@@ -5,7 +5,7 @@
         <div class="card-body">
           <h3 class="text-lg font-bold">Dupliquer une carte</h3>
 
-          <p v-if="error" class="text-xs text-error font-medium">{{ error }}</p>
+          <p v-if="error" class="text-xs text-red-700 bg-white border border-red-500 rounded px-2 py-1 mt-1">{{ error }}</p>
 
           <fieldset class="fieldset" :disabled="isDuplicating">
             <!-- 1. Choose map to duplicate -->

@@ -175,7 +175,7 @@
 
             <span
               v-if="isSizeOverMax"
-              class="text-xs font-medium text-error"
+              class="text-xs text-red-700 bg-white border border-red-500 rounded px-2 py-1 mt-1"
               data-testid="max-size-warning"
             >
               La taille maximale autorisée est de 96 px (l'aperçu est limité à 96 px).
