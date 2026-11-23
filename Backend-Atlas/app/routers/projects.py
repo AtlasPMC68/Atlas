@@ -721,15 +721,12 @@ async def get_project_maps(
     # A map is considered active if an import is currently in progress (any non-failed import row)
     # or if its extraction has not yet persisted features. Maps without features that have an active or incomplete
     # import should not appear on the timeline.
-    active_imports = (
-        select(MapImport.map_id)
-        .where(MapImport.extraction_state != EXTRACTION_FAILED)
-    )
+    unfinished_imports = select(MapImport.map_id)
     maps_result = await session.execute(
         select(Map)
         .options(defer(Map.georef_inputs))
         .where(Map.project_id == project_uuid)
-        .where(Map.id.not_in(active_imports))
+        .where(Map.id.not_in(unfinished_imports))
         .order_by(Map.start_date.asc(), Map.created_at.asc())
     )
     maps = maps_result.scalars().all()

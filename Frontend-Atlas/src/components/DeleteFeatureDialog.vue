@@ -21,7 +21,13 @@
       <!-- Multi-map deletion view -->
       <div v-if="hasMultiMapFeature" class="py-3 flex flex-col gap-3">
         <p class="text-sm">
-          <span class="font-semibold break-words">{{ featureDisplayName }}</span>
+          <span
+            class="font-semibold break-words"
+            :class="hasMissingName ? 'text-error font-medium' : ''"
+          >
+            <span v-if="hasMissingName" class="text-error font-extrabold mr-1">!</span>
+            {{ featureDisplayName }}
+          </span>
           est présent sur <span class="font-bold">{{ targetMaps.length }} cartes</span> :
         </p>
 
@@ -82,7 +88,13 @@
       <!-- Single map deletion view -->
       <p v-else class="py-4 text-sm">
         Êtes-vous sûr de vouloir supprimer
-        <span class="font-semibold break-words">{{ featureDisplayName }}</span> ?
+        <span
+          class="font-semibold break-words"
+          :class="hasMissingName ? 'text-error font-medium' : ''"
+        >
+          <span v-if="hasMissingName" class="text-error font-extrabold mr-1">!</span>
+          {{ featureDisplayName }}
+        </span> ?
         Cette action est irréversible.
       </p>
 
@@ -175,6 +187,7 @@ const emit = defineEmits<{
 const dialogRef = ref<HTMLDialogElement | null>(null);
 const targetFeatures = ref<Feature[]>([]);
 const featureDisplayName = ref("Élément");
+const hasMissingName = ref(false);
 const selectedMapIds = ref<Set<string>>(new Set());
 
 function formatPeriodDates(p?: MapPeriod | null): string {
@@ -218,12 +231,15 @@ const targetMaps = computed<MapDeletionItem[]>(() => {
 
     let title = period?.title;
     if (!title) {
-      // Check if feature itself has a custom mapTitle attached
+      // Check if feature itself has a custom mapTitle attached for this map
       for (const f of targetFeatures.value) {
-        const customTitle = ("mapTitle" in f ? (f as { mapTitle?: string }).mapTitle : undefined) || f.properties?.mapTitle;
-        if (customTitle) {
-          title = customTitle;
-          break;
+        const fMapIds = getFeatureMapIds(f);
+        if (fMapIds.some((id) => String(id).trim().toLowerCase() === normKey)) {
+          const customTitle = ("mapTitle" in f ? (f as { mapTitle?: string }).mapTitle : undefined) || f.properties?.mapTitle;
+          if (customTitle) {
+            title = customTitle;
+            break;
+          }
         }
       }
     }
@@ -253,6 +269,9 @@ const allMapsSelected = computed(() => {
 
 const removeButtonLabel = computed(() => {
   const count = selectedMapIds.value.size;
+  if (count === targetMaps.value.length && count > 1) {
+    return `Retirer de toutes les cartes (${count})`;
+  }
   if (count <= 1) {
     const firstSelectedId = Array.from(selectedMapIds.value)[0];
     const match = targetMaps.value.find((m) => m.id === firstSelectedId);
@@ -289,12 +308,29 @@ function open(featureOrFeatures: Feature | Feature[] | string | string[]) {
     if (featureOrFeatures.length > 0 && typeof featureOrFeatures[0] === "string") {
       const idsSet = new Set((featureOrFeatures as string[]).map(String));
       resolved = props.features.filter((f) => idsSet.has(String(f.id)));
+      if (resolved.length === 0) {
+        resolved = (featureOrFeatures as string[]).map((id) => ({
+          type: "Feature",
+          id,
+          geometry: { type: "Point", coordinates: [0, 0] },
+          properties: { name: "Élément" },
+        } as Feature));
+      }
     } else {
       resolved = featureOrFeatures as Feature[];
     }
   } else if (typeof featureOrFeatures === "string") {
     const f = props.features.find((feat) => String(feat.id) === String(featureOrFeatures));
-    if (f) resolved = [f];
+    resolved = f
+      ? [f]
+      : [
+          {
+            type: "Feature",
+            id: featureOrFeatures,
+            geometry: { type: "Point", coordinates: [0, 0] },
+            properties: { name: "Élément" },
+          } as Feature,
+        ];
   } else if (featureOrFeatures) {
     resolved = [featureOrFeatures as Feature];
   }
@@ -302,13 +338,18 @@ function open(featureOrFeatures: Feature | Feature[] | string | string[]) {
   if (resolved.length === 0) return;
 
   targetFeatures.value = resolved;
+  const isNameMissing = resolved.length === 1 && !resolved[0].properties?.name?.trim();
+  hasMissingName.value = isNameMissing;
+
   if (resolved.length > 1) {
     featureDisplayName.value = `${resolved.length} éléments sélectionnés`;
+  } else if (isNameMissing) {
+    featureDisplayName.value = "Nom manquant";
   } else {
-    featureDisplayName.value = resolved[0].properties?.name || "Élément sans nom";
+    featureDisplayName.value = resolved[0].properties?.name?.trim() || "Nom manquant";
   }
 
-  // Pre-select current active map if present, or all maps
+  // Pre-select current active map if present in element's maps, or all maps when activeMapId is omitted/not in list
   const newSelection = new Set<string>();
   const allMapIds = new Set<string>();
   resolved.forEach((f) => {
@@ -317,8 +358,8 @@ function open(featureOrFeatures: Feature | Feature[] | string | string[]) {
 
   if (props.activeMapId && allMapIds.has(String(props.activeMapId))) {
     newSelection.add(String(props.activeMapId));
-  } else if (allMapIds.size > 0) {
-    newSelection.add(Array.from(allMapIds)[0]);
+  } else {
+    allMapIds.forEach((id) => newSelection.add(id));
   }
   selectedMapIds.value = newSelection;
 

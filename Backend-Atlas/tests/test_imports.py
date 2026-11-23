@@ -1037,6 +1037,118 @@ def test_duplicate_map_adapts_relative_feature_years():
     assert inner2["properties"]["endYear"] == 1825
 
 
+def test_duplicate_map_in_project_empty_source():
+    from app.services.maps import duplicate_map_in_project
+    from app.models.project import Project
+
+    project_id = uuid4()
+    source_map_id = uuid4()
+    user_id = uuid4()
+
+    source_map = Map(
+        id=source_map_id,
+        project_id=project_id,
+        title="Carte Source Vide",
+        start_date=date(1800, 1, 1),
+        end_date=date(1850, 1, 1),
+        exact_date=False,
+    )
+    added = []
+    session = SimpleNamespace(
+        execute=AsyncMock(side_effect=[
+            SimpleNamespace(scalar_one_or_none=lambda: Project(id=project_id, user_id=user_id)),
+            SimpleNamespace(scalar_one_or_none=lambda: source_map),
+            SimpleNamespace(scalars=lambda: SimpleNamespace(all=lambda: [])),
+        ]),
+        add=lambda obj: added.append(obj),
+        flush=AsyncMock(),
+        commit=AsyncMock(),
+        refresh=AsyncMock(),
+    )
+
+    new_map_id = asyncio.run(
+        duplicate_map_in_project(
+            db=session,
+            project_id=project_id,
+            source_map_id=source_map_id,
+            user_id=user_id,
+            new_title="Carte Dupliquée",
+        )
+    )
+
+    assert new_map_id is not None
+    assert any(isinstance(o, Map) and o.title == "Carte Dupliquée" for o in added)
+    assert not any(isinstance(o, Feature) for o in added)
+
+
+def test_delete_map_removes_map_id_from_shared_features_even_if_primary_map_id_differs():
+    from app.services.maps import delete_map_in_db
+    from app.models.project import Project
+
+    project_id = uuid4()
+    map_1_id = uuid4()
+    map_2_id = uuid4()
+    user_id = uuid4()
+
+    shared_feature = Feature(
+        id=uuid4(),
+        project_id=project_id,
+        map_id=map_1_id,
+        data={
+            "mapId": str(map_1_id),
+            "mapIds": [str(map_1_id), str(map_2_id)],
+            "properties": {
+                "name": "Fleuve partagé",
+                "mapId": str(map_1_id),
+                "mapIds": [str(map_1_id), str(map_2_id)],
+            },
+        },
+    )
+
+    deleted_objs = []
+    session = SimpleNamespace(
+        execute=AsyncMock(side_effect=[
+            SimpleNamespace(scalar_one_or_none=lambda: Project(id=project_id, user_id=user_id)),
+            SimpleNamespace(scalar_one_or_none=lambda: Map(id=map_2_id, project_id=project_id)),
+            SimpleNamespace(scalars=lambda: SimpleNamespace(all=lambda: [shared_feature])),
+            None,
+            None,
+        ]),
+        delete=AsyncMock(side_effect=lambda obj: deleted_objs.append(obj)),
+        commit=AsyncMock(),
+    )
+
+    success = asyncio.run(delete_map_in_db(session, project_id, map_2_id, user_id))
+    assert success is True
+    assert shared_feature not in deleted_objs
+    assert str(map_2_id) not in shared_feature.data["mapIds"]
+    assert shared_feature.data["mapIds"] == [str(map_1_id)]
+    assert shared_feature.data["properties"]["mapIds"] == [str(map_1_id)]
+
+
+def test_get_project_maps_excludes_extraction_failed():
+    import app.routers.projects as projects_router
+    from app.models.project import Project
+
+    project_id = uuid4()
+    user_id = uuid4()
+
+    session = SimpleNamespace(
+        execute=AsyncMock(side_effect=[
+            SimpleNamespace(scalar_one_or_none=lambda: Project(id=project_id, user_id=user_id)),
+            SimpleNamespace(scalars=lambda: SimpleNamespace(all=lambda: [])),
+        ])
+    )
+
+    maps = asyncio.run(projects_router.get_project_maps(str(project_id), str(user_id), session))
+    assert maps == []
+    calls = session.execute.call_args_list
+    assert len(calls) == 2
+    query = calls[1][0][0]
+    compiled = str(query)
+    assert "map_imports" in compiled
+
+
 
 
 

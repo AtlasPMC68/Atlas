@@ -266,14 +266,19 @@ const exclusionZones = ref<LegendBounds[]>(
 );
 
 function checkImageLoaded(): void {
-  if (imageEl.value && imageEl.value.complete && imageEl.value.naturalWidth > 0) {
-    imageNaturalWidth.value = imageEl.value.naturalWidth;
-    imageNaturalHeight.value = imageEl.value.naturalHeight;
+  if (!imageEl.value) return;
+  const natW = imageEl.value.naturalWidth || 0;
+  const natH = imageEl.value.naturalHeight || 0;
+  if (natW > 0 && natH > 0) {
+    imageNaturalWidth.value = natW;
+    imageNaturalHeight.value = natH;
   }
 }
 
 function onImageLoad(): void {
-  checkImageLoaded();
+  if (!imageEl.value) return;
+  imageNaturalWidth.value = imageEl.value.naturalWidth || 0;
+  imageNaturalHeight.value = imageEl.value.naturalHeight || 0;
 }
 
 onMounted(() => {

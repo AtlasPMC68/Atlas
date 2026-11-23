@@ -5,6 +5,7 @@ from datetime import date
 from uuid import UUID, uuid4
 
 from sqlalchemy import select, delete
+from sqlalchemy.orm.attributes import flag_modified
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.features import Feature
 from app.models.map import Map
@@ -61,39 +62,73 @@ async def delete_map_in_db(
         return False
 
     features_result = await db.execute(
-        select(Feature).where(
-            Feature.map_id == map_id, Feature.project_id == project_id
-        )
+        select(Feature).where(Feature.project_id == project_id)
     )
-    map_features = features_result.scalars().all()
+    all_features = features_result.scalars().all()
     map_id_str = str(map_id)
 
-    for feat in map_features:
-        other_map_ids: list[str] = []
+    for feat in all_features:
+        feat_map_id_str = str(feat.map_id) if feat.map_id else None
+
+        all_map_ids: list[str] = []
         if isinstance(feat.data, dict):
             features_list = feat.data.get("features", [])
             if isinstance(features_list, list) and features_list:
                 inner_props = (features_list[0] or {}).get("properties") or {}
                 raw_map_ids = inner_props.get("mapIds") or (feat.data.get("mapIds") or [])
                 if isinstance(raw_map_ids, list):
-                    other_map_ids = [str(m) for m in raw_map_ids if str(m) != map_id_str]
+                    all_map_ids = [str(m) for m in raw_map_ids]
+            elif isinstance(feat.data.get("properties"), dict):
+                raw_map_ids = feat.data["properties"].get("mapIds") or (feat.data.get("mapIds") or [])
+                if isinstance(raw_map_ids, list):
+                    all_map_ids = [str(m) for m in raw_map_ids]
+            else:
+                raw_map_ids = feat.data.get("mapIds") or []
+                if isinstance(raw_map_ids, list):
+                    all_map_ids = [str(m) for m in raw_map_ids]
+
+        is_linked_to_map = (feat_map_id_str == map_id_str) or (map_id_str in all_map_ids)
+        if not is_linked_to_map:
+            continue
+
+        other_map_ids = [m for m in all_map_ids if m != map_id_str]
 
         if other_map_ids:
             try:
                 next_map_uuid = UUID(other_map_ids[0])
-                feat.map_id = next_map_uuid
-                feat.data["mapId"] = other_map_ids[0]
-                feat.data["map_id"] = other_map_ids[0]
-                feat.data["mapIds"] = other_map_ids
-                if isinstance(feat.data.get("features"), list) and feat.data["features"]:
-                    props = feat.data["features"][0].setdefault("properties", {})
+                if feat_map_id_str == map_id_str:
+                    feat.map_id = next_map_uuid
+                new_data = deepcopy(feat.data) if isinstance(feat.data, dict) else {}
+                new_data["mapId"] = other_map_ids[0]
+                new_data["map_id"] = other_map_ids[0]
+                new_data["mapIds"] = other_map_ids
+                if isinstance(new_data.get("features"), list) and new_data["features"]:
+                    props = new_data["features"][0].setdefault("properties", {})
                     props["mapIds"] = other_map_ids
                     props["mapId"] = other_map_ids[0]
                     props["map_id"] = other_map_ids[0]
+                elif isinstance(new_data.get("properties"), dict):
+                    props = new_data["properties"]
+                    props["mapIds"] = other_map_ids
+                    props["mapId"] = other_map_ids[0]
+                    props["map_id"] = other_map_ids[0]
+                feat.data = new_data
+                flag_modified(feat, "data")
             except Exception:
-                await db.delete(feat)
-        else:
+                if feat_map_id_str == map_id_str:
+                    await db.delete(feat)
+        elif feat_map_id_str == map_id_str:
             await db.delete(feat)
+        else:
+            new_data = deepcopy(feat.data) if isinstance(feat.data, dict) else {}
+            new_data["mapIds"] = []
+            if isinstance(new_data.get("features"), list) and new_data["features"]:
+                props = new_data["features"][0].setdefault("properties", {})
+                props["mapIds"] = []
+            elif isinstance(new_data.get("properties"), dict):
+                new_data["properties"]["mapIds"] = []
+            feat.data = new_data
+            flag_modified(feat, "data")
 
     await db.execute(delete(MapImport).where(MapImport.map_id == map_id))
     await db.execute(delete(Map).where(Map.id == map_id))

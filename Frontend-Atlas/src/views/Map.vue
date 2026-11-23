@@ -584,13 +584,11 @@ function selectFeature(id: string | null) {
         targetExactDate = ((period as any).exactDate && period.startDate) ? period.startDate : null;
       }
 
-      if (timelineMode.value !== "global" && targetYear != null && targetYear !== selectedYear.value) {
-        selectedYear.value = targetYear;
-        if (targetExactDate) {
-          selectedExactDate.value = targetExactDate;
-        } else {
-          selectedExactDate.value = null;
+      if (timelineMode.value !== "global" && targetYear != null) {
+        if (targetYear !== selectedYear.value) {
+          selectedYear.value = targetYear;
         }
+        selectedExactDate.value = targetExactDate ?? null;
       }
 
       if (period?.title) {
