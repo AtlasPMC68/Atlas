@@ -120,6 +120,9 @@ const localFeaturesSnapshot = ref<Feature[]>([]);
 
 let map: L.Map | null = null;
 let vectorRenderer: L.Canvas | null = null;
+// Set while the selection watcher turns edit/rotate mode off itself: it sets
+// up the newly selected zone, so the mode-toggle handlers must not.
+let leavingModesForSelectionChange = false;
 // When the map itself is the source of a change (drag, edit, image move), we
 // emit "draw-update" which propagates back down via props.features. This flag
 // tells the props watcher to skip the re-render for that one echo update so we
@@ -1654,7 +1657,7 @@ onMounted(() => {
   map.on("pm:globaleditmodetoggled", (e: { enabled?: boolean }) => {
     // While vertex-edit mode is active the zone must not be draggable —
     // the vertex handles wouldnt move with the shape leaving them behind.
-    if (!selectedFeatureId.value) return;
+    if (!selectedFeatureId.value || leavingModesForSelectionChange) return;
     const selectedLayer = featureLayerManager.layers.get(selectedFeatureId.value);
     if (!selectedLayer || selectedLayer instanceof L.ImageOverlay) return;
     const isEnabled = e.enabled;
@@ -1678,7 +1681,7 @@ onMounted(() => {
       if (selectedFeatureId.value) shapeScaling.detach();
     } else {
       document.querySelectorAll('.label-rotate-mode').forEach(el => el.classList.remove('label-rotate-mode'));
-      if (selectedFeatureId.value) attachScalingIfEligible(selectedFeatureId.value);
+      if (selectedFeatureId.value && !leavingModesForSelectionChange) attachScalingIfEligible(selectedFeatureId.value);
     }
   });
 
@@ -1845,6 +1848,19 @@ function clearSelection(oldId?: string | null) {
   clearAllLabelSelections();
   clearAllSelectionStyles();
   clearMultiSelectStylesAndDrag();
+
+  // Edit and rotate modes were enabled for the previous zone only (pmIgnore on
+  // every other layer): leave them, or its vertex handles stay on the map.
+  if (oldId != null && id !== oldId) {
+    const pm = (map as MapWithPm)?.pm;
+    leavingModesForSelectionChange = true;
+    try {
+      if (pm?.globalEditModeEnabled?.()) pm.disableGlobalEditMode?.();
+      if (pm?.globalRotateModeEnabled?.()) pm.disableGlobalRotateMode?.();
+    } finally {
+      leavingModesForSelectionChange = false;
+    }
+  }
 
   // Restore the original stroke color on the previously selected layer
   if (oldId != null) {

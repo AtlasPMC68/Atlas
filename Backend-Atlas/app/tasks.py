@@ -52,6 +52,7 @@ from app.utils.georeferencing.config import (
     parse_config_overrides,
 )
 from app.utils.georeferencing.debug import debug_enabled, make_run_dir
+from app.utils.georeferencing.simplify import simplify_collections_for_storage
 from app.utils.imposed_colors import (
     imposed_colors_to_config_entries,
     parse_imposed_colors_entries,
@@ -139,6 +140,14 @@ def _write_feature_collection(path: str, collections: list) -> None:
             indent=2,
             ensure_ascii=False,
         )
+
+
+def _for_storage(georef: Any) -> List[dict]:
+    if georef.model is None:
+        return georef.collections
+    return simplify_collections_for_storage(
+        georef.collections, georef.model.meters_per_pixel
+    )
 
 
 def _dump_zones_debug(debug_dir: str | None, collections: list) -> None:
@@ -777,9 +786,11 @@ def process_map_extraction(self, map_id: str):
                 click_names=inputs.shape_names,
             )
             collections.extend(
-                placement.georeference(
-                    shapes_result.get("pixel_features", []), clean=False
-                ).collections
+                _for_storage(
+                    placement.georeference(
+                        shapes_result.get("pixel_features", []), clean=False
+                    )
+                )
             )
         _raise_if_cancelled(map_id)
 
@@ -793,11 +804,9 @@ def process_map_extraction(self, map_id: str):
             config=GEOREF_CONFIG,
         )
         color_result.pop("classified_rgb", None)
-        color_collections = placement.georeference(
-            color_result.get("pixel_features", [])
-        ).collections
-        collections.extend(color_collections)
-        _dump_zones_debug(debug_dir, color_collections)
+        color_georef = placement.georeference(color_result.get("pixel_features", []))
+        _dump_zones_debug(debug_dir, color_georef.collections)
+        collections.extend(_for_storage(color_georef))
         _raise_if_cancelled(map_id)
 
         # Step 6: save everything and close the import
