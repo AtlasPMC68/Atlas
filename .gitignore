@@ -107,3 +107,6 @@ docker-compose.override.yml
 
 # Local DB backups
 backup-*.sql.gz
+
+# Project exports (scripts/project-transfer.sh)
+exports/
