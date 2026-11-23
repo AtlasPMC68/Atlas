@@ -478,7 +478,48 @@ def _get_spatial_cells(lat: float, lon: float, radius_km: float) -> List[Tuple[i
     return cells
 
 
+def _split_into_potential_subparts(text: str) -> List[str]:
+    """Split text if it contains repeated prefixes (e.g. 'Fort Rupert Fort Moose') or line breaks."""
+    subparts: List[str] = []
+    # 1. Line breaks
+    for line in text.split("\n"):
+        line_clean = line.strip()
+        if not line_clean:
+            continue
+        # 2. Check for repeated prefixes like "Fort ... Fort ...", "Cap ... Cap ...", etc.
+        # Find prefix boundaries using common geographic prefixes
+        prefix_pattern = r"(?<=\w)\s+(?=(?:Fort|Cap|Lac|Port|Baie|Ile|Île|Saint|Sainte|Rivière|Riviere|Mont|Mount|New|Nouveau)\b)"
+        pieces = re.split(prefix_pattern, line_clean, flags=re.IGNORECASE)
+        for piece in pieces:
+            p_strip = piece.strip()
+            if p_strip and len(p_strip) >= 3:
+                subparts.append(p_strip)
+    return subparts
+
+
 def find_nearby_candidate_place(
+    text: str,
+    coords: List[float],
+    radius_km: float = 75.0,
+    min_similarity: float = 0.80,
+) -> Optional[Dict[str, Any]]:
+    """Find a nearby city or geographic entity matching OCR text for review."""
+    direct_match = _find_single_nearby_candidate_place(text, coords, radius_km, min_similarity)
+    if direct_match:
+        return direct_match
+
+    # Scission lexicale pour blocs fusionnés (ex: 'Fort Ruidt Fort Moose' ou multi-lignes)
+    subparts = _split_into_potential_subparts(text)
+    if len(subparts) > 1:
+        for subpart in subparts:
+            sub_match = _find_single_nearby_candidate_place(subpart, coords, radius_km, min_similarity)
+            if sub_match:
+                return sub_match
+
+    return None
+
+
+def _find_single_nearby_candidate_place(
     text: str,
     coords: List[float],
     radius_km: float = 75.0,
@@ -665,25 +706,30 @@ def resolve_place(
             if q_toks:
                 compatible = []
                 for cand in cands:
-                    c_name = _normalize(cand.get("name") or "")
-                    c_name_fr = _normalize(cand.get("name_fr") or "")
-                    cand_toks = {
-                        t
-                        for n in (c_name, c_name_fr)
-                        for t in n.split()
-                        if len(t) >= 3 and t not in _GENERIC_ADMIN_TERMS
-                    }
-                    if not cand_toks:
-                        compatible.append(cand)
-                        continue
-                    # All query tokens must match candidate tokens
-                    if all(
-                        max((difflib.SequenceMatcher(None, q, c).ratio() for c in cand_toks), default=0.0) >= cutoff
-                        for q in q_toks
-                    ) and all(
-                        max((difflib.SequenceMatcher(None, c, q).ratio() for q in q_toks), default=0.0) >= cutoff
-                        for c in cand_toks
-                    ):
+                    c_variants = [
+                        _normalize(v)
+                        for v in (cand.get("name"), cand.get("name_fr"))
+                        if v
+                    ]
+                    matched_variant = False
+                    for c_var in c_variants:
+                        c_toks = [
+                            t for t in c_var.split()
+                            if len(t) >= 3 and t not in _GENERIC_ADMIN_TERMS
+                        ]
+                        if not c_toks:
+                            continue
+                        # All query tokens must match candidate tokens, and all candidate tokens must match query tokens
+                        if all(
+                            max((difflib.SequenceMatcher(None, q, c).ratio() for c in c_toks), default=0.0) >= cutoff
+                            for q in q_toks
+                        ) and all(
+                            max((difflib.SequenceMatcher(None, c, q).ratio() for q in q_toks), default=0.0) >= cutoff
+                            for c in c_toks
+                        ):
+                            matched_variant = True
+                            break
+                    if matched_variant:
                         compatible.append(cand)
                 cands = compatible
 
@@ -813,6 +859,16 @@ def match_ocr_label(
         hit = _try(q, MATCHING_CONFIG["ocr_fuzzy_threshold"])
         if hit:
             return hit
+
+    # Stage 3: Subparts splitting (e.g. repeated prefixes like "Fort ... Fort ...")
+    subparts = _split_into_potential_subparts(clean)
+    if len(subparts) > 1:
+        for q in subparts:
+            hit = _try(q, MATCHING_CONFIG["exact_threshold"])
+            if not hit:
+                hit = _try(q, MATCHING_CONFIG["ocr_fuzzy_threshold"])
+            if hit:
+                return hit
 
     return None
 

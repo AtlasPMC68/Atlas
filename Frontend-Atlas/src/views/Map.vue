@@ -109,60 +109,6 @@
               @edit-feature="onEditFeatureRequest"
             />
           </div>
-
-          <!-- Floating button to restore timeline when hidden (Point 6) -->
-          <div
-            v-if="!isTimelineVisible"
-            class="absolute bottom-4 right-4 z-[1001] flex items-center gap-2"
-          >
-            <!-- Previous / Next milestone navigation controls when timeline is hidden -->
-            <div
-              v-if="sortedTimelineMilestones.length > 0"
-              class="inline-flex items-center rounded-lg border border-base-300 bg-base-100 shadow-md overflow-hidden"
-            >
-              <button
-                type="button"
-                class="px-2.5 py-1.5 text-base-content hover:bg-base-200 active:bg-base-300 disabled:opacity-30 disabled:pointer-events-none border-r border-base-300 transition-colors flex items-center justify-center"
-                :disabled="!hasPrevMilestone"
-                :title="
-                  prevMilestone
-                    ? `Précédent : ${prevMilestone.label} (${prevMilestone.year})`
-                    : 'Aucun jalon précédent'
-                "
-                aria-label="Jalon précédent"
-                data-testid="prev-map-button-floating"
-                @click="goToPrevMilestone"
-              >
-                <ChevronLeftIcon class="w-4 h-4 stroke-[2.5]" />
-              </button>
-              <button
-                type="button"
-                class="px-2.5 py-1.5 text-base-content hover:bg-base-200 active:bg-base-300 disabled:opacity-30 disabled:pointer-events-none transition-colors flex items-center justify-center"
-                :disabled="!hasNextMilestone"
-                :title="
-                  nextMilestone
-                    ? `Suivant : ${nextMilestone.label} (${nextMilestone.year})`
-                    : 'Aucun jalon suivant'
-                "
-                aria-label="Jalon suivant"
-                data-testid="next-map-button-floating"
-                @click="goToNextMilestone"
-              >
-                <ChevronRightIcon class="w-4 h-4 stroke-[2.5]" />
-              </button>
-            </div>
-
-            <button
-              type="button"
-              class="btn btn-sm btn-primary shadow-md gap-1.5"
-              data-testid="show-timeline-button"
-              title="Afficher la ligne du temps"
-              @click="toggleTimeline"
-            >
-              <EyeIcon class="w-4 h-4" />
-              <span class="text-xs font-semibold">Afficher la ligne du temps</span>
-            </button>
-          </div>
         </div>
 
         <!-- Horizontal resize handle for timeline (Point 7) -->
@@ -181,9 +127,8 @@
 
         <!-- Timeline panel with hide toggle and duplication button (Points 5, 6, 7) -->
         <div
-          v-show="isTimelineVisible"
           class="map-timeline-toolbar relative z-[2000] flex flex-col bg-base-100 border-t border-base-300 overflow-visible"
-          :style="timelineHeight ? { height: `${timelineHeight}px` } : {}"
+          :style="isTimelineVisible && timelineHeight ? { height: `${timelineHeight}px` } : {}"
         >
           <!-- Top bar with Filter Modes and Map Duplication -->
           <div
@@ -254,17 +199,21 @@
                 type="button"
                 class="btn btn-ghost btn-xs text-base-content/70 hover:text-base-content gap-1"
                 data-testid="hide-timeline-button"
-                title="Masquer la ligne du temps"
+                :title="isTimelineVisible ? 'Masquer la ligne du temps' : 'Afficher la ligne du temps'"
                 @click="toggleTimeline"
               >
-                <EyeSlashIcon class="w-3.5 h-3.5" />
-                <span>Masquer la ligne du temps</span>
+                <EyeSlashIcon v-if="isTimelineVisible" class="w-3.5 h-3.5" />
+                <EyeIcon v-else class="w-3.5 h-3.5" />
+                <span>{{ isTimelineVisible ? "Masquer la ligne du temps" : "Afficher la ligne du temps" }}</span>
               </button>
             </div>
           </div>
 
           <!-- Middle scrollable area containing the timeline tracks, ticks, labels, and legend -->
-          <div class="map-timeline-slider flex-1 min-h-0 w-full overflow-visible px-3 pt-3 pb-1 relative z-20">
+          <div
+            v-show="isTimelineVisible"
+            class="map-timeline-slider flex-1 min-h-0 w-full overflow-visible px-3 pt-3 pb-1 relative z-20"
+          >
             <TimelineSlider
               v-model:year="selectedYear"
               v-model:mode="timelineMode"
@@ -286,6 +235,7 @@
             />
           </div>
           <div
+            v-show="isTimelineVisible"
             class="map-timeline-filter flex flex-row gap-1 items-center text-xs font-medium whitespace-nowrap"
           >
             <span>Filtrer par date</span>

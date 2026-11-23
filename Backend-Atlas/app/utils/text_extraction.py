@@ -206,10 +206,10 @@ def merge_multiline_ocr_blocks(blocks: list[list]) -> list[list]:
                 a = items[i]
                 b = items[j]
 
-                # Strict identical font size check
+                # Strict identical font size check: height ratio must be <= 1.30 (no horizontal merge if ratio > 1.3 - 1.5)
                 min_h = min(a["h"], b["h"])
                 max_h = max(a["h"], b["h"])
-                if min_h <= 0 or (max_h / min_h) > 1.18 or abs(a["h"] - b["h"]) > max(2.5, 0.15 * min_h):
+                if min_h <= 0 or (max_h / min_h) > 1.30 or abs(a["h"] - b["h"]) > max(2.5, 0.15 * min_h):
                     continue
 
                 # 1. Vertical candidate (en dessous)
