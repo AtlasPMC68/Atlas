@@ -270,12 +270,12 @@ export function coerceEditedFeature(
     };
   }
   const isLabel = styledFeature.properties.mapElementType === "label";
-  // A label has no symbol, so its one colour is the text colour. A point keeps
-  // a text colour only when it differs from the symbol's.
-  const textColorHex =
-    !isLabel && payload.textColorHex && payload.textColorHex !== payload.colorHex
-      ? payload.textColorHex
-      : undefined;
+  // For a label (no point), the chosen text color is stored as both colorRgb and textColorRgb.
+  // For a point, colorHex is the symbol's fill, and textColorHex is the text label's color.
+  const effectiveColorHex = isLabel ? (payload.textColorHex ?? payload.colorHex) : payload.colorHex;
+  const textColorHex = isLabel
+    ? (payload.textColorHex ?? payload.colorHex)
+    : payload.textColorHex;
   // Only a size the user moved away from the word type's is stored, so the
   // element keeps following its type otherwise.
   const textSizePx = normalizeTextSizePx(payload.textSizePx);
@@ -298,7 +298,7 @@ export function coerceEditedFeature(
       customLabelStyleId: null,
       customLabelStyle: null,
       custom_label_style_id: null,
-      colorRgb: hexToRgb(payload.colorHex),
+      colorRgb: hexToRgb(effectiveColorHex),
       textColorRgb: hexToRgb(textColorHex),
       textSizePx: customTextSizePx,
       strokeColor: isLabel ? undefined : hexToRgb(payload.strokeColorHex),

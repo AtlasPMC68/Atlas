@@ -1083,9 +1083,7 @@ const editTextStyle = computed<CSSProperties>(() => {
   }
   const preview = getWordTypePreviewStyle(
     editDraft.value.wordType,
-    isEditingPoint.value
-      ? editDraft.value.textColorHex ?? editDraft.value.colorHex
-      : editDraft.value.colorHex,
+    editDraft.value.textColorHex ?? editDraft.value.colorHex,
     normalizeTextSizePx(editDraft.value.textSizePx),
   );
   return {
