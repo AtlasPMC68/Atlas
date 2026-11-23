@@ -665,25 +665,30 @@ def resolve_place(
             if q_toks:
                 compatible = []
                 for cand in cands:
-                    c_name = _normalize(cand.get("name") or "")
-                    c_name_fr = _normalize(cand.get("name_fr") or "")
-                    cand_toks = {
-                        t
-                        for n in (c_name, c_name_fr)
-                        for t in n.split()
-                        if len(t) >= 3 and t not in _GENERIC_ADMIN_TERMS
-                    }
-                    if not cand_toks:
-                        compatible.append(cand)
-                        continue
-                    # All query tokens must match candidate tokens
-                    if all(
-                        max((difflib.SequenceMatcher(None, q, c).ratio() for c in cand_toks), default=0.0) >= cutoff
-                        for q in q_toks
-                    ) and all(
-                        max((difflib.SequenceMatcher(None, c, q).ratio() for q in q_toks), default=0.0) >= cutoff
-                        for c in cand_toks
-                    ):
+                    c_variants = [
+                        _normalize(v)
+                        for v in (cand.get("name"), cand.get("name_fr"))
+                        if v
+                    ]
+                    matched_variant = False
+                    for c_var in c_variants:
+                        c_toks = [
+                            t for t in c_var.split()
+                            if len(t) >= 3 and t not in _GENERIC_ADMIN_TERMS
+                        ]
+                        if not c_toks:
+                            continue
+                        # All query tokens must match candidate tokens, and all candidate tokens must match query tokens
+                        if all(
+                            max((difflib.SequenceMatcher(None, q, c).ratio() for c in c_toks), default=0.0) >= cutoff
+                            for q in q_toks
+                        ) and all(
+                            max((difflib.SequenceMatcher(None, c, q).ratio() for q in q_toks), default=0.0) >= cutoff
+                            for c in c_toks
+                        ):
+                            matched_variant = True
+                            break
+                    if matched_variant:
                         compatible.append(cand)
                 cands = compatible
 
