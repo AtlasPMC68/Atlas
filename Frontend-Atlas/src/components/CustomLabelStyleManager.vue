@@ -1,20 +1,27 @@
 <template>
   <dialog ref="dialogRef" class="modal">
-    <div class="modal-box w-11/12 max-w-6xl max-h-[90vh] md:h-[680px] flex flex-col gap-4 relative">
-      <button
-        type="button"
-        class="btn btn-sm btn-circle btn-ghost absolute right-4 top-4 z-10"
-        @click="dialogRef?.close()"
+   <div class="modal-box w-11/12 max-w-7xl max-h-[92vh] md:h-[820px] flex flex-col gap-0 p-6 overflow-hidden">
+      <!-- Header -->
+      <div class="flex items-center justify-between gap-4 pb-3 border-b border-base-200 shrink-0">
+        <h3 class="text-xl font-bold truncate">Modification des styles de libellé</h3>
+        <button
+          type="button"
+          class="btn btn-sm btn-circle btn-ghost shrink-0"
+          aria-label="Fermer"
+          @click="dialogRef?.close()"
+        >
+          ✕
+        </button>
+      </div>
+
+      <!-- Main 2x2 grid: Row 1 (List | Text settings), Row 2 (Preview | Point settings) -->
+      <form
+        class="grid grid-cols-1 md:grid-cols-[1fr_1.45fr] md:grid-rows-[minmax(0,1fr)_auto] flex-1 min-h-0 py-4 overflow-y-auto md:overflow-hidden"
+        @submit.prevent="submitDraft"
       >
-        ✕
-      </button>
-
-      <h3 class="text-xl font-bold shrink-0 pr-10">Modification des styles de libellé</h3>
-
-      <div class="grid grid-cols-1 md:grid-cols-[1fr_1.35fr] gap-6 items-start min-h-0 flex-1 overflow-y-auto pr-1">
-        <!-- Left column: Custom styles list & Preview underneath -->
-        <div class="flex flex-col gap-3 min-w-0">
-          <div class="flex items-center justify-between gap-2">
+        <!-- Row 1, Col 1: Styles list -->
+        <div class="flex flex-col gap-3 min-w-0 pb-4 md:pr-6 md:min-h-0">
+          <div class="flex items-center justify-between gap-2 min-h-[2rem] shrink-0">
             <h4 class="section-title">Styles personnalisés</h4>
             <button
               type="button"
@@ -28,11 +35,11 @@
             </button>
           </div>
 
-          <div class="flex flex-col gap-2 overflow-y-auto max-h-[300px] p-1 -m-1">
+          <div class="flex flex-col gap-2 flex-1 min-h-[140px] md:min-h-0 overflow-y-auto pr-1 py-0.5">
             <div
               v-for="(style, index) in draftStyles"
               :key="style.id"
-              class="flex items-center justify-between gap-2 rounded-lg border px-2.5 py-2 bg-base-100 transition-colors cursor-pointer select-none"
+              class="flex items-center justify-between gap-2 rounded-lg border px-2.5 py-2 bg-base-100 transition-colors cursor-pointer select-none shrink-0"
               :class="
                 editingId === style.id
                   ? 'border-2 border-blue-600 ring-2 ring-inset ring-blue-500/20 bg-blue-50/50 shadow-xs'
@@ -83,32 +90,11 @@
               Aucun style personnalisé.
             </p>
           </div>
-
-          <!-- Preview underneath styles list -->
-          <div class="flex flex-col gap-2 min-w-0 pt-2 border-t border-gray-200">
-            <h4 class="section-title">Aperçu</h4>
-            <div v-if="isTextStyleActive" class="preview-frame h-[115px]">
-              <div
-                class="preview-box overflow-hidden max-w-full pl-3 pr-4"
-                :style="{ ...previewStyle(currentLiveStyle, true, 44), lineHeight: '1.15' }"
-              >
-                <span
-                  v-if="draft.hasPoint"
-                  class="inline-block h-3 w-3 rounded-full shrink-0 border border-base-content"
-                  :style="{ backgroundColor: draft.pointColor || draft.color || '#000000' }"
-                ></span>
-                <span class="truncate break-words min-w-0 max-w-full pr-4">{{ draft.name.trim() || "Exemple de texte" }}</span>
-              </div>
-            </div>
-          </div>
         </div>
 
-        <!-- Right column: Settings elements only -->
-        <form
-          class="flex flex-col gap-3 min-w-0 md:border-l md:border-gray-300 md:pl-6"
-          @submit.prevent="submitDraft"
-        >
-          <div class="flex items-center justify-between gap-2">
+        <!-- Row 1, Col 2: Text style settings -->
+        <div class="flex flex-col gap-3 min-w-0 pb-4 md:border-l md:border-gray-200 md:pl-6 md:min-h-0">
+          <div class="flex items-center justify-between gap-2 min-h-[2rem] shrink-0">
             <h4 class="section-title">
               {{ editingId ? "Modifier un style" : "Créer un style" }}
             </h4>
@@ -125,140 +111,165 @@
             </button>
           </div>
 
-          <div class="flex flex-col gap-1">
-            <label class="field-label" for="custom-style-name-input">
-              Nom du style
-            </label>
-            <input
-              id="custom-style-name-input"
-              v-model="draft.name"
-              class="input input-bordered w-full text-sm"
-              required
-              maxlength="50"
-              data-testid="custom-style-name"
-              placeholder="Ex: Titre Région, Fort..."
-              @input="syncLiveDraft"
-            />
-          </div>
-
-          <!-- Size & Color in uniform cards -->
-          <div class="flex flex-col gap-1">
-            <div class="grid grid-cols-1 sm:grid-cols-2 gap-2.5 w-full">
-              <div
-                class="setting-card"
-                :class="{ 'border-error': isSizeOverMax }"
-              >
-                <label class="setting-card-label" for="custom-style-size-input">
-                  Taille (px)
-                </label>
-                <input
-                  id="custom-style-size-input"
-                  v-model.number="draft.sizePx"
-                  class="setting-number-input"
-                  type="number"
-                  min="6"
-                  max="96"
-                  required
-                  @input="syncLiveDraft"
-                  @change="normalizeDraftSize"
-                />
-              </div>
-
-              <div class="setting-card">
-                <label class="setting-card-label" for="custom-style-color-input">
-                  Couleur texte
-                </label>
-                <input
-                  id="custom-style-color-input"
-                  v-model="draft.color"
-                  type="color"
-                  class="setting-color-input"
-                  @input="syncLiveDraft"
-                />
-              </div>
-            </div>
-
-            <span
-              v-if="isSizeOverMax"
-              class="text-xs text-red-700 bg-white border border-red-500 rounded px-2 py-1 mt-1"
-              data-testid="max-size-warning"
-            >
-              La taille maximale autorisée est de 96 px (l'aperçu est limité à 96 px).
-            </span>
-          </div>
-
-          <!-- Standardized typography options -->
-          <div class="editor-section-compact">
-            <span class="field-label">Mise en forme</span>
-            <div class="grid grid-cols-3 gap-2 w-full">
-              <label class="setting-card cursor-pointer justify-start gap-2">
-                <input
-                  v-model="draft.bold"
-                  type="checkbox"
-                  class="checkbox checkbox-xs checkbox-primary"
-                  @change="syncLiveDraft"
-                />
-                <span class="setting-card-label">Gras</span>
+          <div class="flex flex-col gap-3 flex-1 min-h-0 overflow-y-auto pr-1">
+            <div class="flex flex-col gap-1">
+              <label class="field-label" for="custom-style-name-input">
+                Nom du style
               </label>
-
-              <label class="setting-card cursor-pointer justify-start gap-2">
-                <input
-                  v-model="draft.italic"
-                  type="checkbox"
-                  class="checkbox checkbox-xs checkbox-primary"
-                  @change="syncLiveDraft"
-                />
-                <span class="setting-card-label">Italique</span>
-              </label>
-
-              <label class="setting-card cursor-pointer justify-start gap-2">
-                <input
-                  v-model="draft.uppercase"
-                  type="checkbox"
-                  class="checkbox checkbox-xs checkbox-primary"
-                  @change="syncLiveDraft"
-                />
-                <span class="setting-card-label">Majuscules</span>
-              </label>
-            </div>
-          </div>
-
-          <!-- Point association option -->
-          <div class="editor-section-compact">
-            <span class="field-label">Symbole sur la carte</span>
-            <label
-              class="setting-card cursor-pointer justify-between"
-              data-testid="custom-style-has-point-toggle"
-            >
-              <div class="flex flex-col min-w-0">
-                <span class="setting-card-label">Ajouter un point</span>
-                <span class="field-hint">
-                  Affiche un marqueur ponctuel avec le libellé
-                </span>
-              </div>
               <input
-                v-model="draft.hasPoint"
-                type="checkbox"
-                class="checkbox checkbox-sm checkbox-primary shrink-0"
-                data-testid="custom-style-has-point-checkbox"
-                @change="syncLiveDraft"
+                id="custom-style-name-input"
+                v-model="draft.name"
+                class="input input-bordered w-full h-[46px] text-sm"
+                required
+                maxlength="50"
+                data-testid="custom-style-name"
+                placeholder="Ex: Titre Région, Fort..."
+                @input="syncLiveDraft"
               />
-            </label>
+            </div>
+
+            <!-- Size & Color -->
+            <div class="flex flex-col gap-1">
+              <div class="grid grid-cols-1 sm:grid-cols-2 gap-2.5 w-full">
+                <div
+                  class="setting-card h-[50px]"
+                  :class="{ 'border-error': isSizeOverMax }"
+                >
+                  <label class="setting-card-label" for="custom-style-size-input">
+                    Taille (px)
+                  </label>
+                  <input
+                    id="custom-style-size-input"
+                    v-model.number="draft.sizePx"
+                    class="setting-number-input"
+                    type="number"
+                    min="6"
+                    max="96"
+                    required
+                    @input="syncLiveDraft"
+                    @change="normalizeDraftSize"
+                  />
+                </div>
+
+                <div class="setting-card h-[50px]">
+                  <label class="setting-card-label" for="custom-style-color-input">
+                    Couleur texte
+                  </label>
+                  <input
+                    id="custom-style-color-input"
+                    v-model="draft.color"
+                    type="color"
+                    class="setting-color-input"
+                    @input="syncLiveDraft"
+                  />
+                </div>
+              </div>
+
+              <span
+                v-if="isSizeOverMax"
+                class="text-xs text-red-700 bg-white border border-red-500 rounded px-2 py-1 mt-1"
+                data-testid="max-size-warning"
+              >
+                La taille maximale autorisée est de 96 px (l'aperçu est limité à 96 px).
+              </span>
+            </div>
+
+            <!-- Typography options -->
+            <div class="editor-section-compact pt-2">
+              <span class="field-label">Mise en forme</span>
+              <div class="grid grid-cols-3 gap-2.5 w-full">
+                <label class="setting-card h-[46px] cursor-pointer justify-start gap-2">
+                  <input
+                    v-model="draft.bold"
+                    type="checkbox"
+                    class="checkbox checkbox-xs checkbox-primary"
+                    @change="syncLiveDraft"
+                  />
+                  <span class="setting-card-label">Gras</span>
+                </label>
+
+                <label class="setting-card h-[46px] cursor-pointer justify-start gap-2">
+                  <input
+                    v-model="draft.italic"
+                    type="checkbox"
+                    class="checkbox checkbox-xs checkbox-primary"
+                    @change="syncLiveDraft"
+                  />
+                  <span class="setting-card-label">Italique</span>
+                </label>
+
+                <label class="setting-card h-[46px] cursor-pointer justify-start gap-2">
+                  <input
+                    v-model="draft.uppercase"
+                    type="checkbox"
+                    class="checkbox checkbox-xs checkbox-primary"
+                    @change="syncLiveDraft"
+                  />
+                  <span class="setting-card-label">Majuscules</span>
+                </label>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Row 2, Col 1: Preview (horizontally aligned with Point settings) -->
+        <div class="flex flex-col gap-2.5 min-w-0 pt-3 border-t border-gray-200 md:pr-6">
+          <div class="flex items-center justify-between min-h-[1.75rem]">
+            <h4 class="section-title">Aperçu</h4>
+          </div>
+          <div v-if="isTextStyleActive" class="preview-frame flex-1 min-h-[108px]">
+            <div
+              class="preview-box overflow-hidden max-w-full px-3.5"
+              :style="{ ...previewStyle(currentLiveStyle, true, 44), lineHeight: '1.15' }"
+            >
+              <span
+                v-if="draft.hasPoint"
+                class="inline-block h-3 w-3 rounded-full shrink-0 border"
+                :style="{
+                  backgroundColor: draft.pointColor || draft.color || '#000000',
+                  borderColor: draft.pointStrokeColor || draft.pointColor || '#000000',
+                }"
+              ></span>
+              <span class="truncate min-w-0 max-w-full">
+                {{ draft.name.trim() || "Exemple de texte" }}
+              </span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Row 2, Col 2: Point settings (horizontally aligned with Preview) -->
+        <div class="flex flex-col gap-2.5 min-w-0 pt-3 border-t border-gray-200 md:border-l md:pl-6">
+          <div class="flex items-center justify-between gap-2 min-h-[1.75rem]">
+            <span class="section-title">Réglages du point</span>
+            <span v-if="draft.hasPoint" class="field-hint">Symbole associé au texte</span>
           </div>
 
-          <!-- Point settings displayed when "Add a point" is active -->
+          <label
+            class="setting-card cursor-pointer justify-between"
+            data-testid="custom-style-has-point-toggle"
+          >
+            <div class="flex flex-col min-w-0">
+              <span class="setting-card-label">Ajouter un point</span>
+              <span class="field-hint">
+                Affiche un marqueur ponctuel avec le libellé
+              </span>
+            </div>
+            <input
+              v-model="draft.hasPoint"
+              type="checkbox"
+              class="checkbox checkbox-sm checkbox-primary shrink-0"
+              data-testid="custom-style-has-point-checkbox"
+              @change="syncLiveDraft"
+            />
+          </label>
+
           <div
             v-if="draft.hasPoint"
-            class="editor-section"
+            class="flex flex-col gap-2.5"
             data-testid="custom-style-point-settings"
           >
-            <div class="flex items-baseline justify-between gap-2">
-              <span class="section-title">Réglages du point</span>
-              <span class="field-hint">Symbole associé au texte</span>
-            </div>
-
-            <div class="grid grid-cols-1 md:grid-cols-3 gap-2.5 w-full">
-              <div class="setting-card">
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-2.5 w-full">
+              <div class="setting-card h-[50px]">
                 <label class="setting-card-label" for="custom-style-point-fill">
                   Fond
                 </label>
@@ -271,7 +282,30 @@
                 />
               </div>
 
-              <div class="setting-card">
+              <div class="setting-card h-[50px] px-2.5 gap-1.5 min-w-0">
+                <label
+                  class="setting-card-label text-xs sm:text-sm font-medium truncate"
+                  for="custom-style-point-fill-opacity"
+                  title="Opacité du fond (0 à 1)"
+                >
+                  Opacité fond
+                </label>
+                <input
+                  id="custom-style-point-fill-opacity"
+                  v-model.number="draft.pointFillOpacity"
+                  type="number"
+                  step="0.1"
+                  min="0"
+                  max="1"
+                  placeholder="0–1"
+                  class="setting-number-input !w-12 text-xs sm:text-sm px-0.5 shrink-0"
+                  @keydown="onOpacityKeydown"
+                  @input="onOpacityInput('pointFillOpacity', $event)"
+                  @change="syncLiveDraft"
+                />
+              </div>
+
+              <div class="setting-card h-[50px]">
                 <label class="setting-card-label" for="custom-style-point-stroke">
                   Contour
                 </label>
@@ -284,45 +318,12 @@
                 />
               </div>
 
-              <div class="setting-preview-card">
-                <span class="setting-card-label px-3">Aperçu</span>
-                <div class="h-full flex items-center justify-center border-l border-gray-300 bg-base-100 px-2 py-1">
-                  <svg width="32" height="32" viewBox="0 0 40 40" class="overflow-visible">
-                    <circle
-                      cx="20"
-                      cy="20"
-                      r="13"
-                      :fill="draft.pointColor || '#000000'"
-                      :fill-opacity="draft.pointFillOpacity"
-                      :stroke="draft.pointStrokeColor || draft.pointColor || '#000000'"
-                      :stroke-width="draft.pointStrokeWidth"
-                      :stroke-opacity="draft.pointStrokeOpacity"
-                    />
-                  </svg>
-                </div>
-              </div>
-            </div>
-
-            <div class="grid grid-cols-1 md:grid-cols-3 gap-2.5 w-full">
-              <div class="setting-card px-2 gap-1 min-w-0">
-                <label class="setting-card-label text-xs xl:text-sm font-medium whitespace-nowrap overflow-visible shrink-0" for="custom-style-point-fill-opacity">
-                  Opacité fond
-                </label>
-                <input
-                  id="custom-style-point-fill-opacity"
-                  v-model.number="draft.pointFillOpacity"
-                  type="number"
-                  step="0.1"
-                  min="0"
-                  max="1"
-                  placeholder="0–1"
-                  class="setting-number-input !w-11 sm:!w-12 text-xs sm:text-sm px-0.5 shrink-0"
-                  @change="syncLiveDraft"
-                />
-              </div>
-
-              <div class="setting-card px-2 gap-1 min-w-0">
-                <label class="setting-card-label text-xs xl:text-sm font-medium whitespace-nowrap overflow-visible shrink-0" for="custom-style-point-stroke-opacity">
+              <div class="setting-card h-[50px] px-2.5 gap-1.5 min-w-0">
+                <label
+                  class="setting-card-label text-xs sm:text-sm font-medium truncate"
+                  for="custom-style-point-stroke-opacity"
+                  title="Opacité du contour (0 à 1)"
+                >
                   Opacité contour
                 </label>
                 <input
@@ -333,13 +334,22 @@
                   min="0"
                   max="1"
                   placeholder="0–1"
-                  class="setting-number-input !w-11 sm:!w-12 text-xs sm:text-sm px-0.5 shrink-0"
+                  class="setting-number-input !w-12 text-xs sm:text-sm px-0.5 shrink-0"
+                  @keydown="onOpacityKeydown"
+                  @input="onOpacityInput('pointStrokeOpacity', $event)"
                   @change="syncLiveDraft"
                 />
               </div>
 
-              <div class="setting-card px-2 gap-1 min-w-0">
-                <label class="setting-card-label text-xs xl:text-sm font-medium whitespace-nowrap overflow-visible shrink-0" for="custom-style-point-stroke-width">
+              <div
+                class="setting-card h-[50px] px-2.5 gap-1.5 min-w-0"
+                :class="{ 'border-error': isPointStrokeWidthOverMax }"
+              >
+                <label
+                  class="setting-card-label text-xs sm:text-sm font-medium truncate"
+                  for="custom-style-point-stroke-width"
+                  title="Épaisseur du contour en pixels"
+                >
                   Épaisseur contour
                 </label>
                 <input
@@ -348,16 +358,51 @@
                   type="number"
                   min="0"
                   max="12"
-                  class="setting-number-input !w-11 sm:!w-12 text-xs sm:text-sm px-0.5 shrink-0"
-                  @change="syncLiveDraft"
+                  class="setting-number-input !w-12 text-xs sm:text-sm px-0.5 shrink-0"
+                  @input="onStrokeWidthInput"
+                  @change="onStrokeWidthChange"
                 />
               </div>
-            </div>
-          </div>
-        </form>
-      </div>
 
-      <div class="modal-action mt-2 shrink-0">
+              <div class="setting-card h-[50px] flex items-center justify-between gap-2 px-3">
+                <span class="setting-card-label">Aperçu</span>
+                <div class="flex items-center justify-center shrink-0">
+                  <svg width="32" height="32" viewBox="0 0 40 40" class="overflow-hidden">
+                    <circle
+                      cx="20"
+                      cy="20"
+                      r="12"
+                      :fill="draft.pointColor || '#000000'"
+                      :fill-opacity="draft.pointFillOpacity"
+                      :stroke="draft.pointStrokeColor || '#000000'"
+                      :stroke-width="pointPreviewStrokeWidth"
+                      :stroke-opacity="draft.pointStrokeOpacity"
+                    />
+                  </svg>
+                </div>
+              </div>
+            </div>
+
+            <span
+              v-if="isPointPreviewClamped"
+              class="text-xs text-red-700 bg-white border border-red-500 rounded px-2 py-1"
+              data-testid="custom-point-preview-limit-notice"
+            >
+              L'aperçu est plafonné pour tenir dans la fenêtre.
+            </span>
+            <span
+              v-if="isPointStrokeWidthOverMax"
+              class="text-xs text-red-700 bg-white border border-red-500 rounded px-2 py-1"
+              data-testid="custom-point-stroke-width-max-warning"
+            >
+              L'épaisseur maximale autorisée est de 12 px (la valeur a été plafonnée).
+            </span>
+          </div>
+        </div>
+      </form>
+
+      <!-- Footer -->
+      <div class="modal-action mt-0 pt-3 border-t border-base-200 flex items-center justify-end gap-2 shrink-0">
         <button
           type="button"
           class="modal-secondary-btn w-32"
@@ -476,6 +521,34 @@ function normalizeDraftSize() {
   syncLiveDraft();
 }
 
+function onOpacityKeydown(event: KeyboardEvent) {
+  if (event.key === "-" || event.key === "+" || event.key === "e" || event.key === "E") {
+    event.preventDefault();
+  }
+}
+
+function onOpacityInput(field: "pointFillOpacity" | "pointStrokeOpacity", event: Event) {
+  const input = event.target as HTMLInputElement;
+  const raw = input.value;
+  if (raw === "" || raw === null) {
+    draft.value[field] = 0;
+    syncLiveDraft();
+    return;
+  }
+  const clean = raw.replace(",", ".");
+  let num = parseFloat(clean);
+  if (isNaN(num)) return;
+  if (num > 1) {
+    num = 1;
+    input.value = "1";
+  } else if (num < 0) {
+    num = 0;
+    input.value = "0";
+  }
+  draft.value[field] = num;
+  syncLiveDraft();
+}
+
 function clampOpacity(value: unknown, fallback: number): number {
   const num = Number(value);
   if (!Number.isFinite(num)) return fallback;
@@ -486,6 +559,43 @@ function clampStrokeWidth(value: unknown, fallback: number): number {
   const num = Number(value);
   if (!Number.isFinite(num)) return fallback;
   return Math.max(0, Math.min(12, num));
+}
+
+const isPointPreviewClamped = computed(() => {
+  if (!draft.value.hasPoint) return false;
+  const raw = draft.value.pointStrokeWidth;
+  return typeof raw === "number" && raw > 6;
+});
+
+const isPointStrokeWidthOverMax = computed(() => {
+  if (!draft.value.hasPoint) return false;
+  const raw = draft.value.pointStrokeWidth;
+  return typeof raw === "number" && raw > 12;
+});
+
+const pointPreviewStrokeWidth = computed(() => {
+  const raw = clampStrokeWidth(draft.value.pointStrokeWidth, 1);
+  return Math.min(raw, 6);
+});
+
+function onStrokeWidthInput(event: Event) {
+  const input = event.target as HTMLInputElement;
+  if (input.value === "" || input.value === null) {
+    draft.value.pointStrokeWidth = 0;
+    syncLiveDraft();
+    return;
+  }
+  const val = parseInt(input.value, 10);
+  if (isNaN(val)) return;
+  draft.value.pointStrokeWidth = val < 0 ? 0 : val;
+  syncLiveDraft();
+}
+
+function onStrokeWidthChange() {
+  if (typeof draft.value.pointStrokeWidth === "number") {
+    draft.value.pointStrokeWidth = Math.max(0, Math.min(12, draft.value.pointStrokeWidth));
+    syncLiveDraft();
+  }
 }
 
 const currentLiveStyle = computed<CustomLabelStyleExtended>(() => ({
@@ -501,9 +611,9 @@ const currentLiveStyle = computed<CustomLabelStyleExtended>(() => ({
   minZoom: 1,
   hasPoint: draft.value.hasPoint,
   mapElementType: draft.value.hasPoint ? "point" : "label",
-  pointColor: draft.value.pointColor || draft.value.color || "#000000",
-  pointStrokeColor: draft.value.pointStrokeColor || draft.value.pointColor || "#000000",
-  pointFillOpacity: clampOpacity(draft.value.pointFillOpacity, 0.5),
+  pointColor: draft.value.pointColor || "#000000",
+  pointStrokeColor: draft.value.pointStrokeColor || "#000000",
+  pointFillOpacity: clampOpacity(draft.value.pointFillOpacity, 1),
   pointStrokeOpacity: clampOpacity(draft.value.pointStrokeOpacity, 1),
   pointStrokeWidth: clampStrokeWidth(draft.value.pointStrokeWidth, 1),
 }));
@@ -521,7 +631,7 @@ function resetDraft() {
     hasPoint: false,
     pointColor: "#000000",
     pointStrokeColor: "#000000",
-    pointFillOpacity: 0.5,
+    pointFillOpacity: 1,
     pointStrokeOpacity: 1,
     pointStrokeWidth: 1,
   };
@@ -550,8 +660,8 @@ function editStyle(style: CustomLabelStyleExtended) {
     color: baseColor,
     hasPoint: hasStylePoint(style),
     pointColor: style.pointColor || baseColor,
-    pointStrokeColor: style.pointStrokeColor || style.pointColor || baseColor,
-    pointFillOpacity: clampOpacity(style.pointFillOpacity, 0.5),
+    pointStrokeColor: style.pointStrokeColor || "#000000",
+    pointFillOpacity: clampOpacity(style.pointFillOpacity, 1),
     pointStrokeOpacity: clampOpacity(style.pointStrokeOpacity, 1),
     pointStrokeWidth: clampStrokeWidth(style.pointStrokeWidth, 1),
   };
@@ -600,7 +710,7 @@ function addNewStyle() {
     hasPoint: false,
     pointColor: "#000000",
     pointStrokeColor: "#000000",
-    pointFillOpacity: 0.5,
+    pointFillOpacity: 1,
     pointStrokeOpacity: 1,
     pointStrokeWidth: 1,
   };
@@ -624,8 +734,8 @@ function revertStyle() {
     color: baseColor,
     hasPoint: hasStylePoint(snap),
     pointColor: snap.pointColor || baseColor,
-    pointStrokeColor: snap.pointStrokeColor || snap.pointColor || baseColor,
-    pointFillOpacity: clampOpacity(snap.pointFillOpacity, 0.5),
+    pointStrokeColor: snap.pointStrokeColor || "#000000",
+    pointFillOpacity: clampOpacity(snap.pointFillOpacity, 1),
     pointStrokeOpacity: clampOpacity(snap.pointStrokeOpacity, 1),
     pointStrokeWidth: clampStrokeWidth(snap.pointStrokeWidth, 1),
   };
@@ -665,9 +775,9 @@ function toStyleDraft(
     minZoom: 1,
     hasPoint: draft.value.hasPoint,
     mapElementType: draft.value.hasPoint ? "point" : "label",
-    pointColor: draft.value.pointColor || draft.value.color || "#000000",
-    pointStrokeColor: draft.value.pointStrokeColor || draft.value.pointColor || "#000000",
-    pointFillOpacity: clampOpacity(draft.value.pointFillOpacity, 0.5),
+    pointColor: draft.value.pointColor || "#000000",
+    pointStrokeColor: draft.value.pointStrokeColor || "#000000",
+    pointFillOpacity: clampOpacity(draft.value.pointFillOpacity, 1),
     pointStrokeOpacity: clampOpacity(draft.value.pointStrokeOpacity, 1),
     pointStrokeWidth: clampStrokeWidth(draft.value.pointStrokeWidth, 1),
   };

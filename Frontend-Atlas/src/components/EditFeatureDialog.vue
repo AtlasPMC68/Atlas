@@ -265,7 +265,7 @@
 
           <div class="flex flex-col gap-1.5">
             <span class="field-label leading-5">Couleurs et aperçu</span>
-            <div class="grid grid-cols-1 sm:grid-cols-3 gap-2.5 w-full">
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-2.5 w-full">
               <div class="setting-card h-[50px]">
                 <label class="setting-card-label" for="edit-feature-fill-color">
                   Fond
@@ -276,6 +276,30 @@
                   data-testid="color-input"
                   type="color"
                   class="setting-color-input"
+                />
+              </div>
+
+              <div class="setting-card h-[50px] px-2.5 gap-1.5 min-w-0">
+                <label
+                  class="setting-card-label text-xs sm:text-sm font-medium truncate"
+                  for="edit-fill-opacity"
+                  title="Opacité du fond (0 à 1)"
+                >
+                  Opacité fond
+                </label>
+                <input
+                  id="edit-fill-opacity"
+                  v-model.number="editDraft.fillOpacity"
+                  data-testid="fill-opacity-input"
+                  type="number"
+                  step="0.1"
+                  min="0"
+                  max="1"
+                  placeholder="0–1"
+                  class="setting-number-input !w-12 text-xs sm:text-sm px-0.5 shrink-0"
+                  @keydown="onOpacityKeydown"
+                  @input="onOpacityInput('fillOpacity', $event)"
+                  @change="onOpacityChange('fillOpacity', $event)"
                 />
               </div>
 
@@ -292,6 +316,54 @@
                 />
               </div>
 
+              <div class="setting-card h-[50px] px-2.5 gap-1.5 min-w-0">
+                <label
+                  class="setting-card-label text-xs sm:text-sm font-medium truncate"
+                  for="edit-stroke-opacity"
+                  title="Opacité du contour (0 à 1)"
+                >
+                  Opacité contour
+                </label>
+                <input
+                  id="edit-stroke-opacity"
+                  v-model.number="editDraft.strokeOpacity"
+                  data-testid="stroke-opacity-input"
+                  type="number"
+                  step="0.1"
+                  min="0"
+                  max="1"
+                  placeholder="0–1"
+                  class="setting-number-input !w-12 text-xs sm:text-sm px-0.5 shrink-0"
+                  @keydown="onOpacityKeydown"
+                  @input="onOpacityInput('strokeOpacity', $event)"
+                  @change="onOpacityChange('strokeOpacity', $event)"
+                />
+              </div>
+
+              <div
+                class="setting-card h-[50px] px-2.5 gap-1.5 min-w-0"
+                :class="{ 'border-error': isPointStrokeWidthOverMax }"
+              >
+                <label
+                  class="setting-card-label text-xs sm:text-sm font-medium truncate"
+                  for="edit-stroke-width"
+                  title="Épaisseur du contour en pixels"
+                >
+                  Épaisseur contour
+                </label>
+                <input
+                  id="edit-stroke-width"
+                  v-model.number="editDraft.strokeWidth"
+                  data-testid="stroke-width-input"
+                  type="number"
+                  min="0"
+                  :max="maxStrokeWidth"
+                  class="setting-number-input !w-12 text-xs sm:text-sm px-0.5 shrink-0"
+                  @input="onStrokeWidthInput"
+                  @change="onStrokeWidthChange"
+                />
+              </div>
+
               <div
                 class="setting-card h-[50px] flex items-center justify-between gap-2 px-3"
                 data-testid="point-preview-container"
@@ -300,12 +372,12 @@
                   Aperçu
                 </span>
                 <div class="flex items-center justify-center shrink-0">
-                  <svg width="32" height="32" viewBox="0 0 40 40" class="overflow-visible">
+                  <svg width="32" height="32" viewBox="0 0 40 40" class="overflow-hidden">
                     <circle
                       v-if="isEditingPoint"
                       cx="20"
                       cy="20"
-                      r="14"
+                      r="12"
                       :fill="pointPreviewFillColor"
                       :fill-opacity="pointPreviewFillOpacity"
                       :stroke="pointPreviewStrokeColor"
@@ -329,72 +401,21 @@
                 </div>
               </div>
             </div>
-          </div>
 
-          <div class="grid grid-cols-1 sm:grid-cols-3 gap-2.5 w-full">
-            <div class="setting-card h-[50px] px-2 gap-1 min-w-0">
-              <label
-                class="setting-card-label text-xs xl:text-sm font-medium whitespace-nowrap overflow-visible shrink-0"
-                for="edit-fill-opacity"
-                title="Opacité du fond (0 à 1)"
-              >
-                Opacité fond
-              </label>
-              <input
-                id="edit-fill-opacity"
-                v-model.number="editDraft.fillOpacity"
-                data-testid="fill-opacity-input"
-                type="number"
-                step="0.1"
-                min="0"
-                max="1"
-                placeholder="0–1"
-                class="setting-number-input !w-11 text-xs sm:text-sm px-0.5 shrink-0"
-                @change="editDraft.fillOpacity = normalizeOpacity(editDraft.fillOpacity)"
-              />
-            </div>
-
-            <div class="setting-card h-[50px] px-2 gap-1 min-w-0">
-              <label
-                class="setting-card-label text-xs xl:text-sm font-medium whitespace-nowrap overflow-visible shrink-0"
-                for="edit-stroke-opacity"
-                title="Opacité du contour (0 à 1)"
-              >
-                Opacité contour
-              </label>
-              <input
-                id="edit-stroke-opacity"
-                v-model.number="editDraft.strokeOpacity"
-                data-testid="stroke-opacity-input"
-                type="number"
-                step="0.1"
-                min="0"
-                max="1"
-                placeholder="0–1"
-                class="setting-number-input !w-11 text-xs sm:text-sm px-0.5 shrink-0"
-                @change="editDraft.strokeOpacity = normalizeOpacity(editDraft.strokeOpacity)"
-              />
-            </div>
-
-            <div class="setting-card h-[50px] px-2 gap-1 min-w-0">
-              <label
-                class="setting-card-label text-xs xl:text-sm font-medium whitespace-nowrap overflow-visible shrink-0"
-                for="edit-stroke-width"
-                title="Épaisseur du contour en pixels"
-              >
-                Épaisseur contour
-              </label>
-              <input
-                id="edit-stroke-width"
-                v-model.number="editDraft.strokeWidth"
-                data-testid="stroke-width-input"
-                type="number"
-                min="0"
-                :max="MAX_STROKE_WIDTH_PX"
-                class="setting-number-input !w-11 text-xs sm:text-sm px-0.5 shrink-0"
-                @change="editDraft.strokeWidth = normalizeStrokeWidth(editDraft.strokeWidth)"
-              />
-            </div>
+            <span
+              v-if="isPointPreviewClamped"
+              class="text-xs text-red-700 bg-white border border-red-500 rounded px-2 py-1"
+              data-testid="point-preview-limit-notice"
+            >
+              L'aperçu est plafonné pour tenir dans la fenêtre.
+            </span>
+            <span
+              v-if="isPointStrokeWidthOverMax"
+              class="text-xs text-red-700 bg-white border border-red-500 rounded px-2 py-1"
+              data-testid="point-stroke-width-max-warning"
+            >
+              L'épaisseur maximale autorisée est de {{ maxStrokeWidth }} px (la valeur a été plafonnée).
+            </span>
           </div>
         </div>
       </fieldset>
@@ -468,6 +489,8 @@ import {
   normalizeOpacity,
   normalizeStrokeWidth,
   MAX_STROKE_WIDTH_PX,
+  MAX_POINT_STROKE_WIDTH_PX,
+  MAX_PREVIEW_POINT_STROKE_WIDTH_PX,
   type FeatureEditSubmitPayload,
 } from "../utils/featureTextEditing";
 import { rgbToHex } from "../utils/utils";
@@ -554,6 +577,22 @@ const isTextSizeOverMax = computed(() => {
   return typeof rawSize === "number" && rawSize > MAX_TEXT_SIZE_PX;
 });
 
+const maxStrokeWidth = computed(() => {
+  return isEditingPoint.value ? MAX_POINT_STROKE_WIDTH_PX : MAX_STROKE_WIDTH_PX;
+});
+
+const isPointPreviewClamped = computed(() => {
+  if (!isEditingPoint.value) return false;
+  const raw = editDraft.value.strokeWidth;
+  return typeof raw === "number" && raw > MAX_PREVIEW_POINT_STROKE_WIDTH_PX;
+});
+
+const isPointStrokeWidthOverMax = computed(() => {
+  if (!isEditingPoint.value) return false;
+  const raw = editDraft.value.strokeWidth;
+  return typeof raw === "number" && raw > MAX_POINT_STROKE_WIDTH_PX;
+});
+
 const defaultTextSizePx = computed(() => {
   return getDefaultTextSizePx(
     editDraft.value.wordType,
@@ -622,6 +661,9 @@ const pointPreviewFillColor = computed(() => {
 });
 
 const pointPreviewStrokeColor = computed(() => {
+  if (isEditingPoint.value) {
+    return editDraft.value.strokeColorHex || "#000000";
+  }
   return editDraft.value.strokeColorHex || editDraft.value.colorHex || "#000000";
 });
 
@@ -643,7 +685,11 @@ const pointPreviewStrokeWidth = computed(() => {
   if (activeCustomLabelStyle.value) {
     return activeCustomLabelStyle.value.pointStrokeWidth ?? 1;
   }
-  return normalizeStrokeWidth(editDraft.value.strokeWidth) ?? 1;
+  const raw = normalizeStrokeWidth(editDraft.value.strokeWidth) ?? 1;
+  if (isEditingPoint.value) {
+    return Math.min(raw, MAX_PREVIEW_POINT_STROKE_WIDTH_PX);
+  }
+  return raw;
 });
 
 const selectedWordTypeSelectStyle = computed<CSSProperties>(() => {
@@ -684,6 +730,64 @@ function onNameInput() {
 function onTextSizeChange() {
   if (typeof editDraft.value.textSizePx === "number") {
     editDraft.value.textSizePx = normalizeTextSizePx(editDraft.value.textSizePx);
+  }
+}
+
+function onOpacityKeydown(event: KeyboardEvent) {
+  if (event.key === "-" || event.key === "+" || event.key === "e" || event.key === "E") {
+    event.preventDefault();
+  }
+}
+
+function onOpacityInput(field: "fillOpacity" | "strokeOpacity", event: Event) {
+  const input = event.target as HTMLInputElement;
+  const raw = input.value;
+  if (raw === "" || raw === null) {
+    editDraft.value[field] = undefined;
+    return;
+  }
+  const clean = raw.replace(",", ".");
+  let num = parseFloat(clean);
+  if (isNaN(num)) return;
+  if (num > 1) {
+    num = 1;
+    input.value = "1";
+  } else if (num < 0) {
+    num = 0;
+    input.value = "0";
+  }
+  editDraft.value[field] = num;
+}
+
+function onOpacityChange(field: "fillOpacity" | "strokeOpacity", event: Event) {
+  const input = event.target as HTMLInputElement;
+  const val = normalizeOpacity(editDraft.value[field]);
+  editDraft.value[field] = val;
+  if (val !== undefined) {
+    input.value = String(val);
+  }
+}
+
+function onStrokeWidthInput(event: Event) {
+  const input = event.target as HTMLInputElement;
+  if (input.value === "" || input.value === null) {
+    editDraft.value.strokeWidth = undefined;
+    return;
+  }
+  const val = parseInt(input.value, 10);
+  if (isNaN(val)) return;
+  if (val < 0) {
+    input.value = "0";
+    editDraft.value.strokeWidth = 0;
+  } else {
+    editDraft.value.strokeWidth = val;
+  }
+}
+
+function onStrokeWidthChange() {
+  if (typeof editDraft.value.strokeWidth === "number") {
+    const max = maxStrokeWidth.value;
+    editDraft.value.strokeWidth = Math.max(0, Math.min(max, editDraft.value.strokeWidth));
   }
 }
 
@@ -782,7 +886,7 @@ async function onEditFeature() {
 
   isEditing.value = true;
 
-  const isLabel = getMapElementType(featureToEdit.value) === "label";
+  const isLabel = !isEditingPoint.value && isTextElement.value;
   if ((isLabel || !hasGeometryControls.value) && editDraft.value.textColorHex) {
     editDraft.value.colorHex = editDraft.value.textColorHex;
   }

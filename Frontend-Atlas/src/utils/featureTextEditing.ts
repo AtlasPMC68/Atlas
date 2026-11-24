@@ -36,6 +36,8 @@ export interface FeatureEditSubmitPayload {
 }
 
 export const MAX_STROKE_WIDTH_PX = 50;
+export const MAX_POINT_STROKE_WIDTH_PX = 12;
+export const MAX_PREVIEW_POINT_STROKE_WIDTH_PX = 6;
 export const DEFAULT_POINT_STROKE_OPACITY = 1;
 
 /**
@@ -54,6 +56,13 @@ export function normalizeStrokeWidth(value: unknown): number | undefined {
   const width = Number(value);
   if (!Number.isFinite(width)) return undefined;
   return Math.max(0, Math.min(MAX_STROKE_WIDTH_PX, width));
+}
+
+export function normalizePointStrokeWidth(value: unknown): number | undefined {
+  if (value === null || value === undefined || value === "") return undefined;
+  const width = Number(value);
+  if (!Number.isFinite(width)) return undefined;
+  return Math.max(0, Math.min(MAX_POINT_STROKE_WIDTH_PX, width));
 }
 
 export function getDefaultTextSizePx(wordType: string | undefined): number {
@@ -159,20 +168,26 @@ export function prepareFeatureForEdit(feature: Feature): FeatureEditState {
 
   const rawColorHex = rgbToHex(feature.properties.colorRgb);
   const rawTextColorHex = rgbToHex(feature.properties.textColorRgb);
+  const rawStrokeColorHex = rgbToHex(feature.properties.strokeColor);
 
   let colorHex: string | undefined;
   let textColorHex: string | undefined;
+  let strokeColorHex: string | undefined;
 
   if (hasCustomStyle && customStyle) {
     colorHex = customStyle.pointColor || customStyle.color || rawColorHex || "#000000";
     textColorHex = customStyle.color || rawTextColorHex || "#000000";
+    strokeColorHex = customStyle.pointStrokeColor || rawStrokeColorHex || "#000000";
   } else {
     colorHex =
       rawColorHex ??
       (elementType === "label" || elementType === "point" ? "#000000" : undefined);
     textColorHex =
       rawTextColorHex ??
-      (elementType === "label" ? (colorHex || "#000000") : "#000000");
+      (elementType === "label" || elementType === "point" ? (colorHex || "#000000") : "#000000");
+    strokeColorHex =
+      rawStrokeColorHex ??
+      (elementType === "point" ? "#000000" : undefined);
   }
 
   return {
@@ -193,14 +208,18 @@ export function prepareFeatureForEdit(feature: Feature): FeatureEditState {
         ? normalizeTextSizePx(feature.properties.textSizePx) ??
           getDefaultTextSizePx(wordType)
         : undefined,
-      strokeColorHex: rgbToHex(feature.properties.strokeColor),
-      fillOpacity: normalizeOpacity(feature.properties.fillOpacity),
+      strokeColorHex,
+      fillOpacity:
+        normalizeOpacity(feature.properties.fillOpacity) ??
+        (elementType === "point" ? 1 : undefined),
       // A point's outline is drawn opaque unless told otherwise; show that
       // value rather than an empty field.
       strokeOpacity:
         normalizeOpacity(feature.properties.strokeOpacity) ??
         (elementType === "point" ? DEFAULT_POINT_STROKE_OPACITY : undefined),
-      strokeWidth: normalizeStrokeWidth(feature.properties.strokeWidth),
+      strokeWidth:
+        normalizeStrokeWidth(feature.properties.strokeWidth) ??
+        (elementType === "point" ? 1 : undefined),
     },
   };
 }
@@ -276,6 +295,7 @@ export function coerceEditedFeature(
     };
   }
   const isLabel = styledFeature.properties.mapElementType === "label";
+  const isPoint = styledFeature.properties.mapElementType === "point";
   const labelColorHex = payload.colorHex ?? payload.textColorHex;
   // A label has no symbol, so its one colour is its text colour (stored in colorRgb, without redundant textColorRgb).
   // A point keeps a separate text colour only when it differs from the symbol's.
@@ -308,10 +328,18 @@ export function coerceEditedFeature(
       colorRgb: hexToRgb(isLabel ? labelColorHex : payload.colorHex),
       textColorRgb: hexToRgb(textColorHex),
       textSizePx: customTextSizePx,
-      strokeColor: isLabel ? undefined : hexToRgb(payload.strokeColorHex),
-      fillOpacity: isLabel ? undefined : normalizeOpacity(payload.fillOpacity),
-      strokeOpacity: isLabel ? undefined : normalizeOpacity(payload.strokeOpacity),
-      strokeWidth: isLabel ? undefined : normalizeStrokeWidth(payload.strokeWidth),
+      strokeColor: isLabel
+        ? undefined
+        : hexToRgb(payload.strokeColorHex || (isPoint ? "#000000" : undefined)),
+      fillOpacity: isLabel
+        ? undefined
+        : (normalizeOpacity(payload.fillOpacity) ?? (isPoint ? 1 : undefined)),
+      strokeOpacity: isLabel
+        ? undefined
+        : (normalizeOpacity(payload.strokeOpacity) ?? (isPoint ? 1 : undefined)),
+      strokeWidth: isLabel
+        ? undefined
+        : (normalizeStrokeWidth(payload.strokeWidth) ?? (isPoint ? 1 : undefined)),
     },
   };
 }

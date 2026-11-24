@@ -1112,7 +1112,7 @@ function materializeTextLayer(feature: Feature): L.Layer | null {
       color: strokeColor,
       weight: customStyle?.pointStrokeWidth ?? feature.properties.strokeWidth ?? 1,
       opacity: customStyle?.pointStrokeOpacity ?? feature.properties.strokeOpacity ?? 1,
-      fillOpacity: customStyle?.pointFillOpacity ?? feature.properties.fillOpacity ?? 0.5,
+      fillOpacity: customStyle?.pointFillOpacity ?? feature.properties.fillOpacity ?? 1,
     });
 
     const label = buildLabelMarker(feature, presentation, [-8, 15]);
