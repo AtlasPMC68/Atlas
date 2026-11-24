@@ -207,6 +207,18 @@
                 Personnaliser
               </button>
             </div>
+            <p
+              v-if="!editDraft.customLabelStyleId"
+              class="alert alert-info py-1.5 px-2.5 text-xs rounded-lg flex items-start gap-2"
+              data-testid="word-style-scope-notice"
+            >
+              <InformationCircleIcon class="w-4 h-4 shrink-0 text-info mt-0.5" />
+              <span>
+                La modification du type, des couleurs, de la taille et du point s'applique uniquement à ce mot.
+                Elle ne change pas le style de tous les mots du même type.
+                Pour un style réutilisable, créez un style personnalisé.
+              </span>
+            </p>
           </div>
 
           <div
@@ -497,6 +509,7 @@ import {
   getDefaultTextSizePx,
   normalizeOpacity,
   normalizeStrokeWidth,
+  DEFAULT_POINT_STROKE_OPACITY,
   MAX_STROKE_WIDTH_PX,
   MAX_POINT_STROKE_WIDTH_PX,
   MAX_PREVIEW_POINT_STROKE_WIDTH_PX,
@@ -858,6 +871,17 @@ function onLabelStyleSelectionChange() {
   }
 
   editDraft.value.textSizePx = defaultTextSizePx.value;
+  const entry = WORD_TYPE_TAXONOMY[editDraft.value.wordType];
+  if (entry?.mapElementType === "point") {
+    editDraft.value.fillOpacity =
+      normalizeOpacity(editDraft.value.fillOpacity) ?? 1;
+    editDraft.value.strokeOpacity =
+      normalizeOpacity(editDraft.value.strokeOpacity) ?? DEFAULT_POINT_STROKE_OPACITY;
+    editDraft.value.strokeWidth =
+      normalizeStrokeWidth(editDraft.value.strokeWidth) ?? 1;
+    editDraft.value.strokeColorHex = editDraft.value.strokeColorHex || "#000000";
+    editDraft.value.colorHex = editDraft.value.colorHex || "#000000";
+  }
   const baseText = editDraft.value.labelText || editDraft.value.name || "";
   editDraft.value.labelText = formatWordText(baseText, editDraft.value.wordType);
 }

@@ -402,8 +402,10 @@ export function getLabelPresentation(
     isUppercase: typo.isUppercase,
     isItalic: typo.isItalic,
     isBold: typo.isBold,
-    priority: customStyle?.priority ?? taxonomy.priority,
-    minZoom: customStyle?.minZoom ?? taxonomy.minZoom,
+    priority: typo.sizePx,
+    minZoom:
+      customStyle?.minZoom ??
+      (typeof props.minZoom === "number" ? props.minZoom : taxonomy.minZoom),
     color: typo.color,
     colorCss: typo.color,
     hasPoint,

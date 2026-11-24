@@ -205,9 +205,33 @@ describe("shared word styles and label presentation", () => {
     expect(pres.isItalic).toBe(true);
     expect(pres.fontWeight).toBe("bold");
     expect(pres.isBold).toBe(true);
-    expect(pres.priority).toBe(60);
+    expect(pres.priority).toBe(16);
     expect(pres.minZoom).toBe(2.0);
     expect(pres.html).toContain("Baie d'Hudson");
+  });
+
+  it("uses this word's own size as collision priority, not its type", () => {
+    const feature: Feature = {
+      type: "Feature",
+      id: "feat-city-from-sea",
+      name: "Mer du Labrador",
+      geometry: { type: "Point", coordinates: [-60, 55] },
+      properties: {
+        name: "Mer du Labrador",
+        rawType: "city",
+        mapElementType: "point",
+        textSizePx: 20,
+      },
+      createdAt: "2026-01-01",
+      updatedAt: "2026-01-01",
+      projectId: "",
+    };
+
+    const presentation = getLabelPresentation(feature);
+    expect(presentation.wordType).toBe("city");
+    expect(presentation.mapElementType).toBe("point");
+    expect(presentation.sizePx).toBe(20);
+    expect(presentation.priority).toBe(20);
   });
 
   it("applies custom label style bold/fontWeight correctly to presentation model", () => {

@@ -890,8 +890,8 @@ function applyLabelPresentationStyle(
   el.style.setProperty("--label-style", presentation.fontStyle);
   el.style.setProperty("--label-weight", presentation.fontWeight);
   el.style.setProperty("--label-transform", presentation.textTransform);
-  el.dataset.priority = String(presentation.priority);
-  el.dataset.minZoom = String(presentation.minZoom);
+  el.dataset.sizePx = String(presentation.sizePx);
+  el.dataset.priority = String(presentation.sizePx);
   el.dataset.wordType = presentation.wordType;
   el.dataset.featureId = String(featureId);
   if (selectedFeatureId.value === String(featureId)) {

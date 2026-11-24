@@ -20,16 +20,16 @@ describe("MapLabelVisibilityService", () => {
     const label1 = document.createElement("div");
     label1.className = "city-label-text";
     label1.dataset.featureId = "label-1";
-    label1.dataset.priority = "1";
-    label1.dataset.minZoom = "12";
+    label1.dataset.sizePx = "12";
+    label1.dataset.priority = "12";
     label1.textContent = "Label One";
     container.appendChild(label1);
 
     const label2 = document.createElement("div");
     label2.className = "city-label-text";
     label2.dataset.featureId = "label-2";
-    label2.dataset.priority = "1";
-    label2.dataset.minZoom = "12";
+    label2.dataset.sizePx = "12";
+    label2.dataset.priority = "12";
     label2.textContent = "Label Two";
     container.appendChild(label2);
 
@@ -44,8 +44,8 @@ describe("MapLabelVisibilityService", () => {
     const label = document.createElement("div");
     label.className = "city-label-text label-selected";
     label.dataset.featureId = "label-selected-test";
-    label.dataset.priority = "0";
-    label.dataset.minZoom = "15";
+    label.dataset.sizePx = "12";
+    label.dataset.priority = "12";
     label.textContent = "Selected Label";
     container.appendChild(label);
 

@@ -383,6 +383,10 @@ describe("FeatureVisibilityControls - Word Type Selection and Font Modification"
     const select = wrapper.find('[data-testid="word-type-select"]');
     expect(select.exists()).toBe(true);
     expect((select.element as HTMLSelectElement).value).toBe("city");
+    const notice = wrapper.find('[data-testid="word-style-scope-notice"]');
+    expect(notice.exists()).toBe(true);
+    expect(notice.text()).toContain("uniquement à ce mot");
+    expect(notice.text()).toContain("style personnalisé");
   });
 
   it("does not display word type selector when editing a non-text feature (e.g. zone)", async () => {
@@ -397,6 +401,7 @@ describe("FeatureVisibilityControls - Word Type Selection and Font Modification"
 
     const select = wrapper.find('[data-testid="word-type-select"]');
     expect(select.exists()).toBe(false);
+    expect(wrapper.find('[data-testid="word-style-scope-notice"]').exists()).toBe(false);
   });
 
   it("updates font police and style when changing type from city to province", async () => {

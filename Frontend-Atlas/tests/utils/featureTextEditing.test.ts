@@ -181,6 +181,44 @@ describe("featureTextEditing", () => {
       expect(edited.properties.rawType).toBe("city");
     });
 
+    it("applies a mer-to-ville change on that word only and keeps it visible", () => {
+      const seaFeature: Feature = {
+        ...basePointFeature,
+        id: "f-sea-1",
+        name: "Mer du Labrador",
+        properties: {
+          name: "Mer du Labrador",
+          labelText: "Mer du Labrador",
+          mapElementType: "label",
+          rawType: "sea",
+          type: "sea",
+          colorRgb: [0, 70, 140],
+          mapId: "map-1",
+        },
+      };
+
+      const edited = coerceEditedFeature(seaFeature, {
+        name: "Mer du Labrador",
+        wordType: "city",
+        colorHex: "#111111",
+        textColorHex: "#222222",
+        strokeColorHex: "#333333",
+        fillOpacity: 0.8,
+        strokeOpacity: 0.9,
+        strokeWidth: 2,
+        selectedMapIds: ["map-1"],
+      });
+
+      expect(edited.properties.rawType).toBe("city");
+      expect(edited.properties.mapElementType).toBe("point");
+      expect(edited.properties.customLabelStyleId).toBeNull();
+      expect(edited.properties.pointColor).toBe("#111111");
+      expect(edited.properties.pointStrokeColor).toBe("#333333");
+      expect(edited.properties.fillOpacity).toBe(0.8);
+      expect(edited.properties.strokeWidth).toBe(2);
+      expect(edited.mapId).toBe("map-1");
+    });
+
     it("applies custom label style and uppercase transformation when selected", () => {
       const edited = coerceEditedFeature(basePointFeature, {
         name: "ottawa",

@@ -10,8 +10,8 @@ export interface LabelRectangle {
 export interface LabelCollisionCandidate {
   id: string;
   text: string;
-  priority: number;
-  minZoom: number;
+  /** Collision rank for this word; larger text stays when labels overlap. */
+  sizePx: number;
   rectangle: LabelRectangle;
 }
 
@@ -72,12 +72,15 @@ function getGridCells(rect: LabelRectangle): string[] | null {
 export function selectVisibleLabels(
   candidates: LabelCollisionCandidate[],
   bounds: LabelRectangle,
-  zoom: number,
   selectedId: string | null,
 ): Set<string> {
-  const sorted = [...candidates].sort(
-    (a, b) => b.priority - a.priority || a.text.localeCompare(b.text),
-  );
+  const sorted = [...candidates].sort((a, b) => {
+    const sizeDelta = b.sizePx - a.sizePx;
+    if (sizeDelta !== 0) return sizeDelta;
+    const textDelta = a.text.localeCompare(b.text);
+    if (textDelta !== 0) return textDelta;
+    return a.id.localeCompare(b.id);
+  });
   const visible = new Set<string>();
   const occupied: LabelRectangle[] = [];
   const occupiedByCell = new Map<string, number[]>();
@@ -85,7 +88,6 @@ export function selectVisibleLabels(
 
   for (const candidate of sorted) {
     const isSelected = candidate.id === selectedId;
-    if (zoom < candidate.minZoom && !isSelected) continue;
     if (isOutsideBounds(candidate.rectangle, bounds)) continue;
 
     const candidateCells = getGridCells(candidate.rectangle);
