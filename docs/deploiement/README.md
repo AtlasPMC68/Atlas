@@ -259,12 +259,14 @@ On suit le déploiement dans l'onglet **Actions** du dépôt sur GitHub (workflo
 | Les tests échouent | Rien n'est déployé, le site garde la version actuelle. |
 | `deploy.sh` échoue (migration ratée, service qui ne démarre pas…) | `rollback.sh` est lancé automatiquement : le site revient à la dernière version qui marchait. Le job est rouge. Corrigez, puis mergez à nouveau. |
 | Le test final (`/api/ping`) échoue | La nouvelle version tourne, mais le site ne répond pas de l'extérieur. Voir la [partie 9](#9-quand-quelque-chose-ne-va-pas), en commençant par `docker compose logs caddy`. |
-| Deux merges très rapprochés | Ils sont déployés l'un après l'autre, jamais en même temps. |
+| Deux merges très rapprochés | Ils sont déployés l'un après l'autre, jamais en même temps. Si le plus récent est déployé en premier (ses tests ont fini avant), l'autre est ignoré : la production ne revient jamais à un commit plus ancien. |
 
 Pour redéployer sans nouveau merge : onglet **Actions** → **CI - Atlas Project Tests** → **Run workflow** sur la branche `main`.
 
 > [!NOTE]
-> La clé SSH utilisée par GitHub ne peut **que** lancer `scripts/ci-deploy.sh`, et ce script refuse tout commit qui n'est pas sur `main`. Même si le secret fuitait, personne ne pourrait ouvrir un terminal sur la VM avec cette clé.
+> La clé SSH utilisée par GitHub ne peut **que** lancer `scripts/ci-deploy.sh`, et ce script refuse tout commit qui n'est pas sur `main`. Même si le secret fuitait, personne ne pourrait ouvrir un terminal sur la VM avec cette clé. Elle permettrait seulement de relancer le déploiement d'un commit de `main` : les commits plus anciens que la version en production sont refusés.
+>
+> Le vrai point sensible est ailleurs : tout ce qui est mergé dans `main` s'exécute sur la VM avec les droits `sudo` et `docker`. N'importe qui pouvant merger dans `main` peut donc lancer du code sur le serveur. C'est pour cela que l'étape 6 (tests obligatoires, et idéalement une revue obligatoire avant chaque merge) compte vraiment.
 
 ### Mettre en place le déploiement automatique (une seule fois)
 
@@ -317,7 +319,7 @@ L'empreinte permet à GitHub de vérifier qu'il parle bien à votre VM, et pas �
 rm ~/github-deploy ~/github-deploy.pub
 ```
 
-**Étape 6 : exiger les tests avant un merge.** **Settings** → **Rules** → **Rulesets** (ou **Branches**) → règle sur `main` avec **Require status checks to pass**, et ajoutez le check `tests`. Sinon, un merge qui casse les tests n'est pas déployé, mais il reste dans `main`.
+**Étape 6 : exiger les tests avant un merge.** **Settings** → **Rules** → **Rulesets** (ou **Branches**) → règle sur `main` avec **Require status checks to pass**, et ajoutez le check `tests`. Sinon, un merge qui casse les tests n'est pas déployé, mais il reste dans `main`. Cochez aussi idéalement **Require a pull request before merging** avec au moins une approbation : chaque merge dans `main` finit en production.
 
 **Étape 7 : tester.** Onglet **Actions** → **CI - Atlas Project Tests** → **Run workflow** sur `main`. Le job `deploy` doit finir en vert.
 

@@ -88,16 +88,21 @@ jobs:
 
       - name: Deploy on the server
         # The key only runs scripts/ci-deploy.sh on the server; the SHA is its only input
+        env:
+          DEPLOY_HOST: ${{ vars.DEPLOY_HOST }}
+          DEPLOY_SHA: ${{ github.sha }}
         run: >
           ssh -i ~/.ssh/id_deploy
           -o BatchMode=yes -o StrictHostKeyChecking=yes
           -o ServerAliveInterval=30 -o ServerAliveCountMax=10
-          "ubuntu@${{ vars.DEPLOY_HOST }}" "${{ github.sha }}"
+          "ubuntu@$DEPLOY_HOST" "$DEPLOY_SHA"
 
       - name: Smoke test
+        env:
+          DEPLOY_DOMAIN: ${{ vars.DEPLOY_DOMAIN }}
         run: >
           curl -fsS --retry 10 --retry-delay 6 --retry-all-errors
-          "https://${{ vars.DEPLOY_DOMAIN }}/api/ping"
+          "https://$DEPLOY_DOMAIN/api/ping"
 
       - name: Remove deploy key
         if: always()
