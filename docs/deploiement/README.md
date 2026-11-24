@@ -241,15 +241,100 @@ Plusieurs IP sont possibles, séparées par des espaces : `ADMIN_ALLOWED_IPS=1.2
 
 ## 8. Mettre à jour l'application
 
-Pour déployer une nouvelle version (correction de bug, nouvelle fonctionnalité) :
+### Déploiement automatique
+
+Une fois mis en place (voir plus bas), il n'y a rien à faire : **chaque merge dans `main` est déployé tout seul**.
+
+1. GitHub Actions lance les tests (job `tests` de [`ci.yml`](../../.github/workflows/ci.yml)).
+2. S'ils passent, le job `deploy` se connecte à la VM en SSH et lance [`scripts/ci-deploy.sh`](../../scripts/ci-deploy.sh) avec le commit à déployer.
+3. Sur la VM, le script se place sur ce commit et lance `./deploy.sh` : sauvegarde de la base, construction, migrations, attente que tout soit en bonne santé.
+4. GitHub vérifie enfin que `https://<ip>.nip.io/api/ping` répond.
+
+Le `.env` est conservé, les nouvelles migrations sont appliquées, et les données ne sont pas touchées.
+
+On suit le déploiement dans l'onglet **Actions** du dépôt sur GitHub (workflow **CI - Atlas Project Tests**, job `deploy`). Une copie des messages est aussi gardée sur la VM dans `~/atlas/backups/ci-deploy.log`.
+
+| Ce qui arrive | Résultat |
+|---|---|
+| Les tests échouent | Rien n'est déployé, le site garde la version actuelle. |
+| `deploy.sh` échoue (migration ratée, service qui ne démarre pas…) | `rollback.sh` est lancé automatiquement : le site revient à la dernière version qui marchait. Le job est rouge. Corrigez, puis mergez à nouveau. |
+| Le test final (`/api/ping`) échoue | La nouvelle version tourne, mais le site ne répond pas de l'extérieur. Voir la [partie 9](#9-quand-quelque-chose-ne-va-pas), en commençant par `docker compose logs caddy`. |
+| Deux merges très rapprochés | Ils sont déployés l'un après l'autre, jamais en même temps. |
+
+Pour redéployer sans nouveau merge : onglet **Actions** → **CI - Atlas Project Tests** → **Run workflow** sur la branche `main`.
+
+> [!NOTE]
+> La clé SSH utilisée par GitHub ne peut **que** lancer `scripts/ci-deploy.sh`, et ce script refuse tout commit qui n'est pas sur `main`. Même si le secret fuitait, personne ne pourrait ouvrir un terminal sur la VM avec cette clé.
+
+### Mettre en place le déploiement automatique (une seule fois)
+
+À faire après le premier déploiement ([partie 6](#6-premier-déploiement)), et une fois que `scripts/ci-deploy.sh` est dans `main`.
+
+> [!IMPORTANT]
+> On crée une **nouvelle** clé SSH, réservée à GitHub. N'utilisez pas votre clé personnelle (`atlas.key`) : elle donne un accès complet à la VM, et elle reste votre accès d'administration.
+
+**Étape 1 : mettre la VM sur `main`.** Connecté en SSH sur la VM :
 
 ```bash
 cd ~/atlas
-git pull
-./deploy.sh
+git fetch origin main
+git checkout -- keycloak/atlas-frontend.json
+git checkout --detach origin/main
+ls scripts/ci-deploy.sh      # doit exister
 ```
 
-Rien d'autre à faire : le `.env` est conservé, la base de données est sauvegardée avant la mise à jour, les nouvelles migrations sont appliquées, et les données ne sont pas touchées.
+**Étape 2 : créer la clé de déploiement.** Toujours sur la VM :
+
+```bash
+ssh-keygen -t ed25519 -N "" -C github-deploy -f ~/github-deploy
+echo "restrict,command=\"$HOME/atlas/scripts/ci-deploy.sh\" $(cat ~/github-deploy.pub)" >> ~/.ssh/authorized_keys
+```
+
+La deuxième ligne autorise la clé, mais seulement pour lancer `ci-deploy.sh` (`restrict` interdit aussi le terminal et les redirections de ports).
+
+**Étape 3 : récupérer ce qu'il faut mettre dans GitHub.** Toujours sur la VM :
+
+```bash
+cat ~/github-deploy                                                  # clé privée → DEPLOY_SSH_KEY
+echo "<ip> $(cut -d' ' -f1,2 /etc/ssh/ssh_host_ed25519_key.pub)"     # empreinte du serveur → DEPLOY_KNOWN_HOSTS
+```
+
+L'empreinte permet à GitHub de vérifier qu'il parle bien à votre VM, et pas à un autre serveur.
+
+**Étape 4 : configurer GitHub.** Sur la page du dépôt : **Settings** → **Environments** → **New environment**, nommez-le exactement `production`. Dans cet environnement :
+
+- **Deployment branches and tags** : choisissez **Selected branches and tags** et ajoutez `main`.
+- **Environment secrets** → **Add environment secret** :
+  - `DEPLOY_SSH_KEY` : toute la clé privée de l'étape 3, lignes `-----BEGIN…` et `-----END…` comprises.
+  - `DEPLOY_KNOWN_HOSTS` : la ligne `<ip> ssh-ed25519 AAAA…` de l'étape 3.
+- **Environment variables** → **Add environment variable** :
+  - `DEPLOY_HOST` : l'IP de la VM, par exemple `140.238.1.2`.
+  - `DEPLOY_DOMAIN` : `<ip>.nip.io`, par exemple `140.238.1.2.nip.io`.
+
+**Étape 5 : supprimer la clé privée de la VM.** Elle est maintenant dans GitHub, elle n'a rien à faire sur le serveur :
+
+```bash
+rm ~/github-deploy ~/github-deploy.pub
+```
+
+**Étape 6 : exiger les tests avant un merge.** **Settings** → **Rules** → **Rulesets** (ou **Branches**) → règle sur `main` avec **Require status checks to pass**, et ajoutez le check `tests`. Sinon, un merge qui casse les tests n'est pas déployé, mais il reste dans `main`.
+
+**Étape 7 : tester.** Onglet **Actions** → **CI - Atlas Project Tests** → **Run workflow** sur `main`. Le job `deploy` doit finir en vert.
+
+### Déployer à la main
+
+Toujours possible, par exemple si GitHub Actions est en panne. Sur la VM, dans `~/atlas` :
+
+```bash
+./scripts/ci-deploy.sh $(git ls-remote origin refs/heads/main | cut -f1)
+```
+
+C'est exactement ce que fait GitHub, avec le retour arrière automatique en cas d'échec. Pour essayer une autre branche sur le serveur, `git checkout <branche> && git pull && ./deploy.sh` fonctionne encore. Le prochain merge dans `main` la remplacera.
+
+### Couper le déploiement automatique
+
+- **Temporairement** : onglet **Actions** → **CI - Atlas Project Tests** → **⋯** → **Disable workflow** (les tests ne tournent plus non plus). Ou ajoutez une règle **Required reviewers** à l'environnement `production` : chaque déploiement attend alors une approbation.
+- **Définitivement, ou si la clé a fuité** : sur la VM, supprimez la ligne qui finit par `github-deploy` dans `~/.ssh/authorized_keys`. La clé ne sert plus à rien.
 
 > [!CAUTION]
 > Ne lancez jamais `docker compose down -v` sur le serveur : l'option `-v` supprime les volumes, donc toute la base de données et les comptes utilisateurs.
@@ -276,16 +361,18 @@ Si la nouvelle version est cassée, mais que les données sont correctes (le cas
 ./rollback.sh
 ```
 
-Le script revient à la dernière version qui s'est déployée avec succès et la redéploie. Il ne touche pas à la base de données. Une fois le bug corrigé et poussé sur la branche :
+Le script revient à la dernière version qui s'est déployée avec succès et la redéploie. Il ne touche pas à la base de données. Avec le [déploiement automatique](#déploiement-automatique), c'est déjà fait tout seul quand `deploy.sh` échoue. Il ne reste à le lancer à la main que si la version déployée démarre mais se comporte mal.
+
+Une fois le bug corrigé, le merge dans `main` redéploie automatiquement. Sans déploiement automatique :
 
 ```bash
-git checkout <branche>
+git checkout main
 git pull
 ./deploy.sh
 ```
 
 > [!NOTE]
-> `rollback.sh` ne fonctionne qu'après au moins un déploiement réussi. Après un rollback, le dépôt est sur un commit précis (« detached HEAD ») : c'est normal, d'où le `git checkout <branche>` pour revenir.
+> `rollback.sh` ne fonctionne qu'après au moins un déploiement réussi. Après un rollback, le dépôt est sur un commit précis (« detached HEAD ») : c'est normal, et c'est aussi l'état normal après un déploiement automatique.
 
 ### Problèmes fréquents
 
@@ -440,7 +527,9 @@ Pour revenir sur la branche après coup : `git checkout <branche>`, puis `git pu
 | Je veux… | Commande (sur la VM, dans `~/atlas`) |
 |---|---|
 | Me connecter à la VM | `ssh -i ~/.ssh/atlas.key ubuntu@<ip>` (depuis mon ordinateur) |
-| Déployer une nouvelle version | `git pull && ./deploy.sh` |
+| Déployer une nouvelle version | Merger dans `main` (automatique) |
+| Redéployer `main` à la main | `./scripts/ci-deploy.sh $(git ls-remote origin refs/heads/main \| cut -f1)` |
+| Lire le journal des déploiements automatiques | `tail -n 100 backups/ci-deploy.log` |
 | Revenir à la version précédente | `./rollback.sh` |
 | Voir l'état des services | `docker compose ps -a` |
 | Lire les logs d'un service | `docker compose logs --tail 50 <service>` |
@@ -454,8 +543,10 @@ Pour revenir sur la branche après coup : `git checkout <branche>`, puis `git pu
 
 - [`deploy.sh`](../../deploy.sh) : installation et mise à jour du serveur.
 - [`rollback.sh`](../../rollback.sh) : retour à la dernière version qui marche.
+- [`scripts/ci-deploy.sh`](../../scripts/ci-deploy.sh) : déploiement automatique, lancé par GitHub Actions (le seul script que la clé de déploiement peut lancer).
+- [`.github/workflows/ci.yml`](../../.github/workflows/ci.yml) : tests, puis déploiement après chaque merge dans `main`.
 - `.env` : configuration et mots de passe du serveur (généré, jamais commité).
 - [`docker-compose.yml`](../../docker-compose.yml) : tous les services. [`docker-compose.prod.yml`](../../docker-compose.prod.yml) : réglages ajoutés en production seulement.
 - [`Caddyfile`](../../Caddyfile) : HTTPS et redirection vers les services.
 - [`Backend-Atlas/db/`](../../Backend-Atlas/db/) : migrations SQL et `migrate.sh`.
-- `backups/` : sauvegardes de la base et `last-good-commit`.
+- `backups/` : sauvegardes de la base, `last-good-commit` et `ci-deploy.log`.

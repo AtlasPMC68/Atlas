@@ -56,3 +56,49 @@ jobs:
         run: |
           docker compose up -d florence-worker
           docker compose run --rm -q test-backend pytest tests/ -m "integration"
+
+  # Redeploys the server after every merge into main, once the tests pass.
+  # "Run workflow" on main redeploys by hand.
+  # Setup (deploy key, secrets): "Déploiement automatique" in docs/deploiement/README.md
+  deploy:
+    needs: tests
+    if: >-
+      github.ref == 'refs/heads/main' &&
+      (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    environment:
+      name: production
+      url: https://${{ vars.DEPLOY_DOMAIN }}
+    # Two merges close together deploy one after the other, never interrupted
+    concurrency:
+      group: production-deploy
+      cancel-in-progress: false
+
+    steps:
+      - name: Install deploy key
+        env:
+          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          DEPLOY_KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
+        run: |
+          mkdir -p ~/.ssh && chmod 700 ~/.ssh
+          (umask 077 && printf '%s\n' "$DEPLOY_SSH_KEY" > ~/.ssh/id_deploy)
+          # Pinned server fingerprint: the connection fails if the server changes
+          printf '%s\n' "$DEPLOY_KNOWN_HOSTS" > ~/.ssh/known_hosts
+
+      - name: Deploy on the server
+        # The key only runs scripts/ci-deploy.sh on the server; the SHA is its only input
+        run: >
+          ssh -i ~/.ssh/id_deploy
+          -o BatchMode=yes -o StrictHostKeyChecking=yes
+          -o ServerAliveInterval=30 -o ServerAliveCountMax=10
+          "ubuntu@${{ vars.DEPLOY_HOST }}" "${{ github.sha }}"
+
+      - name: Smoke test
+        run: >
+          curl -fsS --retry 10 --retry-delay 6 --retry-all-errors
+          "https://${{ vars.DEPLOY_DOMAIN }}/api/ping"
+
+      - name: Remove deploy key
+        if: always()
+        run: rm -f ~/.ssh/id_deploy
