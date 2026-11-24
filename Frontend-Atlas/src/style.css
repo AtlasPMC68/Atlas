@@ -184,6 +184,12 @@
     border-right-color: #cbd5e1 !important;
   }
 
+.tooltip-light::before,
+.tooltip::before,
+.tooltip-light::after,
+.tooltip::after {
+  z-index: 50;
+}
   /* Boutons d'action */
   .modal-secondary-btn {
     @apply btn btn-outline border-gray-400 rounded-lg w-32 shrink-0 text-sm hover:bg-base-200 hover:text-base-content;
