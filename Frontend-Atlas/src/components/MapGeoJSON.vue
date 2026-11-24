@@ -1094,25 +1094,17 @@ function materializeTextLayer(feature: Feature): L.Layer | null {
   const coord: L.LatLngTuple = [lat, lng];
 
   if (presentation.mapElementType === "point") {
-    const customStyle = feature.properties?.customLabelStyle as (CustomLabelStyle | undefined);
-    const customPointColor = customStyle?.pointColor || (customStyle?.hasPoint ? customStyle.color : undefined);
-    const fillColor =
-      customPointColor ||
-      colorRgbToCss(feature.properties.colorRgb) ||
-      "#000000";
-    const strokeColor =
-      customStyle?.pointStrokeColor ||
-      colorRgbToCss(feature.properties.strokeColor) ||
-      fillColor;
+    const fillColor = presentation.pointColor || "#000000";
+    const strokeColor = presentation.pointStrokeColor || "#000000";
 
     const point = L.circleMarker(coord, {
       renderer: vectorRenderer ?? undefined,
       radius: 6,
       fillColor: fillColor,
       color: strokeColor,
-      weight: customStyle?.pointStrokeWidth ?? feature.properties.strokeWidth ?? 1,
-      opacity: customStyle?.pointStrokeOpacity ?? feature.properties.strokeOpacity ?? 1,
-      fillOpacity: customStyle?.pointFillOpacity ?? feature.properties.fillOpacity ?? 1,
+      weight: presentation.pointStrokeWidth ?? 1,
+      opacity: presentation.pointStrokeOpacity ?? 1,
+      fillOpacity: presentation.pointFillOpacity ?? 1,
     });
 
     const label = buildLabelMarker(feature, presentation, [-8, 15]);

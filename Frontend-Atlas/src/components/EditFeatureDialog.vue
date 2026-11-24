@@ -68,14 +68,24 @@
                   class="preview-box px-3 py-1.5 min-h-[42px] w-full"
                   :style="editTextStyle"
                 >
-                  <span
+                  <svg
                     v-if="isEditingPoint"
-                    class="inline-block h-3 w-3 rounded-full shrink-0 border border-base-content"
-                    :style="{
-                      backgroundColor: pointPreviewFillColor,
-                      borderColor: pointPreviewStrokeColor || undefined,
-                    }"
-                  ></span>
+                    width="14"
+                    height="14"
+                    viewBox="0 0 14 14"
+                    class="shrink-0 overflow-hidden inline-block align-middle mr-1.5"
+                  >
+                    <circle
+                      cx="7"
+                      cy="7"
+                      r="4.5"
+                      :fill="pointPreviewFillColor"
+                      :fill-opacity="pointPreviewFillOpacity"
+                      :stroke="pointPreviewStrokeColor"
+                      :stroke-width="Math.min(pointPreviewStrokeWidth, 2)"
+                      :stroke-opacity="pointPreviewStrokeOpacity"
+                    />
+                  </svg>
                   <span class="whitespace-pre-line break-words">
                     {{ editDraft.labelText || editDraft.name || "Exemple de texte" }}
                   </span>
@@ -661,6 +671,12 @@ const pointPreviewFillColor = computed(() => {
 });
 
 const pointPreviewStrokeColor = computed(() => {
+  if (activeCustomLabelStyle.value) {
+    return (
+      activeCustomLabelStyle.value.pointStrokeColor ||
+      "#000000"
+    );
+  }
   if (isEditingPoint.value) {
     return editDraft.value.strokeColorHex || "#000000";
   }
@@ -683,7 +699,8 @@ const pointPreviewStrokeOpacity = computed(() => {
 
 const pointPreviewStrokeWidth = computed(() => {
   if (activeCustomLabelStyle.value) {
-    return activeCustomLabelStyle.value.pointStrokeWidth ?? 1;
+    const raw = activeCustomLabelStyle.value.pointStrokeWidth ?? 1;
+    return Math.min(raw, MAX_PREVIEW_POINT_STROKE_WIDTH_PX);
   }
   const raw = normalizeStrokeWidth(editDraft.value.strokeWidth) ?? 1;
   if (isEditingPoint.value) {
@@ -887,7 +904,7 @@ async function onEditFeature() {
   isEditing.value = true;
 
   const isLabel = !isEditingPoint.value && isTextElement.value;
-  if ((isLabel || !hasGeometryControls.value) && editDraft.value.textColorHex) {
+  if (!isEditingPoint.value && (isLabel || !hasGeometryControls.value) && editDraft.value.textColorHex) {
     editDraft.value.colorHex = editDraft.value.textColorHex;
   }
 

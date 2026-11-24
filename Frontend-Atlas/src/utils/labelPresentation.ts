@@ -346,6 +346,46 @@ export function getLabelPresentation(
   if (typo.isUppercase) inlineStyles.push("text-transform: uppercase");
   if (typo.color) inlineStyles.push(`color: ${typo.color}`);
 
+  const hasPoint = mapElementType === "point";
+  const pointColor =
+    customStyle?.pointColor ||
+    (customStyle?.hasPoint ? customStyle.color : undefined) ||
+    (typeof props.pointColor === "string" ? props.pointColor : undefined) ||
+    colorRgbToCss(props.colorRgb) ||
+    (typeof props.color === "string" ? props.color : undefined) ||
+    "#000000";
+
+  const pointStrokeColor =
+    customStyle?.pointStrokeColor ||
+    (typeof props.pointStrokeColor === "string" ? props.pointStrokeColor : undefined) ||
+    colorRgbToCss(props.strokeColor) ||
+    (typeof props.strokeColor === "string" ? props.strokeColor : undefined) ||
+    "#000000";
+
+  const pointFillOpacity =
+    customStyle?.pointFillOpacity ??
+    (typeof props.pointFillOpacity === "number"
+      ? props.pointFillOpacity
+      : typeof props.fillOpacity === "number"
+        ? props.fillOpacity
+        : 1);
+
+  const pointStrokeOpacity =
+    customStyle?.pointStrokeOpacity ??
+    (typeof props.pointStrokeOpacity === "number"
+      ? props.pointStrokeOpacity
+      : typeof props.strokeOpacity === "number"
+        ? props.strokeOpacity
+        : 1);
+
+  const pointStrokeWidth =
+    customStyle?.pointStrokeWidth ??
+    (typeof props.pointStrokeWidth === "number"
+      ? props.pointStrokeWidth
+      : typeof props.strokeWidth === "number"
+        ? props.strokeWidth
+        : 1);
+
   return {
     id: customStyle?.id ?? wordType,
     name: customStyle?.name ?? taxonomy.label,
@@ -366,6 +406,12 @@ export function getLabelPresentation(
     minZoom: customStyle?.minZoom ?? taxonomy.minZoom,
     color: typo.color,
     colorCss: typo.color,
+    hasPoint,
+    pointColor,
+    pointStrokeColor,
+    pointFillOpacity,
+    pointStrokeOpacity,
+    pointStrokeWidth,
     styleAttribute: inlineStyles.length
       ? ` style="${inlineStyles.join("; ")}"`
       : "",

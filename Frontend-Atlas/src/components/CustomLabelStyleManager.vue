@@ -1,6 +1,6 @@
 <template>
   <dialog ref="dialogRef" class="modal">
-   <div class="modal-box w-11/12 max-w-7xl max-h-[92vh] md:h-[820px] flex flex-col gap-0 p-6 overflow-hidden">
+   <div class="modal-box w-11/12 max-w-7xl h-[90vh] max-h-[92vh] flex flex-col gap-0 p-6 overflow-hidden">
       <!-- Header -->
       <div class="flex items-center justify-between gap-4 pb-3 border-b border-base-200 shrink-0">
         <h3 class="text-xl font-bold truncate">Modification des styles de libellé</h3>
@@ -16,7 +16,7 @@
 
       <!-- Main 2x2 grid: Row 1 (List | Text settings), Row 2 (Preview | Point settings) -->
       <form
-        class="grid grid-cols-1 md:grid-cols-[1fr_1.45fr] md:grid-rows-[minmax(0,1fr)_auto] flex-1 min-h-0 py-4 overflow-y-auto md:overflow-hidden"
+        class="grid grid-cols-1 md:grid-cols-[1fr_1.45fr] md:grid-rows-[minmax(0,1fr)_auto] flex-1 min-h-0 py-4 gap-y-3 overflow-y-auto md:overflow-hidden"
         @submit.prevent="submitDraft"
       >
         <!-- Row 1, Col 1: Styles list -->
@@ -60,12 +60,25 @@
                 >
                   <Bars3Icon class="w-4 h-4" />
                 </span>
-                <span
+                <svg
                   v-if="hasStylePoint(style)"
-                  class="inline-block h-2.5 w-2.5 rounded-full shrink-0 border border-base-content"
-                  :style="{ backgroundColor: style.pointColor || style.color || '#000000' }"
+                  width="12"
+                  height="12"
+                  viewBox="0 0 12 12"
+                  class="shrink-0 overflow-hidden"
                   title="Avec point sur la carte"
-                ></span>
+                >
+                  <circle
+                    cx="6"
+                    cy="6"
+                    r="4"
+                    :fill="style.pointColor || style.color || '#000000'"
+                    :fill-opacity="style.pointFillOpacity ?? 1"
+                    :stroke="style.pointStrokeColor || '#000000'"
+                    :stroke-width="Math.min(style.pointStrokeWidth ?? 1, 2)"
+                    :stroke-opacity="style.pointStrokeOpacity ?? 1"
+                  />
+                </svg>
                 <span
                   class="truncate font-medium pr-2"
                   :style="previewStyle(style, true)"
@@ -217,19 +230,29 @@
           <div class="flex items-center justify-between min-h-[1.75rem]">
             <h4 class="section-title">Aperçu</h4>
           </div>
-          <div v-if="isTextStyleActive" class="preview-frame flex-1 min-h-[108px]">
+          <div v-if="isTextStyleActive" class="preview-frame flex-1 min-h-[108px] flex items-center p-3">
             <div
-              class="preview-box overflow-hidden max-w-full px-3.5"
+              class="preview-box overflow-hidden max-w-full px-3.5 py-2 w-full flex items-center"
               :style="{ ...previewStyle(currentLiveStyle, true, 44), lineHeight: '1.15' }"
             >
-              <span
+              <svg
                 v-if="draft.hasPoint"
-                class="inline-block h-3 w-3 rounded-full shrink-0 border"
-                :style="{
-                  backgroundColor: draft.pointColor || draft.color || '#000000',
-                  borderColor: draft.pointStrokeColor || draft.pointColor || '#000000',
-                }"
-              ></span>
+                width="14"
+                height="14"
+                viewBox="0 0 14 14"
+                class="shrink-0 overflow-hidden inline-block align-middle mr-2"
+              >
+                <circle
+                  cx="7"
+                  cy="7"
+                  r="4.5"
+                  :fill="draft.pointColor || '#000000'"
+                  :fill-opacity="draft.pointFillOpacity"
+                  :stroke="draft.pointStrokeColor || '#000000'"
+                  :stroke-width="Math.min(pointPreviewStrokeWidth, 2)"
+                  :stroke-opacity="draft.pointStrokeOpacity"
+                />
+              </svg>
               <span class="truncate min-w-0 max-w-full">
                 {{ draft.name.trim() || "Exemple de texte" }}
               </span>
@@ -268,6 +291,7 @@
             class="flex flex-col gap-2.5"
             data-testid="custom-style-point-settings"
           >
+            <span class="field-label leading-5">Couleurs et aperçu</span>
             <div class="grid grid-cols-1 sm:grid-cols-2 gap-2.5 w-full">
               <div class="setting-card h-[50px]">
                 <label class="setting-card-label" for="custom-style-point-fill">
@@ -357,7 +381,7 @@
                   v-model.number="draft.pointStrokeWidth"
                   type="number"
                   min="0"
-                  max="12"
+                  :max="MAX_POINT_STROKE_WIDTH_PX"
                   class="setting-number-input !w-12 text-xs sm:text-sm px-0.5 shrink-0"
                   @input="onStrokeWidthInput"
                   @change="onStrokeWidthChange"
@@ -395,7 +419,7 @@
               class="text-xs text-red-700 bg-white border border-red-500 rounded px-2 py-1"
               data-testid="custom-point-stroke-width-max-warning"
             >
-              L'épaisseur maximale autorisée est de 12 px (la valeur a été plafonnée).
+              L'épaisseur maximale autorisée est de {{ MAX_POINT_STROKE_WIDTH_PX }} px (la valeur a été plafonnée).
             </span>
           </div>
         </div>
@@ -433,6 +457,10 @@ import type {
   NewCustomLabelStyle,
 } from "../utils/labelPresentation";
 import { getLabelStylePreviewCss } from "../utils/labelPresentation";
+import {
+  MAX_POINT_STROKE_WIDTH_PX,
+  MAX_PREVIEW_POINT_STROKE_WIDTH_PX,
+} from "../utils/featureTextEditing";
 import {
   TrashIcon,
   ArrowPathIcon,
@@ -494,7 +522,7 @@ const draft = ref({
   hasPoint: false,
   pointColor: "#000000",
   pointStrokeColor: "#000000",
-  pointFillOpacity: 0.5,
+  pointFillOpacity: 1,
   pointStrokeOpacity: 1,
   pointStrokeWidth: 1,
 });
@@ -558,24 +586,24 @@ function clampOpacity(value: unknown, fallback: number): number {
 function clampStrokeWidth(value: unknown, fallback: number): number {
   const num = Number(value);
   if (!Number.isFinite(num)) return fallback;
-  return Math.max(0, Math.min(12, num));
+  return Math.max(0, Math.min(MAX_POINT_STROKE_WIDTH_PX, num));
 }
 
 const isPointPreviewClamped = computed(() => {
   if (!draft.value.hasPoint) return false;
   const raw = draft.value.pointStrokeWidth;
-  return typeof raw === "number" && raw > 6;
+  return typeof raw === "number" && raw > MAX_PREVIEW_POINT_STROKE_WIDTH_PX;
 });
 
 const isPointStrokeWidthOverMax = computed(() => {
   if (!draft.value.hasPoint) return false;
   const raw = draft.value.pointStrokeWidth;
-  return typeof raw === "number" && raw > 12;
+  return typeof raw === "number" && raw > MAX_POINT_STROKE_WIDTH_PX;
 });
 
 const pointPreviewStrokeWidth = computed(() => {
   const raw = clampStrokeWidth(draft.value.pointStrokeWidth, 1);
-  return Math.min(raw, 6);
+  return Math.min(raw, MAX_PREVIEW_POINT_STROKE_WIDTH_PX);
 });
 
 function onStrokeWidthInput(event: Event) {
@@ -593,7 +621,7 @@ function onStrokeWidthInput(event: Event) {
 
 function onStrokeWidthChange() {
   if (typeof draft.value.pointStrokeWidth === "number") {
-    draft.value.pointStrokeWidth = Math.max(0, Math.min(12, draft.value.pointStrokeWidth));
+    draft.value.pointStrokeWidth = Math.max(0, Math.min(MAX_POINT_STROKE_WIDTH_PX, draft.value.pointStrokeWidth));
     syncLiveDraft();
   }
 }

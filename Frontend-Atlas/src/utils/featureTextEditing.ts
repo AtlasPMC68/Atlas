@@ -102,8 +102,8 @@ export function applyCustomLabelStyleToFeature(
         ? "label"
         : (styledFeature.properties.mapElementType ?? "point");
 
-  const pointColor = style.pointColor || style.color;
-  const pointStroke = style.pointStrokeColor || pointColor;
+  const pointColor = style.pointColor || style.color || "#000000";
+  const pointStroke = style.pointStrokeColor || "#000000";
 
   return {
     ...styledFeature,
@@ -122,10 +122,13 @@ export function applyCustomLabelStyleToFeature(
       fontStyle: style.fontStyle || "normal",
       fontWeight: isBold ? "bold" : "normal",
       bold: isBold,
+      color: targetElementType === "point" ? pointColor : style.color,
       colorRgb: targetElementType === "point" ? hexToRgb(pointColor) : hexToRgb(style.color),
       textColorRgb: hexToRgb(style.color),
+      pointColor: targetElementType === "point" ? pointColor : undefined,
+      pointStrokeColor: targetElementType === "point" ? pointStroke : undefined,
       strokeColor: targetElementType === "point" ? hexToRgb(pointStroke) : undefined,
-      fillOpacity: targetElementType === "point" ? (style.pointFillOpacity ?? 0.5) : undefined,
+      fillOpacity: targetElementType === "point" ? (style.pointFillOpacity ?? 1) : undefined,
       strokeOpacity: targetElementType === "point" ? (style.pointStrokeOpacity ?? 1) : undefined,
       strokeWidth: targetElementType === "point" ? (style.pointStrokeWidth ?? 1) : undefined,
     },
@@ -166,9 +169,14 @@ export function prepareFeatureForEdit(feature: Feature): FeatureEditState {
   const customStyle = feature.properties.customLabelStyle;
   const hasCustomStyle = Boolean(feature.properties.customLabelStyleId || customStyle);
 
-  const rawColorHex = rgbToHex(feature.properties.colorRgb);
+  const rawColorHex =
+    (typeof feature.properties.pointColor === "string" ? feature.properties.pointColor : undefined) ||
+    rgbToHex(feature.properties.colorRgb) ||
+    (typeof feature.properties.color === "string" ? feature.properties.color : undefined);
   const rawTextColorHex = rgbToHex(feature.properties.textColorRgb);
-  const rawStrokeColorHex = rgbToHex(feature.properties.strokeColor);
+  const rawStrokeColorHex =
+    (typeof feature.properties.pointStrokeColor === "string" ? feature.properties.pointStrokeColor : undefined) ||
+    rgbToHex(feature.properties.strokeColor);
 
   let colorHex: string | undefined;
   let textColorHex: string | undefined;
@@ -296,6 +304,8 @@ export function coerceEditedFeature(
   }
   const isLabel = styledFeature.properties.mapElementType === "label";
   const isPoint = styledFeature.properties.mapElementType === "point";
+  const pointFillColor = payload.colorHex || "#000000";
+  const pointStrokeColor = payload.strokeColorHex || "#000000";
   const labelColorHex = payload.colorHex ?? payload.textColorHex;
   // A label has no symbol, so its one colour is its text colour (stored in colorRgb, without redundant textColorRgb).
   // A point keeps a separate text colour only when it differs from the symbol's.
@@ -325,12 +335,15 @@ export function coerceEditedFeature(
       customLabelStyleId: null,
       customLabelStyle: null,
       custom_label_style_id: null,
-      colorRgb: hexToRgb(isLabel ? labelColorHex : payload.colorHex),
+      color: isLabel ? labelColorHex : pointFillColor,
+      colorRgb: hexToRgb(isLabel ? labelColorHex : pointFillColor),
       textColorRgb: hexToRgb(textColorHex),
       textSizePx: customTextSizePx,
+      pointColor: isPoint ? pointFillColor : undefined,
+      pointStrokeColor: isPoint ? pointStrokeColor : undefined,
       strokeColor: isLabel
         ? undefined
-        : hexToRgb(payload.strokeColorHex || (isPoint ? "#000000" : undefined)),
+        : hexToRgb(pointStrokeColor),
       fillOpacity: isLabel
         ? undefined
         : (normalizeOpacity(payload.fillOpacity) ?? (isPoint ? 1 : undefined)),
