@@ -1,3 +1,5 @@
+import asyncio
+import logging
 import os
 import shutil
 from copy import deepcopy
@@ -5,7 +7,7 @@ from datetime import date
 from typing import Any, cast
 from uuid import UUID, uuid4
 
-from sqlalchemy import delete, select
+from sqlalchemy import String, cast as sa_cast, delete, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm.attributes import flag_modified
 
@@ -13,6 +15,8 @@ from app.models.features import Feature
 from app.models.map import Map
 from app.models.map_import import MapImport
 from app.models.project import Project
+
+logger = logging.getLogger(__name__)
 
 
 def _get_feature_props(data: dict[str, Any], *, create: bool = False) -> dict[str, Any] | None:
@@ -131,26 +135,51 @@ def _rewrite_feature_dict(
             props["endDate"] = new_end_val.isoformat()
 
 
-def _copy_reference_image(source_map: Map, new_map: Map) -> None:
+def _media_root() -> str:
+    return os.getenv("MEDIA_ROOT", "/app/media")
+
+
+def _delete_reference_image_file(map_obj: Map) -> None:
+    rel_path = cast(str | None, map_obj.reference_image_path)
+    if not rel_path:
+        return
+    media_root = _media_root()
+    abs_path = os.path.abspath(os.path.join(media_root, rel_path))
+    media_root_abs = os.path.abspath(media_root)
+    if not abs_path.startswith(media_root_abs) or not os.path.isfile(abs_path):
+        return
+    try:
+        os.unlink(abs_path)
+    except OSError:
+        logger.warning("Could not delete reference image %s", abs_path, exc_info=True)
+
+
+async def _copy_reference_image(source_map: Map, new_map: Map) -> str | None:
     src_ref_path = cast(str | None, source_map.reference_image_path)
     if not src_ref_path:
-        return
+        setattr(new_map, "reference_image_content_type", None)
+        return None
 
-    media_root = os.getenv("MEDIA_ROOT", "/app/media")
+    media_root = _media_root()
     source_abs = os.path.abspath(os.path.join(media_root, src_ref_path))
     if not os.path.isfile(source_abs):
-        return
+        setattr(new_map, "reference_image_path", None)
+        setattr(new_map, "reference_image_content_type", None)
+        return None
 
     ref_dir = os.path.join(media_root, "reference_images")
     os.makedirs(ref_dir, exist_ok=True)
     ext = os.path.splitext(src_ref_path)[1]
     new_filename = f"{new_map.id}{ext}"
+    dest_abs = os.path.join(ref_dir, new_filename)
     try:
-        shutil.copy2(source_abs, os.path.join(ref_dir, new_filename))
+        await asyncio.to_thread(shutil.copy2, source_abs, dest_abs)
         setattr(new_map, "reference_image_path", os.path.join("reference_images", new_filename))
+        return dest_abs
     except OSError:
         setattr(new_map, "reference_image_path", None)
         setattr(new_map, "reference_image_content_type", None)
+        return None
 
 
 async def _get_owned_project(db: AsyncSession, project_id: UUID, user_id: UUID) -> Project | None:
@@ -202,13 +231,20 @@ async def delete_map_in_db(
     map_id: UUID,
     user_id: UUID,
 ) -> bool:
-    if not await _get_owned_map(db, project_id, map_id, user_id):
+    map_obj = await _get_owned_map(db, project_id, map_id, user_id)
+    if not map_obj:
         return False
 
-    features_result = await db.execute(
-        select(Feature).where(Feature.project_id == project_id)
-    )
     map_id_str = str(map_id)
+    features_result = await db.execute(
+        select(Feature).where(
+            Feature.project_id == project_id,
+            or_(
+                Feature.map_id == map_id,
+                sa_cast(Feature.data, String).contains(map_id_str),
+            ),
+        )
+    )
 
     for feat in features_result.scalars().all():
         feat_map_id = cast(UUID | None, feat.map_id)
@@ -228,7 +264,13 @@ async def delete_map_in_db(
                     setattr(feat, "map_id", next_map_uuid)
                 setattr(feat, "data", update_feature_map_ids(feat_data, other_map_ids))
                 flag_modified(feat, "data")
-            except Exception:
+            except ValueError:
+                logger.warning(
+                    "Invalid mapIds while deleting map %s from feature %s",
+                    map_id,
+                    getattr(feat, "id", None),
+                    exc_info=True,
+                )
                 await db.delete(feat)
         else:
             await db.delete(feat)
@@ -236,6 +278,7 @@ async def delete_map_in_db(
     await db.execute(delete(MapImport).where(MapImport.map_id == map_id))
     await db.execute(delete(Map).where(Map.id == map_id))
     await db.commit()
+    _delete_reference_image_file(map_obj)
     return True
 
 
@@ -260,12 +303,12 @@ async def duplicate_map_in_project(
         start_date=start_date or cast(date | None, source_map.start_date),
         end_date=end_date or cast(date | None, source_map.end_date),
         exact_date=exact_date,
-        georef_inputs=source_map.georef_inputs,
+        georef_inputs=deepcopy(source_map.georef_inputs),
         reference_image_content_type=source_map.reference_image_content_type,
     )
     db.add(new_map)
     await db.flush()
-    _copy_reference_image(source_map, new_map)
+    copied_abs = await _copy_reference_image(source_map, new_map)
 
     features_result = await db.execute(
         select(Feature).where(
@@ -310,7 +353,15 @@ async def duplicate_map_in_project(
             )
         )
 
-    await db.commit()
+    try:
+        await db.commit()
+    except Exception:
+        if copied_abs:
+            try:
+                os.unlink(copied_abs)
+            except OSError:
+                logger.warning("Could not remove orphaned reference image %s", copied_abs, exc_info=True)
+        raise
     await db.refresh(new_map)
     return cast(UUID, new_map.id)
 

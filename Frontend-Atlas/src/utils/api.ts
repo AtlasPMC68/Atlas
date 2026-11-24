@@ -10,12 +10,13 @@ async function getOrRefreshKeycloakToken(minValidity: number): Promise<boolean> 
   }
   if (!refreshPromise) {
     refreshPromiseMinValidity = minValidity;
-    refreshPromise = keycloak
-      .updateToken(minValidity)
-      .finally(() => {
+    const p = keycloak.updateToken(minValidity).finally(() => {
+      if (refreshPromise === p) {
         refreshPromise = null;
         refreshPromiseMinValidity = null;
-      });
+      }
+    });
+    refreshPromise = p;
   }
   return refreshPromise;
 }
@@ -24,6 +25,10 @@ async function getOrRefreshKeycloakToken(minValidity: number): Promise<boolean> 
  * Wrapper around fetch that automatically prepends VITE_API_URL and injects
  * the Keycloak Bearer token as an Authorization header. All other options
  * (method, body, additional headers) are forwarded as-is.
+ *
+ * A 401 retry reuses `options.body`. Only replayable bodies (string, Blob,
+ * FormData, URLSearchParams) are supported; a consumed ReadableStream cannot
+ * be sent again.
  */
 export async function apiFetch(
   path: string,
@@ -62,9 +67,8 @@ export async function apiFetch(
         });
       }
     } catch {
-      console.warn("Session expired on 401 response; clearing local token.");
-      (keycloak as any).authenticated = false;
-      keycloak.clearToken();
+      console.warn("Session expired on 401 response; redirecting to login.");
+      await keycloak.login({ redirectUri: window.location.href });
     }
   }
 

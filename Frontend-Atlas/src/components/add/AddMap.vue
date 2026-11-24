@@ -158,6 +158,8 @@ function resetForm() {
   startDate.value = "";
   endDate.value = "";
   usePreciseDates.value = false;
+  previousStartYear = null;
+  previousStartDate = "";
 }
 
 function open() {

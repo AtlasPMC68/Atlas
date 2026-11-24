@@ -56,6 +56,9 @@ DEFAULT_OPTIONS = {"textExtraction": False}
 #: Shape clicks one import may carry; each one is a flood fill.
 MAX_SHAPE_CLICKS = 50
 
+#: Ignored-area rectangles one import may carry; each OCR block is tested against each.
+MAX_IGNORED_AREAS = 50
+
 #: An import untouched this long is abandoned; the next import sweeps it.
 STALE_IMPORT_AGE = timedelta(days=7)
 
@@ -123,6 +126,8 @@ def _validate_ignored_areas(entries: Any) -> List[Dict[str, float]]:
         return []
     if not isinstance(entries, list):
         raise ValueError("ignoredAreas must be a list of rectangles")
+    if len(entries) > MAX_IGNORED_AREAS:
+        raise ValueError(f"at most {MAX_IGNORED_AREAS} ignoredAreas")
     return [parse_legend_bounds(entry) for entry in entries]
 
 

@@ -270,6 +270,20 @@ describe("selectionUtils - applySelectionModifier", () => {
     expect(res.newAnchorId).toBe("id-2");
     expect(res.isModified).toBe(true);
   });
+
+  it("uses the first selected item in display order as Shift anchor when no selectedId or lastAnchorId", () => {
+    const res = applySelectionModifier("id-5", false, true, {
+      selectedId: null,
+      multiSelectedIds: ["id-4", "id-2"],
+      lastAnchorId: null,
+      orderedIds,
+    });
+
+    expect(res.selectedId).toBeNull();
+    expect(res.multiSelectedIds).toEqual(["id-2", "id-3", "id-4", "id-5"]);
+    expect(res.newAnchorId).toBe("id-2");
+    expect(res.isModified).toBe(true);
+  });
 });
 
 describe("selectionUtils - getNudgeDelta & Escape interaction", () => {

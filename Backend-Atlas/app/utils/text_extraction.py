@@ -8,6 +8,7 @@ from uuid import UUID, uuid4
 from celery import current_task
 
 from app.celery_app import celery_app
+from app.utils.place_nomenclature import _find_geographic_prefix, _normalize
 
 logger = logging.getLogger(__name__)
 
@@ -126,8 +127,6 @@ def _has_multiline_prefix(top_text: str, bottom_text: str = "") -> bool:
     if raw_top.endswith(("-", "—", "–")):
         return True
 
-    from app.utils.place_nomenclature import _find_geographic_prefix, _normalize
-
     norm_top = _normalize(raw_top)
     if not norm_top:
         return False
@@ -154,7 +153,7 @@ def merge_multiline_ocr_blocks(blocks: list[list]) -> list[list]:
 
     Heuristic:
     - MUST have a recognized geographic prefix or hyphen continuation.
-    - Font sizes must be identical (height ratio within [0.85, 1.18] and delta <= max(2.5, 0.15 * min_h)).
+    - Font sizes must be identical (height ratio within [0.85, 1.30] and delta <= max(2.5, 0.15 * min_h)).
     - Very close to the right or underneath.
     - Top-to-bottom / left-to-right reading order when combining text.
     """
@@ -189,6 +188,7 @@ def merge_multiline_ocr_blocks(blocks: list[list]) -> list[list]:
             "h": h,
             "cx": (min_x + max_x) / 2.0,
             "cy": (min_y + max_y) / 2.0,
+            "has_prefix": _has_multiline_prefix(text),
         })
 
     if len(items) < 2:
@@ -212,6 +212,19 @@ def merge_multiline_ocr_blocks(blocks: list[list]) -> list[list]:
                 if min_h <= 0 or (max_h / min_h) > 1.30 or abs(a["h"] - b["h"]) > max(2.5, 0.15 * min_h):
                     continue
 
+                max_v_gap = max(6.0, 0.6 * min_h)
+                max_x_gap = max(6.0, 0.45 * min_h)
+                too_far_vertically = (
+                    b["min_y"] - a["max_y"] > max_v_gap
+                    and a["min_y"] - b["max_y"] > max_v_gap
+                )
+                too_far_horizontally = (
+                    b["min_x"] - a["max_x"] > max_x_gap
+                    and a["min_x"] - b["max_x"] > max_x_gap
+                )
+                if too_far_vertically and too_far_horizontally:
+                    continue
+
                 # 1. Vertical candidate (en dessous)
                 if a["min_y"] <= b["min_y"]:
                     top, bot = a, b
@@ -221,7 +234,8 @@ def merge_multiline_ocr_blocks(blocks: list[list]) -> list[list]:
                     t_idx, b_idx = j, i
 
                 v_gap = bot["min_y"] - top["max_y"]
-                if _has_multiline_prefix(top["text"], bot["text"]) and (-0.25 * min_h <= v_gap <= max(6.0, 0.6 * min_h)):
+                has_prefix = top["has_prefix"] or _has_multiline_prefix(top["text"], bot["text"])
+                if has_prefix and (-0.25 * min_h <= v_gap <= max_v_gap):
                     h_overlap = min(top["max_x"], bot["max_x"]) - max(top["min_x"], bot["min_x"])
                     min_w = min(top["w"], bot["w"])
                     center_diff = abs(top["cx"] - bot["cx"])
@@ -241,7 +255,8 @@ def merge_multiline_ocr_blocks(blocks: list[list]) -> list[list]:
                     l_idx, r_idx = j, i
 
                 x_gap = right["min_x"] - left["max_x"]
-                if _has_multiline_prefix(left["text"], right["text"]) and (-0.15 * min_h <= x_gap <= max(6.0, 0.45 * min_h)):
+                has_h_prefix = left["has_prefix"] or _has_multiline_prefix(left["text"], right["text"])
+                if has_h_prefix and (-0.15 * min_h <= x_gap <= max_x_gap):
                     y_diff = abs(left["cy"] - right["cy"])
                     if y_diff <= 0.25 * min_h:
                         dist = max(0.0, x_gap) + y_diff * 0.5
@@ -281,6 +296,7 @@ def merge_multiline_ocr_blocks(blocks: list[list]) -> list[list]:
                 "h": new_max_y - new_min_y,
                 "cx": (new_min_x + new_max_x) / 2.0,
                 "cy": (new_min_y + new_max_y) / 2.0,
+                "has_prefix": first.get("has_prefix") or _has_multiline_prefix(combined_text),
             }
             # Remove indices from highest to lowest to preserve positions
             del items[max(first_idx, second_idx)]

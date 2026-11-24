@@ -131,7 +131,9 @@ export function doesLayerIntersectBounds(
         return true;
       }
     }
-  } catch {}
+  } catch {
+    // Leaflet can throw when a layer has no geometry yet.
+  }
 
   // 2. Direct getLatLng (e.g. Marker, CircleMarker)
   try {
@@ -141,7 +143,9 @@ export function doesLayerIntersectBounds(
         return true;
       }
     }
-  } catch {}
+  } catch {
+    // Leaflet can throw when a marker has no latlng yet.
+  }
 
   // 3. LayerGroup / FeatureGroup child inspection (recursively check children)
   try {
@@ -155,7 +159,9 @@ export function doesLayerIntersectBounds(
         }
       }
     }
-  } catch {}
+  } catch {
+    // Leaflet can throw when a group has no child layers yet.
+  }
 
   return false;
 }
@@ -209,14 +215,14 @@ export function applySelectionModifier(
 
   if (isShift) {
     const orderedIds = (state.orderedIds ?? []).map(String);
+    const multiSelected = new Set((state.multiSelectedIds ?? []).map(String));
+    const selectedInOrder = orderedIds.find((id) => multiSelected.has(id));
     const anchorId =
       state.selectedId != null && state.selectedId !== ""
         ? String(state.selectedId)
         : state.lastAnchorId != null && state.lastAnchorId !== ""
           ? String(state.lastAnchorId)
-          : state.multiSelectedIds && state.multiSelectedIds.length > 0
-            ? String(state.multiSelectedIds[0])
-            : null;
+          : selectedInOrder ?? null;
     const range = getContinuousRangeSelection(orderedIds, anchorId, targetId);
     return {
       selectedId: null,

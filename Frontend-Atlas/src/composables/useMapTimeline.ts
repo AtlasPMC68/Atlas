@@ -29,10 +29,14 @@ export function useMapTimeline({
   const selectedYear = ref(-1);
   const selectedExactDate = ref<string | null>(null);
 
-  const storedTimelineMode =
-    typeof window !== "undefined"
-      ? localStorage.getItem("atlas_timeline_filter_mode")
-      : null;
+  let storedTimelineMode: string | null = null;
+  if (typeof window !== "undefined") {
+    try {
+      storedTimelineMode = localStorage.getItem("atlas_timeline_filter_mode");
+    } catch {
+      // Ignore storage errors in restricted contexts
+    }
+  }
   const timelineMode = ref<TimelineFilterMode>(
     storedTimelineMode === "specific" ||
       storedTimelineMode === "cumulative" ||
@@ -97,10 +101,6 @@ export function useMapTimeline({
         };
         map.set(p.id, enriched);
         map.set(String(p.id).trim().toLowerCase(), enriched);
-        if (p.title) {
-          map.set(p.title, enriched);
-          map.set(p.title.trim().toLowerCase(), enriched);
-        }
       }
     }
     return map;
@@ -279,10 +279,13 @@ export function useMapTimeline({
             periodByMapId.value.get(effectiveMapKey) ??
             periodByMapId.value.get(normalizedMapId) ??
             enrichedPeriods.value.find(
-              (p: SliderPeriod) =>
-                String(p.id).trim().toLowerCase() === normalizedMapId ||
-                p.title?.trim().toLowerCase() === normalizedMapId,
-            );
+              (p: SliderPeriod) => String(p.id).trim().toLowerCase() === normalizedMapId,
+            ) ??
+            (featureMapIds.length === 0
+              ? enrichedPeriods.value.find(
+                  (p: SliderPeriod) => p.title?.trim().toLowerCase() === normalizedMapId,
+                )
+              : undefined);
 
           if (!period) return true;
           if (timelineMode.value === "cumulative") {

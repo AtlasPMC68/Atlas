@@ -1,5 +1,5 @@
 <template>
-  <dialog ref="dialogRef" class="modal">
+  <dialog ref="dialogRef" class="modal" @cancel="onDialogCancel">
     <div class="modal-box max-w-xl p-0 relative">
       <button
         type="button"
@@ -55,9 +55,13 @@
             <!-- 3. Set date associated with the new map -->
             <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mt-2">
               <div>
-                <label class="label font-medium">Date début</label>
+                <label
+                  class="label font-medium"
+                  :for="usePreciseDates ? 'duplicate-map-start-date' : 'duplicate-map-start-year'"
+                >Date début</label>
                 <input
                   v-if="!usePreciseDates"
+                  id="duplicate-map-start-year"
                   v-model.number="startYear"
                   type="number"
                   min="-9999"
@@ -70,6 +74,7 @@
                 />
                 <input
                   v-else
+                  id="duplicate-map-start-date"
                   v-model="startDate"
                   type="date"
                   class="input w-full"
@@ -80,9 +85,13 @@
               </div>
 
               <div>
-                <label class="label font-medium">Date fin</label>
+                <label
+                  class="label font-medium"
+                  :for="usePreciseDates ? 'duplicate-map-end-date' : 'duplicate-map-end-year'"
+                >Date fin</label>
                 <input
                   v-if="!usePreciseDates"
+                  id="duplicate-map-end-year"
                   v-model.number="endYear"
                   type="number"
                   min="-9999"
@@ -93,6 +102,7 @@
                 />
                 <input
                   v-else
+                  id="duplicate-map-end-date"
                   v-model="endDate"
                   type="date"
                   class="input w-full"
@@ -100,17 +110,17 @@
                 />
               </div>
             </div>
-          </fieldset>
 
-          <label class="label cursor-pointer gap-2 mt-2">
-            <input
-              v-model="usePreciseDates"
-              type="checkbox"
-              class="checkbox checkbox-sm"
-              data-testid="duplicate-map-exact-date-toggle"
-            />
-            <span class="text-sm">Utiliser des dates exactes</span>
-          </label>
+            <label class="label cursor-pointer gap-2 mt-2">
+              <input
+                v-model="usePreciseDates"
+                type="checkbox"
+                class="checkbox checkbox-sm"
+                data-testid="duplicate-map-exact-date-toggle"
+              />
+              <span class="text-sm">Utiliser des dates exactes</span>
+            </label>
+          </fieldset>
 
           <div class="modal-action mt-6 flex justify-end gap-2">
             <button
@@ -249,8 +259,16 @@ function handleSubmit() {
   });
 }
 
+function onDialogCancel(event: Event) {
+  if (props.isDuplicating) {
+    event.preventDefault();
+  }
+}
+
 function open(preselectedMapId?: string) {
   error.value = "";
+  previousStartYear = null;
+  previousStartDate = "";
   if (preselectedMapId && props.mapPeriods.some((p: MapPeriod) => p.id === preselectedMapId)) {
     selectedSourceMapId.value = preselectedMapId;
   } else if (props.mapPeriods.length > 0) {

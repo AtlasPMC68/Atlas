@@ -360,20 +360,7 @@ def find_geo_entity(
                 # Token guardrail on fuzzy geographic entity matches
                 if q_toks:
                     k_toks = [t for t in key.split() if len(t) >= 3 and t not in _IGNORABLE_TOKENS]
-                    if k_toks:
-                        # Query tokens must match candidate tokens
-                        if not all(
-                            max((difflib.SequenceMatcher(None, q, k).ratio() for k in k_toks), default=0.0) >= cutoff
-                            for q in q_toks
-                        ):
-                            continue
-                        # Candidate tokens must match query tokens (bidirectional)
-                        if not all(
-                            max((difflib.SequenceMatcher(None, k, q).ratio() for q in q_toks), default=0.0) >= cutoff
-                            for k in k_toks
-                        ):
-                            continue
-                    else:
+                    if not _tokens_compatible(q_toks, k_toks, cutoff):
                         continue
 
                 for ent in _GEO_INDEX.get(key, []):
@@ -404,6 +391,29 @@ _GENERIC_ADMIN_TERMS: Set[str] = {
 }
 
 _IGNORABLE_TOKENS: Set[str] = _GENERIC_ADMIN_TERMS | set(_PREFIX_TYPE_MAP.keys())
+
+
+def _tokens_compatible(q_toks: List[str], c_toks: List[str], cutoff: float) -> bool:
+    """True when query and candidate tokens match in both directions above *cutoff*."""
+    if not q_toks or not c_toks:
+        return False
+    if not all(
+        max((difflib.SequenceMatcher(None, q, k).ratio() for k in c_toks), default=0.0) >= cutoff
+        for q in q_toks
+    ):
+        return False
+    if not all(
+        max((difflib.SequenceMatcher(None, k, q).ratio() for q in q_toks), default=0.0) >= cutoff
+        for k in c_toks
+    ):
+        return False
+    return True
+
+
+_REPEATED_PREFIX_SPLIT = re.compile(
+    r"(?<=\w)\s+(?=(?:Fort|Cap|Lac|Port|Baie|Ile|Île|Saint|Sainte|Rivière|Riviere|Mont|Mount|New|Nouveau)\b)",
+    re.IGNORECASE,
+)
 
 _CITY_BASE_EXCEPTIONS: Set[str] = {
     "quebec", "mexico", "panama", "guatemala", "luxembourg", "vatican",
@@ -488,8 +498,7 @@ def _split_into_potential_subparts(text: str) -> List[str]:
             continue
         # 2. Check for repeated prefixes like "Fort ... Fort ...", "Cap ... Cap ...", etc.
         # Find prefix boundaries using common geographic prefixes
-        prefix_pattern = r"(?<=\w)\s+(?=(?:Fort|Cap|Lac|Port|Baie|Ile|Île|Saint|Sainte|Rivière|Riviere|Mont|Mount|New|Nouveau)\b)"
-        pieces = re.split(prefix_pattern, line_clean, flags=re.IGNORECASE)
+        pieces = _REPEATED_PREFIX_SPLIT.split(line_clean)
         for piece in pieces:
             p_strip = piece.strip()
             if p_strip and len(p_strip) >= 3:
@@ -604,39 +613,25 @@ def _find_single_nearby_candidate_place(
                     t for t in variant.split()
                     if len(t) >= 3 and t not in _IGNORABLE_TOKENS
                 ]
-                if not var_tokens:
+                if not _tokens_compatible(query_tokens, var_tokens, min_similarity):
                     continue
 
-                # 1. Forward match: every query token must match at least one candidate token
-                forward_matches = [
-                    max(
-                        (
-                            difflib.SequenceMatcher(None, q_tok, c_tok).ratio()
-                            for c_tok in var_tokens
-                        ),
-                        default=0.0,
-                    )
-                    for q_tok in query_tokens
-                ]
-                if not all(score >= min_similarity for score in forward_matches):
-                    continue
-
-                # 2. Backward match: every candidate token must match at least one query token
-                # This prevents "Atlantique" matching "Atlantic City", or "New York" matching "New City"
-                backward_matches = [
-                    max(
-                        (
-                            difflib.SequenceMatcher(None, c_tok, q_tok).ratio()
-                            for q_tok in query_tokens
-                        ),
-                        default=0.0,
-                    )
-                    for c_tok in var_tokens
-                ]
-                if not all(score >= min_similarity for score in backward_matches):
-                    continue
-
-                token_score = min(min(forward_matches), min(backward_matches))
+                token_score = min(
+                    min(
+                        max(
+                            (difflib.SequenceMatcher(None, q_tok, c_tok).ratio() for c_tok in var_tokens),
+                            default=0.0,
+                        )
+                        for q_tok in query_tokens
+                    ),
+                    min(
+                        max(
+                            (difflib.SequenceMatcher(None, c_tok, q_tok).ratio() for q_tok in query_tokens),
+                            default=0.0,
+                        )
+                        for c_tok in var_tokens
+                    ),
+                )
                 if token_score > best_token_score:
                     best_token_score = token_score
 
@@ -717,16 +712,7 @@ def resolve_place(
                             t for t in c_var.split()
                             if len(t) >= 3 and t not in _IGNORABLE_TOKENS
                         ]
-                        if not c_toks:
-                            continue
-                        # All query tokens must match candidate tokens, and all candidate tokens must match query tokens
-                        if all(
-                            max((difflib.SequenceMatcher(None, q, c).ratio() for c in c_toks), default=0.0) >= cutoff
-                            for q in q_toks
-                        ) and all(
-                            max((difflib.SequenceMatcher(None, c, q).ratio() for q in q_toks), default=0.0) >= cutoff
-                            for c in c_toks
-                        ):
+                        if _tokens_compatible(q_toks, c_toks, cutoff):
                             matched_variant = True
                             break
                     if matched_variant:

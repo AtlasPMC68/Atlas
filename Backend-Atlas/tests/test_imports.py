@@ -110,6 +110,9 @@ def test_ignored_areas_validation_and_merging():
         apply_inputs_patch({}, {"ignoredAreas": "not a list"})
     with pytest.raises(ValueError):
         apply_inputs_patch({}, {"ignoredAreas": [{"x": 10, "y": 20, "width": -5, "height": 10}]})
+    too_many = [{"x": 1.0, "y": 1.0, "width": 2.0, "height": 2.0}] * 51
+    with pytest.raises(ValueError, match="at most 50 ignoredAreas"):
+        apply_inputs_patch({}, {"ignoredAreas": too_many})
 
 
 def test_independent_legend_and_exclusion_zones():

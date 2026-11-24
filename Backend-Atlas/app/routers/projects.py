@@ -718,9 +718,9 @@ async def get_project_maps(
             status_code=404, detail="Project not found or access denied"
         )
 
-    # A map is considered active if an import is currently in progress (any non-failed import row)
-    # or if its extraction has not yet persisted features. Maps without features that have an active or incomplete
-    # import should not appear on the timeline.
+    # Hide maps that still have a MapImport row. That table is an import in
+    # progress (including failed or cancelled); the row is deleted once features
+    # are saved. Those maps should not appear on the timeline.
     unfinished_imports = select(MapImport.map_id)
     maps_result = await session.execute(
         select(Map)
