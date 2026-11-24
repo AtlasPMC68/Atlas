@@ -79,6 +79,7 @@ import {
   deduplicateFeatures,
   doesLayerIntersectBounds,
 } from "../utils/selectionUtils";
+import { applySmartFeatureFraming } from "../utils/mapFraming";
 import { createFeatureDoubleClickHandler } from "../utils/featureInteraction";
 import type {
   Feature,
@@ -593,7 +594,6 @@ function fitToVisibleFeatures(
 
     if (!bounds.isValid()) return;
 
-    const currentViewBounds = map.getBounds();
     const currentZoom = map.getZoom();
 
     // Global map zoom level
@@ -612,21 +612,11 @@ function fitToVisibleFeatures(
       mapLevelZoom = Math.min(currentZoom, 5);
     }
 
-    const isInsideFieldOfView =
-      currentViewBounds.contains(bounds.getCenter()) || currentViewBounds.intersects(bounds);
-
-    if (isInsideFieldOfView) {
-      if (!currentViewBounds.pad(-0.05).contains(bounds)) {
-        map.panTo(bounds.getCenter(), { animate });
-      }
-      return;
-    }
-
-    if (idArray.length > 1) {
-      map.fitBounds(bounds, { padding: [80, 80], maxZoom: mapLevelZoom, animate });
-    } else {
-      map.setView(bounds.getCenter(), mapLevelZoom, { animate });
-    }
+    applySmartFeatureFraming(map, bounds, {
+      mapLevelZoom,
+      animate,
+      multi: idArray.length > 1,
+    });
     return;
   }
 
@@ -2022,11 +2012,6 @@ function applySelectionEffects(id: string) {
     }
   }
 
-  // Smoothly pan/zoom map to focus on the selected feature
-  if (map) {
-    fitToVisibleFeatures([id], true);
-  }
-
   updateLabelVisibility();
 }
 
@@ -2075,8 +2060,6 @@ function clearMultiSelectStylesAndDrag() {
 function updateMultiSelection(ids: string[]) {
   clearMultiSelectStylesAndDrag();
   if (!map || ids.length === 0) return;
-
-  fitToVisibleFeatures(ids, true);
 
   const validLayers = ids
     .map((id) => featureLayerManager.layers.get(id))

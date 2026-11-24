@@ -22,7 +22,7 @@ function mountSlider(
 function labelFor(wrapper: ReturnType<typeof mountSlider>, year: number) {
   return wrapper
     .findAll("button.tick-label")
-    .find((label) => label.text().includes(String(year)))!;
+    .find((label : { text: () => string }) => label.text().includes(String(year)))!;
 }
 
 describe("TimelineSlider year labels", () => {

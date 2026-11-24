@@ -84,8 +84,8 @@
             :can-redo="canRedo"
             :selected-feature-id="selectedFeatureId"
             :multi-selected-feature-ids="multiSelectedFeatureIds"
-            @select-feature="selectFeature"
-            @select-features="onSelectFeatures"
+            @select-feature="(id) => selectFeature(id, false)"
+            @select-features="(ids) => onSelectFeatures(ids, false)"
             @duplicate-feature="duplicateFeature"
             @delete-feature="onDirectDeleteFeature"
             @draw-create="handleDrawChange"
@@ -274,14 +274,16 @@ function onEditFeatureRequest(feature: Feature) {
   featureVisibilityControlsRef.value?.showEditFeatureDialog(feature);
 }
 
-function onSelectFeatures(ids: string[]) {
+function onSelectFeatures(ids: string[], fitView = true) {
   multiSelectedFeatureIds.value = ids;
   if (ids.length > 0) {
     selectedFeatureId.value = null;
     selectedMapId.value = null;
-    nextTick(() => {
-      mapGeoJsonRef.value?.fitToVisibleFeatures?.(ids, true);
-    });
+    if (fitView) {
+      nextTick(() => {
+        mapGeoJsonRef.value?.fitToVisibleFeatures?.(ids, true);
+      });
+    }
   }
 }
 
@@ -341,14 +343,16 @@ async function onEditElementFromTimeline(featureId: string) {
   }
 }
 
-function selectFeature(id: string | null) {
+function selectFeature(id: string | null, fitView = true) {
   selectedFeatureId.value = id;
   if (id) {
     selectedMapId.value = null;
     multiSelectedFeatureIds.value = [];
-    nextTick(() => {
-      mapGeoJsonRef.value?.fitToVisibleFeatures?.([id], true);
-    });
+    if (fitView) {
+      nextTick(() => {
+        mapGeoJsonRef.value?.fitToVisibleFeatures?.([id], true);
+      });
+    }
 
     const feat = features.value.find((f: Feature) => String(f.id) === String(id));
     if (feat) {
