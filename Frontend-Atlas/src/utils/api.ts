@@ -58,7 +58,6 @@ export async function apiFetch(
     try {
       const refreshed = await getOrRefreshKeycloakToken(-1);
       if (refreshed && keycloak.token) {
-        // Retry request with newly refreshed token
         const retryHeaders = new Headers(options.headers);
         retryHeaders.set("Authorization", `Bearer ${keycloak.token}`);
         return await fetch(`${import.meta.env.VITE_API_URL}${path}`, {
@@ -67,9 +66,10 @@ export async function apiFetch(
         });
       }
     } catch {
-      console.warn("Session expired on 401 response; redirecting to login.");
-      await keycloak.login({ redirectUri: window.location.href });
+      // Refresh threw; treat as an expired session below.
     }
+    console.warn("Session expired on 401 response; redirecting to login.");
+    await keycloak.login({ redirectUri: window.location.href });
   }
 
   return response;

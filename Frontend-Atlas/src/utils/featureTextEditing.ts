@@ -74,11 +74,9 @@ function resolveEditCustomStyle(
   payload: FeatureEditSubmitPayload,
 ): CustomLabelStyle | null {
   if (payload.customLabelStyle) return payload.customLabelStyle;
-  const embedded = originalFeature.properties.customLabelStyle as CustomLabelStyle | null | undefined;
-  if (!embedded) return null;
   if (!payload.customLabelStyleId) return null;
-  if (!embedded.id || embedded.id === payload.customLabelStyleId) return embedded;
-  return null;
+  const embedded = originalFeature.properties.customLabelStyle as CustomLabelStyle | null | undefined;
+  return embedded ?? null;
 }
 
 export function applyCustomLabelStyleToFeature(
@@ -295,25 +293,43 @@ export function coerceEditedFeature(
   );
   const resolvedCustomStyle = resolveEditCustomStyle(originalFeature, payload);
   const customStyleId = payload.customLabelStyleId || resolvedCustomStyle?.id;
-  if (customStyleId && resolvedCustomStyle) {
-    const custom = applyCustomLabelStyleToFeature(
-      originalFeature,
-      { ...resolvedCustomStyle, id: customStyleId },
-      payload.wordType,
-      payload.name,
-      payload.labelText ?? payload.name,
-    );
+  if (customStyleId) {
+    if (resolvedCustomStyle) {
+      const custom = applyCustomLabelStyleToFeature(
+        originalFeature,
+        { ...resolvedCustomStyle, id: customStyleId },
+        payload.wordType,
+        payload.name,
+        payload.labelText ?? payload.name,
+      );
+      return {
+        ...custom,
+        mapId: chosenMapId,
+        mapIds: chosenMapIds,
+        map_id: chosenMapId,
+        properties: {
+          ...custom.properties,
+          mapId: chosenMapId,
+          mapIds: chosenMapIds,
+          map_id: chosenMapId,
+          mapTitle: custom.properties.mapTitle ?? null,
+        },
+      };
+    }
     return {
-      ...custom,
+      ...originalFeature,
+      name: payload.name,
       mapId: chosenMapId,
       mapIds: chosenMapIds,
       map_id: chosenMapId,
       properties: {
-        ...custom.properties,
+        ...originalFeature.properties,
+        name: payload.name,
+        labelText: payload.labelText ?? originalFeature.properties.labelText ?? payload.name,
         mapId: chosenMapId,
         mapIds: chosenMapIds,
         map_id: chosenMapId,
-        mapTitle: custom.properties.mapTitle ?? null,
+        customLabelStyleId: customStyleId,
       },
     };
   }

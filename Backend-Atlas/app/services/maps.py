@@ -146,7 +146,9 @@ def _delete_reference_image_file(map_obj: Map) -> None:
     media_root = _media_root()
     abs_path = os.path.abspath(os.path.join(media_root, rel_path))
     media_root_abs = os.path.abspath(media_root)
-    if not abs_path.startswith(media_root_abs) or not os.path.isfile(abs_path):
+    if not (
+        abs_path == media_root_abs or abs_path.startswith(media_root_abs + os.sep)
+    ) or not os.path.isfile(abs_path):
         return
     try:
         os.unlink(abs_path)

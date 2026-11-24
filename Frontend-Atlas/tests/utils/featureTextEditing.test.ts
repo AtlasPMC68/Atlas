@@ -118,6 +118,26 @@ describe("featureTextEditing", () => {
       expect(edited.properties.rawType).toBe("river");
     });
 
+    it("keeps the custom style id when the style object is missing", () => {
+      const withIdOnly: Feature = {
+        ...basePointFeature,
+        properties: {
+          ...basePointFeature.properties,
+          customLabelStyleId: "style-capital",
+        },
+      };
+
+      const edited = coerceEditedFeature(withIdOnly, {
+        name: "Québec",
+        wordType: "city",
+        customLabelStyleId: "style-capital",
+        selectedMapIds: ["map-1"],
+      });
+
+      expect(edited.properties.customLabelStyleId).toBe("style-capital");
+      expect(edited.properties.name).toBe("Québec");
+    });
+
     it("keeps a custom style when only the style id is in the payload", () => {
       const withCustom = applyCustomLabelStyleToFeature(
         basePointFeature,
