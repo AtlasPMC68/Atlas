@@ -89,7 +89,7 @@
             <h4 class="section-title">Aperçu</h4>
             <div v-if="isTextStyleActive" class="preview-frame h-[115px]">
               <div
-                class="preview-box overflow-hidden max-w-full"
+                class="preview-box overflow-hidden max-w-full pl-3 pr-4"
                 :style="{ ...previewStyle(currentLiveStyle, true, 44), lineHeight: '1.15' }"
               >
                 <span
@@ -97,7 +97,7 @@
                   class="inline-block h-3 w-3 rounded-full shrink-0 border border-base-content"
                   :style="{ backgroundColor: draft.pointColor || draft.color || '#000000' }"
                 ></span>
-                <span class="truncate break-words min-w-0 max-w-full">{{ draft.name.trim() || "Exemple de texte" }}</span>
+                <span class="truncate break-words min-w-0 max-w-full pr-4">{{ draft.name.trim() || "Exemple de texte" }}</span>
               </div>
             </div>
           </div>

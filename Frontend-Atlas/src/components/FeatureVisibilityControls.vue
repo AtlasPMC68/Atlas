@@ -345,7 +345,7 @@
                 </span>
                 <div class="preview-frame p-2">
                   <div
-                    class="preview-box px-2.5 py-1.5 min-h-[42px]"
+                    class="preview-box px-3 py-1.5 min-h-[42px] pr-4"
                     :style="editTextStyle"
                   >
                     <span
@@ -356,7 +356,7 @@
                         borderColor: pointPreviewStrokeColor || undefined,
                       }"
                     ></span>
-                    <span class="whitespace-pre-line break-words">
+                    <span class="whitespace-pre-line break-words pr-4">
                       {{ editDraft.labelText || editDraft.name || "Exemple de texte" }}
                     </span>
                   </div>
