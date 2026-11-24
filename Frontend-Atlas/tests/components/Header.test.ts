@@ -1,3 +1,4 @@
+import { computed } from "vue";
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import { mount } from "@vue/test-utils";
 import Header from "../../src/components/layout/Header.vue";
@@ -20,11 +21,7 @@ vi.mock("../../src/keycloak", () => ({
 
 vi.mock("../../src/composables/useCurrentUser", () => ({
   useCurrentUser: () => ({
-    isAuthenticated: {
-      get value() {
-        return mockAuthState.isAuthenticated;
-      },
-    },
+    isAuthenticated: computed(() => mockAuthState.isAuthenticated),
     fetchCurrentUser: vi.fn(),
   }),
 }));
