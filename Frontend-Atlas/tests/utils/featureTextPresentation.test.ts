@@ -331,4 +331,26 @@ describe("shared word styles and label presentation", () => {
     expect(getMapElementType(cityWithStaleLabelType)).toBe("point");
     expect(getMapElementType(provinceWithStalePointType)).toBe("label");
   });
+
+  it("applies textColorRgb directly in styleAttribute and colorCss in getLabelPresentation", () => {
+    const feature: Feature = {
+      type: "Feature",
+      id: "feat-custom-color",
+      name: "ÉTATS-UNIS",
+      geometry: { type: "Point", coordinates: [-95.7, 37.0] },
+      properties: {
+        name: "ÉTATS-UNIS",
+        rawType: "country",
+        mapElementType: "label",
+        textColorRgb: [0, 255, 136],
+      },
+      createdAt: "2026-01-01",
+      updatedAt: "2026-01-01",
+      projectId: "",
+    };
+
+    const presentation = getLabelPresentation(feature);
+    expect(presentation.colorCss).toBe("rgb(0, 255, 136)");
+    expect(presentation.styleAttribute).toContain("color: rgb(0, 255, 136)");
+  });
 });

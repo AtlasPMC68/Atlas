@@ -120,7 +120,6 @@
           :is-legend-visible="isLegendVisible"
           :timeline-height="timelineHeight"
           :project-title="projectTitle"
-          :current-map-title="currentMapTitle"
           :sorted-timeline-milestones="sortedTimelineMilestones"
           :prev-milestone="prevMilestone"
           :next-milestone="nextMilestone"

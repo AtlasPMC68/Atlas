@@ -7,7 +7,7 @@ describe("MapTimelinePanel.vue", () => {
     isTimelineVisible: true,
     isLegendVisible: true,
     timelineHeight: 180,
-    currentMapTitle: "Carte de 1850",
+    projectTitle: "Projet de 1850",
     sortedTimelineMilestones: [
       { year: 1800, label: "Carte 1800", type: "map" as const, id: "m1" },
       { year: 1850, label: "Carte 1850", type: "map" as const, id: "m2" },
@@ -29,12 +29,12 @@ describe("MapTimelinePanel.vue", () => {
     currentExactDate: null,
   };
 
-  it("renders current map title and navigation controls", () => {
+  it("renders project title and navigation controls", () => {
     const wrapper = mount(MapTimelinePanel, {
       props: defaultProps,
     });
 
-    expect(wrapper.text()).toContain("Carte de 1850");
+    expect(wrapper.text()).toContain("Projet de 1850");
     const prevBtn = wrapper.find("[data-testid='prev-map-button']");
     const nextBtn = wrapper.find("[data-testid='next-map-button']");
     expect(prevBtn.exists()).toBe(true);

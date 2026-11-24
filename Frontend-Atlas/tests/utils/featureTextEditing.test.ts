@@ -171,6 +171,44 @@ describe("featureTextEditing", () => {
       expect(edited.properties.startYear).toBe(1750);
       expect(edited.properties.endYear).toBe(1850);
     });
+
+    it("persists text color for label elements without custom style (e.g. country)", () => {
+      const countryFeature: Feature = {
+        type: "Feature",
+        id: "feat-label-1",
+        mapId: "map-1",
+        geometry: { type: "Point", coordinates: [-95.7, 37.0] },
+        properties: {
+          name: "ÉTATS-UNIS",
+          mapElementType: "label",
+          rawType: "country",
+          colorRgb: [0, 0, 0],
+        },
+      };
+
+      const edited = coerceEditedFeature(countryFeature, {
+        name: "ÉTATS-UNIS",
+        wordType: "country",
+        textColorHex: "#00ff88",
+        selectedMapIds: ["map-1"],
+      });
+
+      expect(edited.properties.colorRgb).toEqual([0, 255, 136]);
+      expect(edited.properties.textColorRgb).toEqual([0, 255, 136]);
+    });
+
+    it("persists symbol fill and text color separately for point elements", () => {
+      const edited = coerceEditedFeature(basePointFeature, {
+        name: "Québec",
+        wordType: "city",
+        colorHex: "#3b82f6",
+        textColorHex: "#ef4444",
+        selectedMapIds: ["map-1"],
+      });
+
+      expect(edited.properties.colorRgb).toEqual([59, 130, 246]);
+      expect(edited.properties.textColorRgb).toEqual([239, 68, 68]);
+    });
   });
 
   describe("applyCustomLabelStyleToFeature & removeCustomLabelStyleFromFeature", () => {
