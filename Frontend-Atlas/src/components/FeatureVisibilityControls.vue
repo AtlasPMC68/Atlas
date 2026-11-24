@@ -173,6 +173,7 @@
                     <span
                       class="label-text text-sm truncate flex-1 min-w-0 select-none"
                       :class="{ 'text-error font-medium': isFeatureNameMissing(feature) }"
+                      :style="getFeatureNameStyle(feature)"
                       :title="getFeatureDisplayName(feature)"
                     >
                       {{ getFeatureDisplayName(feature) }}
@@ -361,7 +362,7 @@
 
 <script setup lang="ts">
 import { computed, nextTick, ref, watch } from "vue";
-import type { Component } from "vue";
+import type { Component, CSSProperties } from "vue";
 import {
   ChatBubbleLeftEllipsisIcon,
   ChevronDownIcon,
@@ -379,6 +380,8 @@ import {
 } from "../typescript/feature";
 import type { MapPeriod } from "../typescript/map";
 import type { CustomLabelStyle } from "../utils/labelPresentation";
+import { getLabelPresentation } from "../utils/labelPresentation";
+import { isTextFeature } from "../utils/wordStyles";
 import EditFeatureDialog from "./EditFeatureDialog.vue";
 import ConfirmDialog from "./ConfirmDialog.vue";
 import DeleteFeatureDialog from "./DeleteFeatureDialog.vue";
@@ -443,6 +446,17 @@ function getFeatureDisplayName(feature: Feature): string {
     return "Nom manquant";
   }
   return name;
+}
+
+function getFeatureNameStyle(feature: Feature): CSSProperties {
+  if (!isTextFeature(feature) || isFeatureNameMissing(feature)) return {};
+  const presentation = getLabelPresentation(feature);
+  return {
+    color: presentation.colorCss,
+    fontStyle: presentation.fontStyle,
+    fontWeight: presentation.fontWeight,
+    textTransform: presentation.textTransform,
+  };
 }
 
 function onToggleFeatureCheckbox(featureId: string, event: Event) {

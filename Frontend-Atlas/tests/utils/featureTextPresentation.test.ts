@@ -259,6 +259,37 @@ describe("shared word styles and label presentation", () => {
     expect(presBold.styleAttribute).toContain("font-weight: bold");
   });
 
+  it("still applies a custom style when sizePx is a numeric string and color is missing", () => {
+    const feature: Feature = {
+      type: "Feature",
+      id: "feat-custom-lenient",
+      name: "Fort",
+      geometry: { type: "Point", coordinates: [-75, 52] },
+      properties: {
+        name: "Fort",
+        customLabelStyle: {
+          id: "style-lenient",
+          name: "Fort",
+          sizePx: "16" as unknown as number,
+          fontStyle: "italic",
+          textTransform: "uppercase",
+          priority: 40,
+          minZoom: 1,
+        },
+      },
+      createdAt: "2026-01-01",
+      updatedAt: "2026-01-01",
+      projectId: "",
+    };
+
+    const presentation = getLabelPresentation(feature);
+    expect(presentation.isCustom).toBe(true);
+    expect(presentation.sizePx).toBe(16);
+    expect(presentation.fontStyle).toBe("italic");
+    expect(presentation.color).toBe("#000000");
+    expect(presentation.formattedText).toBe("FORT");
+  });
+
   it("uses taxonomy as the sole source for label style despite stale feature properties", () => {
     const feature: Feature = {
       type: "Feature",

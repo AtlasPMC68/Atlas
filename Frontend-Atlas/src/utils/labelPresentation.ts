@@ -439,14 +439,12 @@ function parseCustomStyle(value: unknown): {
 } | null {
   if (!value || typeof value !== "object") return null;
   const style = value as Record<string, unknown>;
-  if (
-    typeof style.sizePx !== "number" ||
-    !Number.isFinite(style.sizePx) ||
-    (style.fontStyle !== "normal" && style.fontStyle !== "italic") ||
-    (style.textTransform !== "none" && style.textTransform !== "uppercase") ||
-    typeof style.color !== "string" ||
-    !/^#[0-9a-f]{6}$/i.test(style.color)
-  ) {
+  const sizePx = Number(style.sizePx);
+  const fontStyle = style.fontStyle === "italic" ? "italic" : "normal";
+  const textTransform = style.textTransform === "uppercase" ? "uppercase" : "none";
+  const rawColor = typeof style.color === "string" ? style.color.trim() : "";
+  const color = /^#[0-9a-f]{6}$/i.test(rawColor) ? rawColor : "#000000";
+  if (!Number.isFinite(sizePx)) {
     return null;
   }
   const isBold =
@@ -465,11 +463,11 @@ function parseCustomStyle(value: unknown): {
   return {
     id: typeof style.id === "string" ? style.id : undefined,
     name: typeof style.name === "string" ? style.name : undefined,
-    sizePx: style.sizePx,
-    fontStyle: style.fontStyle,
+    sizePx,
+    fontStyle,
     fontWeight: isBold ? "bold" : "normal",
-    textTransform: style.textTransform,
-    color: style.color,
+    textTransform,
+    color,
     priority: typeof style.priority === "number" ? style.priority : 30,
     minZoom: typeof style.minZoom === "number" ? style.minZoom : 1,
     mapElementType,

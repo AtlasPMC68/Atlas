@@ -475,12 +475,12 @@ import {
   MIN_TEXT_SIZE_PX,
   normalizeTextSizePx,
   MAX_PREVIEW_FONT_SIZE_PX,
-  getLabelStylePreviewCss,
   getWordTypeOptionLabel,
   getWordTypeOptionStyle,
   getCustomStyleObject,
   getCustomStyleOptionLabel,
   hasCustomStylePoint,
+  resolveLabelTypography,
 } from "../utils/labelPresentation";
 import CustomLabelStyleManager from "./CustomLabelStyleManager.vue";
 import { getMapElementType } from "../utils/featureHelpers";
@@ -494,7 +494,6 @@ import {
   prepareFeatureForEdit,
   coerceEditedFeature,
   createFeaturesForSelectedMaps,
-  getWordTypePreviewStyle,
   getDefaultTextSizePx,
   normalizeOpacity,
   normalizeStrokeWidth,
@@ -578,7 +577,10 @@ const editModalTypeLabel = computed(() => {
 });
 
 const isPreviewClamped = computed(() => {
-  const rawSize = editDraft.value.textSizePx ?? defaultTextSizePx.value;
+  const rawSize =
+    activeCustomLabelStyle.value?.sizePx ??
+    editDraft.value.textSizePx ??
+    defaultTextSizePx.value;
   return isTextElement.value && rawSize > MAX_PREVIEW_FONT_SIZE_PX;
 });
 
@@ -641,20 +643,18 @@ const geometrySectionHint = computed(() => {
 
 const editTextStyle = computed<CSSProperties>(() => {
   if (!isTextElement.value) return {};
-  const style = activeCustomLabelStyle.value;
-
-  if (style) {
-    return getLabelStylePreviewCss(style, { limitSize: true, maxPx: 18 });
-  }
-  const preview = getWordTypePreviewStyle(
-    editDraft.value.wordType,
-    editDraft.value.textColorHex ?? editDraft.value.colorHex,
-    normalizeTextSizePx(editDraft.value.textSizePx),
-  );
+  const typo = resolveLabelTypography({
+    wordType: editDraft.value.wordType,
+    customLabelStyle: activeCustomLabelStyle.value ?? editDraft.value.customLabelStyle ?? null,
+    color: editDraft.value.textColorHex ?? editDraft.value.colorHex,
+    sizePx: normalizeTextSizePx(editDraft.value.textSizePx),
+  });
   return {
-    ...preview,
-    fontWeight: "bold",
-    fontSize: `${Math.min(parseInt(preview.fontSize, 10) || 14, MAX_PREVIEW_FONT_SIZE_PX)}px`,
+    fontStyle: typo.fontStyle,
+    fontWeight: typo.fontWeight,
+    textTransform: typo.textTransform,
+    color: typo.color,
+    fontSize: `${Math.min(typo.sizePx, MAX_PREVIEW_FONT_SIZE_PX)}px`,
   };
 });
 
@@ -811,11 +811,12 @@ function onStrokeWidthChange() {
 function onLabelStyleSelectionChange() {
   const selection = editDraft.value.labelStyleSelection ?? "";
   if (selection.startsWith("custom:")) {
+    const customId = selection.slice("custom:".length);
     const style = availableCustomLabelStyles.value.find(
-      (item: CustomLabelStyle) => item.id === selection.slice("custom:".length),
-    );
+      (item: CustomLabelStyle) => item.id === customId,
+    ) ?? editDraft.value.customLabelStyle ?? featureToEdit.value?.properties?.customLabelStyle;
+    editDraft.value.customLabelStyleId = customId;
     if (!style) return;
-    editDraft.value.customLabelStyleId = style.id;
     editDraft.value.customLabelStyle = style;
     editDraft.value.colorHex = style.pointColor || style.color || "#000000";
     editDraft.value.textColorHex = style.color || "#000000";

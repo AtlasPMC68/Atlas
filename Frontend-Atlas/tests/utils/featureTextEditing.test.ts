@@ -118,6 +118,49 @@ describe("featureTextEditing", () => {
       expect(edited.properties.rawType).toBe("river");
     });
 
+    it("keeps a custom style when only the style id is in the payload", () => {
+      const withCustom = applyCustomLabelStyleToFeature(
+        basePointFeature,
+        sampleCustomStyle,
+        "city",
+        "Québec",
+        "Québec",
+      );
+
+      const edited = coerceEditedFeature(withCustom, {
+        name: "Québec",
+        wordType: "city",
+        customLabelStyleId: "style-capital",
+        selectedMapIds: ["map-1"],
+      });
+
+      expect(edited.properties.customLabelStyleId).toBe("style-capital");
+      expect(edited.properties.customLabelStyle).toEqual(sampleCustomStyle);
+      expect(edited.properties.colorRgb).toEqual([225, 29, 72]);
+    });
+
+    it("clears leftover custom-style fields when switching back to a word type", () => {
+      const withCustom = applyCustomLabelStyleToFeature(
+        basePointFeature,
+        sampleCustomStyle,
+        "city",
+        "Québec",
+        "Québec",
+      );
+
+      const edited = coerceEditedFeature(withCustom, {
+        name: "Québec",
+        wordType: "city",
+        colorHex: "#000000",
+        selectedMapIds: ["map-1"],
+      });
+
+      expect(edited.properties.customLabelStyleId).toBeNull();
+      expect(edited.properties.customLabelStyle).toBeNull();
+      expect(edited.properties.customLabelStyleFallbackWordType).toBeUndefined();
+      expect(edited.properties.rawType).toBe("city");
+    });
+
     it("applies custom label style and uppercase transformation when selected", () => {
       const edited = coerceEditedFeature(basePointFeature, {
         name: "ottawa",

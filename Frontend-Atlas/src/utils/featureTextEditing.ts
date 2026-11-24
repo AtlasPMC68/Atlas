@@ -69,6 +69,18 @@ export function getDefaultTextSizePx(wordType: string | undefined): number {
   return WORD_TYPE_TAXONOMY[normalizeWordType(wordType)].sizePx;
 }
 
+function resolveEditCustomStyle(
+  originalFeature: Feature,
+  payload: FeatureEditSubmitPayload,
+): CustomLabelStyle | null {
+  if (payload.customLabelStyle) return payload.customLabelStyle;
+  const embedded = originalFeature.properties.customLabelStyle as CustomLabelStyle | null | undefined;
+  if (!embedded) return null;
+  if (!payload.customLabelStyleId) return null;
+  if (!embedded.id || embedded.id === payload.customLabelStyleId) return embedded;
+  return null;
+}
+
 export function applyCustomLabelStyleToFeature(
   feature: Feature,
   style: CustomLabelStyle,
@@ -167,7 +179,10 @@ export function prepareFeatureForEdit(feature: Feature): FeatureEditState {
 
   const initialMapIds = getFeatureMapIds(feature);
   const customStyle = feature.properties.customLabelStyle;
-  const hasCustomStyle = Boolean(feature.properties.customLabelStyleId || customStyle);
+  const customStyleId =
+    feature.properties.customLabelStyleId ||
+    (customStyle && typeof customStyle.id === "string" ? customStyle.id : undefined);
+  const hasCustomStyle = Boolean(customStyleId || customStyle);
 
   const rawColorHex =
     (typeof feature.properties.pointColor === "string" ? feature.properties.pointColor : undefined) ||
@@ -205,11 +220,9 @@ export function prepareFeatureForEdit(feature: Feature): FeatureEditState {
       labelText: rawLabel,
       wordType,
       selectedMapIds: initialMapIds,
-      labelStyleSelection: feature.properties.customLabelStyleId
-        ? `custom:${feature.properties.customLabelStyleId}`
-        : wordType,
-      customLabelStyleId: feature.properties.customLabelStyleId,
-      customLabelStyle: feature.properties.customLabelStyle,
+      labelStyleSelection: customStyleId ? `custom:${customStyleId}` : wordType,
+      customLabelStyleId: customStyleId,
+      customLabelStyle: customStyle,
       colorHex,
       textColorHex,
       textSizePx: isText
@@ -280,10 +293,12 @@ export function coerceEditedFeature(
     payload.name,
     payload.labelText ?? payload.name,
   );
-  if (payload.customLabelStyleId && payload.customLabelStyle) {
+  const resolvedCustomStyle = resolveEditCustomStyle(originalFeature, payload);
+  const customStyleId = payload.customLabelStyleId || resolvedCustomStyle?.id;
+  if (customStyleId && resolvedCustomStyle) {
     const custom = applyCustomLabelStyleToFeature(
       originalFeature,
-      payload.customLabelStyle,
+      { ...resolvedCustomStyle, id: customStyleId },
       payload.wordType,
       payload.name,
       payload.labelText ?? payload.name,
@@ -335,6 +350,7 @@ export function coerceEditedFeature(
       customLabelStyleId: null,
       customLabelStyle: null,
       custom_label_style_id: null,
+      customLabelStyleFallbackWordType: undefined,
       color: isLabel ? labelColorHex : pointFillColor,
       colorRgb: hexToRgb(isLabel ? labelColorHex : pointFillColor),
       textColorRgb: hexToRgb(textColorHex),
