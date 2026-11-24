@@ -1296,11 +1296,12 @@ function onLabelStyleSelectionChange() {
   const originalColorHex = featureToEdit.value
     ? rgbToHex(featureToEdit.value.properties.colorRgb)
     : undefined;
-  editDraft.value.colorHex = originalColorHex ?? "#000000";
+  editDraft.value.colorHex = editDraft.value.colorHex || originalColorHex || "#000000";
   editDraft.value.textColorHex =
+    editDraft.value.textColorHex ||
     (featureToEdit.value
       ? rgbToHex(featureToEdit.value.properties.textColorRgb)
-      : undefined) ?? editDraft.value.colorHex;
+      : undefined) || editDraft.value.colorHex;
   editDraft.value.textSizePx = defaultTextSizePx.value;
 
   const baseText = editDraft.value.labelText || editDraft.value.name || "";

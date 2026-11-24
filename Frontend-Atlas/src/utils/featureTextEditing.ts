@@ -116,6 +116,7 @@ export function applyCustomLabelStyleToFeature(
       fontWeight: isBold ? "bold" : "normal",
       bold: isBold,
       colorRgb: targetElementType === "point" ? hexToRgb(pointColor) : hexToRgb(style.color),
+      textColorRgb: hexToRgb(style.color),
       strokeColor: targetElementType === "point" ? hexToRgb(pointStroke) : undefined,
       fillOpacity: targetElementType === "point" ? (style.pointFillOpacity ?? 0.5) : undefined,
       strokeOpacity: targetElementType === "point" ? (style.pointStrokeOpacity ?? 1) : undefined,
@@ -270,12 +271,13 @@ export function coerceEditedFeature(
     };
   }
   const isLabel = styledFeature.properties.mapElementType === "label";
-  // A label has no symbol, so its one colour is its text colour (stored in colorRgb, without redundant textColorRgb).
-  // A point keeps a separate text colour only when it differs from the symbol's.
-  const textColorHex =
-    !isLabel && payload.textColorHex && payload.textColorHex !== payload.colorHex
-      ? payload.textColorHex
-      : undefined;
+  const effectiveTextColorHex = payload.textColorHex ?? payload.colorHex;
+  const effectiveElementColorHex = isLabel ? effectiveTextColorHex : payload.colorHex;
+  // A label has no symbol, so its text colour is both its element colour and text colour.
+  // A point element keeps its symbol fill in colorRgb and its label text in textColorRgb.
+  const textColorHex = isLabel
+    ? effectiveTextColorHex
+    : (payload.textColorHex ?? payload.colorHex);
   // Only a size the user moved away from the word type's is stored, so the
   // element keeps following its type otherwise.
   const textSizePx = normalizeTextSizePx(payload.textSizePx);
@@ -298,7 +300,7 @@ export function coerceEditedFeature(
       customLabelStyleId: null,
       customLabelStyle: null,
       custom_label_style_id: null,
-      colorRgb: hexToRgb(payload.colorHex),
+      colorRgb: hexToRgb(effectiveElementColorHex),
       textColorRgb: hexToRgb(textColorHex),
       textSizePx: customTextSizePx,
       strokeColor: isLabel ? undefined : hexToRgb(payload.strokeColorHex),

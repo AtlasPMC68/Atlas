@@ -343,6 +343,7 @@ export function getLabelPresentation(
   if (typo.isItalic) inlineStyles.push("font-style: italic");
   inlineStyles.push(`font-weight: ${typo.isBold ? "bold" : "normal"}`);
   if (typo.isUppercase) inlineStyles.push("text-transform: uppercase");
+  if (typo.color) inlineStyles.push(`color: ${typo.color}`);
 
   return {
     id: customStyle?.id ?? wordType,

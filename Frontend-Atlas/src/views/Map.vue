@@ -119,6 +119,7 @@
           :is-timeline-visible="isTimelineVisible"
           :is-legend-visible="isLegendVisible"
           :timeline-height="timelineHeight"
+          :project-title="projectTitle"
           :current-map-title="currentMapTitle"
           :sorted-timeline-milestones="sortedTimelineMilestones"
           :prev-milestone="prevMilestone"
@@ -678,6 +679,8 @@ const {
   saveCustomLabelStyles: persistCustomLabelStyles,
 } = useProjectLabelStyles();
 
+const projectTitle = ref<string | undefined>(undefined);
+const projectDescription = ref<string | undefined>(undefined);
 const currentMapTitle = ref<string | undefined>(undefined);
 const currentMapDescription = ref<string | undefined>(undefined);
 
@@ -1717,17 +1720,17 @@ async function loadCurrentMapInfo(): Promise<void> {
       throw new Error(`Failed to fetch map info: ${res.status}`);
     }
 
-    const map = snakeToCamel(await res.json()) as {
+    const projectData = snakeToCamel(await res.json()) as {
       title?: string;
       description?: string;
     };
 
-    currentMapTitle.value = map.title ?? undefined;
-    currentMapDescription.value = map.description ?? undefined;
+    projectTitle.value = projectData.title ?? undefined;
+    projectDescription.value = projectData.description ?? undefined;
   } catch (err) {
     console.error("Failed to load current map info:", err);
-    currentMapTitle.value = undefined;
-    currentMapDescription.value = undefined;
+    projectTitle.value = undefined;
+    projectDescription.value = undefined;
   }
 }
 
@@ -1735,8 +1738,8 @@ async function openCreateCopyDialog() {
   await loadCurrentMapInfo();
 
   mapDialogsRef.value?.openCreateProjectDialog({
-    title: currentMapTitle.value,
-    description: currentMapDescription.value,
+    title: projectTitle.value ?? currentMapTitle.value,
+    description: projectDescription.value ?? currentMapDescription.value,
     isPrivate: true,
   });
 }

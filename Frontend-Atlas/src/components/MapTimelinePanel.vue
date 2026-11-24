@@ -25,11 +25,11 @@
       <!-- Left section: Nom du projet -->
       <div class="flex items-center gap-2 min-w-0 pr-4">
         <span
-          v-if="currentMapTitle"
+          v-if="projectTitle || currentMapTitle"
           class="text-sm font-bold text-base-content select-none truncate max-w-xs md:max-w-sm"
-          :title="currentMapTitle"
+          :title="projectTitle || currentMapTitle"
         >
-          {{ currentMapTitle }}
+          {{ projectTitle || currentMapTitle }}
         </span>
       </div>
 
@@ -135,6 +135,7 @@ defineProps<{
   isTimelineVisible: boolean;
   isLegendVisible: boolean;
   timelineHeight: number | null;
+  projectTitle?: string;
   currentMapTitle?: string;
   sortedTimelineMilestones: TimelineMilestone[];
   prevMilestone: TimelineMilestone | null;
