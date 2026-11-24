@@ -232,24 +232,23 @@
           </div>
           <div v-if="isTextStyleActive" class="preview-frame flex-1 min-h-[108px] flex items-center p-3">
             <div
-              class="preview-box overflow-hidden max-w-full px-3.5 py-2 w-full flex items-center"
+              class="preview-box overflow-hidden max-w-full px-3.5 py-2 w-full flex items-center gap-2"
               :style="{ ...previewStyle(currentLiveStyle, true, 44), lineHeight: '1.15' }"
             >
               <svg
                 v-if="draft.hasPoint"
-                width="14"
-                height="14"
-                viewBox="0 0 14 14"
-                class="shrink-0 overflow-hidden inline-block align-middle mr-2"
+                class="shrink-0 overflow-visible"
+                :style="{ width: '1em', height: '1em', flexShrink: 0 }"
+                viewBox="0 0 1 1"
               >
                 <circle
-                  cx="7"
-                  cy="7"
-                  r="4.5"
+                  cx="0.5"
+                  cy="0.5"
+                  r="0.38"
                   :fill="draft.pointColor || '#000000'"
                   :fill-opacity="draft.pointFillOpacity"
                   :stroke="draft.pointStrokeColor || '#000000'"
-                  :stroke-width="Math.min(pointPreviewStrokeWidth, 2)"
+                  :stroke-width="Math.min(pointPreviewStrokeWidth, 2) / 14"
                   :stroke-opacity="draft.pointStrokeOpacity"
                 />
               </svg>

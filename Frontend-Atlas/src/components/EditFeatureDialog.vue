@@ -65,24 +65,23 @@
               </span>
               <div class="preview-frame p-2 min-h-[60px] flex items-center">
                 <div
-                  class="preview-box px-3 py-1.5 min-h-[42px] w-full"
+                  class="preview-box px-3 py-1.5 min-h-[42px] w-full flex items-center gap-2"
                   :style="editTextStyle"
                 >
                   <svg
                     v-if="isEditingPoint"
-                    width="14"
-                    height="14"
-                    viewBox="0 0 14 14"
-                    class="shrink-0 overflow-hidden inline-block align-middle mr-1.5"
+                    class="shrink-0 overflow-visible"
+                    :style="{ width: '1em', height: '1em', flexShrink: 0 }"
+                    viewBox="0 0 1 1"
                   >
                     <circle
-                      cx="7"
-                      cy="7"
-                      r="4.5"
+                      cx="0.5"
+                      cy="0.5"
+                      r="0.38"
                       :fill="pointPreviewFillColor"
                       :fill-opacity="pointPreviewFillOpacity"
                       :stroke="pointPreviewStrokeColor"
-                      :stroke-width="Math.min(pointPreviewStrokeWidth, 2)"
+                      :stroke-width="Math.min(pointPreviewStrokeWidth, 2) / 14"
                       :stroke-opacity="pointPreviewStrokeOpacity"
                     />
                   </svg>

@@ -71,7 +71,6 @@ import { createCartoTileLayer } from "../utils/basemap";
 import {
   getLabelPresentation,
   type LabelPresentationModel,
-  type CustomLabelStyle,
 } from "../utils/labelPresentation";
 import { updateMapLabelVisibility } from "../services/MapLabelVisibilityService";
 import {
@@ -454,11 +453,6 @@ const featureLayerManager = {
     if (!layer || !map) return;
 
     if (visible) {
-      // If any global edit mode is active, geoman's layeradd listener would
-      // immediately enable that mode on this layer. Which is not good
-      // for feature specific edit modes like edit layers and rotate
-      // so we temporarily set pmIgnore to true on this layer (and all its children)
-      // before adding it to the map, then restore pmIgnore to its original value.
       const pm = (map as MapWithPm).pm;
       const anyModeActive =
         pm?.globalEditModeEnabled?.() ||
@@ -726,27 +720,14 @@ defineExpose({
   multiSelectedIds,
 });
 
-// Tracks feature IDs that got `feature-updated` during the current cut cycle.
-// Used in `cut-complete` to distinguish intersected (updated) zones from
-// enclosed (silently removed) zones — geoman does NOT fire pm:remove for the
-// latter, so we must detect them by checking which layers disappeared from the
-// map but were NOT updated.
 let cuttingUpdatedIds: Set<string> | null = null;
-// Feature IDs that were drawn on the map when the cut started. Hidden features
-// (visibility controls or timeline) are off the map too, but geoman never saw
-// them, so cut-complete must not mistake them for enclosed zones.
 let cuttingVisibleIds: Set<string> | null = null;
 
-// Zones/shapes are L.GeoJSON (FeatureGroup) containers. Geoman initialises
-// PM on the inner L.Polygon sublayers and removes those, NOT the outer
-// container. map.hasLayer(container) therefore still returns true even
-// after geoman removed the enclosed zone. We must check the whole subtree.
 function isLayerOffMap(layer: L.Layer): boolean {
   if (!map!.hasLayer(layer)) return true;
   const asGroup = layer as unknown as Partial<L.LayerGroup>;
   if (typeof asGroup.getLayers === "function") {
     const children = asGroup.getLayers() as L.Layer[];
-    // All children gone (removed from group entirely, or none left on map)
     if (children.length === 0) return true;
     return children.every((child: L.Layer) => isLayerOffMap(child));
   }
@@ -776,7 +757,6 @@ const drawing = useMapDrawing(
 
     if (event === "feature-updated") {
       const payload = args[0] as Feature;
-      // Track IDs updated during a cut so cut-complete can identify enclosed zones.
       cuttingUpdatedIds?.add(String(payload.id));
       const next = upsertFeature(current, payload);
       localFeaturesSnapshot.value = next;
@@ -795,11 +775,6 @@ const drawing = useMapDrawing(
       return;
     }
     if (event === "cut-complete") {
-      // Detect zones that geoman silently removed (fully enclosed by the cut
-      // polygon). Geoman calls map.removeLayer() on them directly — pm:remove
-      // never fires. They are identified as layers that are no longer on the map
-      // but were NOT processed by pm:cut (feature-updated). Only layers that
-      // were on the map when the cut started count: hidden ones were already off.
       if (map && cuttingUpdatedIds !== null && cuttingVisibleIds !== null) {
         const removedIds: string[] = [];
         featureLayerManager.layers.forEach((layer, id) => {
@@ -823,8 +798,6 @@ const drawing = useMapDrawing(
       }
       cuttingUpdatedIds = null;
       cuttingVisibleIds = null;
-      // Re-render so intersected zones get their updated geometry and the
-      // enclosed zones (now removed from localFeaturesSnapshot) stay gone.
       renderAllFeatures();
       return;
     }
@@ -832,7 +805,7 @@ const drawing = useMapDrawing(
   () => props.projectId,
 );
 
-const cityInput = ref<HTMLInputElement | null>(null); // template ref — Vue writes the element
+const cityInput = ref<HTMLInputElement | null>(null);
 const cityMode = useAddCityMode({
   getMap: () => map,
   localFeaturesSnapshot,
@@ -851,8 +824,7 @@ const imageOverlay = useImageOverlay({
   localFeaturesSnapshot,
   onBeforeEmit: () => { suppressNextPropsRender = true; },
   onUpdate: (next: any) => emit('draw-update', next),
-  }
-);
+});
 
 const shapeScaling = useShapeScaling({
   getMap: () => map,
@@ -1027,7 +999,7 @@ function bindRotationHandle(label: L.Marker, feature: Feature, layerToUpdate: L.
     applyRotation();
     const el = label.getElement();
     if (!el) return;
-    
+
     const anchor = el.querySelector<HTMLElement>('.label-anchor.rotate-handle');
     if (anchor) {
       anchor.addEventListener('mousedown', (e: MouseEvent) => {
@@ -1036,42 +1008,42 @@ function bindRotationHandle(label: L.Marker, feature: Feature, layerToUpdate: L.
         map.dragging.disable();
         window.getSelection()?.removeAllRanges();
         document.body.style.userSelect = 'none';
-        
+
         const containerRect = map.getContainer().getBoundingClientRect();
         const point = map.latLngToContainerPoint(label.getLatLng());
         const centerX = containerRect.left + point.x;
         const centerY = containerRect.top + point.y;
-        
+
         let startAngle = Math.atan2(e.clientY - centerY, e.clientX - centerX);
         let initialRotation = feature.properties.rotation ?? 0;
 
         const wrapper = el.querySelector('.label-wrapper') as HTMLElement | null;
-        
+
         const onMouseMove = (moveEvent: MouseEvent) => {
           const angle = Math.atan2(moveEvent.clientY - centerY, moveEvent.clientX - centerX);
           let delta = (angle - startAngle) * (180 / Math.PI);
           let newRotation = initialRotation + delta;
-          
+
           (el as any).__currentRotation = newRotation;
           if (wrapper) {
             wrapper.style.transformOrigin = `${anchorX}px ${anchorY}px`;
             wrapper.style.transform = `rotate(${newRotation}deg)`;
           }
         };
-        
+
         const onMouseUp = () => {
           document.removeEventListener('mousemove', onMouseMove);
           document.removeEventListener('mouseup', onMouseUp);
           document.body.style.userSelect = '';
           window.getSelection()?.removeAllRanges();
           map!.dragging.enable();
-          
+
           if ((el as any).__currentRotation !== undefined) {
             feature.properties.rotation = (el as any).__currentRotation;
             applyLayerUpdate(layerToUpdate);
           }
         };
-        
+
         document.addEventListener('mousemove', onMouseMove);
         document.addEventListener('mouseup', onMouseUp);
       });
@@ -1081,6 +1053,10 @@ function bindRotationHandle(label: L.Marker, feature: Feature, layerToUpdate: L.
   if (label.getElement()) {
     applyRotation();
   }
+}
+
+function getPointRadiusForTextSize(sizePx: number): number {
+  return Math.max(4, Math.min(32, Math.round(sizePx * 0.42)));
 }
 
 function materializeTextLayer(feature: Feature): L.Layer | null {
@@ -1095,35 +1071,59 @@ function materializeTextLayer(feature: Feature): L.Layer | null {
   if (presentation.mapElementType === "point") {
     const fillColor = presentation.pointColor || "#000000";
     const strokeColor = presentation.pointStrokeColor || "#000000";
+    const strokeWidth = presentation.pointStrokeWidth ?? 1;
+    const pointRadius = getPointRadiusForTextSize(presentation.sizePx);
+    const anchorX = -Math.round(pointRadius + strokeWidth / 2 + 2);
+    const anchorY = Math.round(presentation.sizePx * 0.6 + 6);
 
     const point = L.circleMarker(coord, {
       renderer: vectorRenderer ?? undefined,
-      radius: 6,
-      fillColor: fillColor,
+      radius: pointRadius,
+      fillColor,
       color: strokeColor,
-      weight: presentation.pointStrokeWidth ?? 1,
+      weight: strokeWidth,
       opacity: presentation.pointStrokeOpacity ?? 1,
       fillOpacity: presentation.pointFillOpacity ?? 1,
     });
 
-    const label = buildLabelMarker(feature, presentation, [-8, 15]);
+    const label = buildLabelMarker(feature, presentation, [anchorX, anchorY]);
 
     attachFeatureToLayer(point, feature);
     bindRenderedFeatureEvents(point, applyLayerUpdate);
 
     const layerGroup = L.layerGroup([point, label]);
 
+    const syncCityRing = (latLng: L.LatLng) => {
+      if (selectedCityRing && selectedFeatureId.value === String(feature.id)) {
+        selectedCityRing.setLatLng(latLng);
+      }
+    };
+
     point.on("pm:drag", () => {
-      label.setLatLng(point.getLatLng());
-      if (selectedCityRing) selectedCityRing.setLatLng(point.getLatLng());
+      const latLng = point.getLatLng();
+      label.setLatLng(latLng);
+      syncCityRing(latLng);
     });
     point.on("pm:dragend", () => {
-      label.setLatLng(point.getLatLng());
-      if (selectedCityRing) selectedCityRing.setLatLng(point.getLatLng());
+      const latLng = point.getLatLng();
+      label.setLatLng(latLng);
+      syncCityRing(latLng);
+    });
+
+    label.on("pm:drag", () => {
+      const latLng = label.getLatLng();
+      point.setLatLng(latLng);
+      syncCityRing(latLng);
+    });
+    label.on("pm:dragend", () => {
+      const latLng = label.getLatLng();
+      point.setLatLng(latLng);
+      syncCityRing(latLng);
+      applyLayerUpdate(point);
     });
 
     attachFeatureToLayer(label, feature);
-    bindRotationHandle(label, feature, point, -8, 15);
+    bindRotationHandle(label, feature, point, anchorX, anchorY);
     attachFeatureToLayer(layerGroup, feature);
 
     return layerGroup;
@@ -1163,7 +1163,6 @@ function renderLabels(features: Feature[]) {
   const safeFeatures = toArray(features);
   safeFeatures.forEach((feature) => renderTextFeature(feature));
 }
-
 
 function renderPolygonFeatures(features: Feature[]) {
   const safeFeatures = toArray(features);
@@ -1318,9 +1317,8 @@ function renderImages(features: Feature[]) {
     });
 
     attachFeatureToLayer(overlay, feature);
-    // Also store feature directly on the overlay for _reset to read latest values
-    (overlay as any).feature = feature; 
-    
+    (overlay as any).feature = feature;
+
     featureLayerManager.addFeatureLayer(feature.id, overlay);
   });
 }
@@ -1400,7 +1398,7 @@ function renderAllFeatures() {
   }
 
   previousFeatureIds.value = currentIds;
-  
+
   scheduleLabelVisibilityUpdate();
 }
 
@@ -1416,8 +1414,6 @@ function scheduleLabelVisibilityUpdate() {
     updateLabelVisibility();
   });
 }
-
-// --- per-feature drag ---
 
 onMounted(() => {
   map = L.map("map", {
@@ -1435,21 +1431,13 @@ onMounted(() => {
   );
   viewReadyFallback = setTimeout(revealMap, VIEW_READY_FALLBACK_MS);
   vectorRenderer = L.canvas({ padding: 0.5 });
-  // Make all path layers (including geoman's temp drawing layers) use the
-  // same canvas renderer. Without this, geoman creates a second <canvas>
-  // element that sits on top of vectorRenderer's canvas in the DOM, causing
-  // it to capture all mouse events and breaking hover/click on our features.
   (map.options as Record<string, unknown>).renderer = vectorRenderer;
 
   createCartoTileLayer({ noWrap: true }).addTo(map);
 
-  // Put image overlays in a pane above the canvas (overlayPane z-index 400)
-  // so they natively receive pointer events without the canvas intercepting them.
   const imagePane = map.createPane('imagePane');
   imagePane.style.zIndex = '410';
 
-  // Set minZoom dynamically so the whole world just fits the container (no fixed integer cap).
-  // Recompute on resize so it stays correct when the window changes size.
   const updateMinZoom = () => {
     const wz = map!.getBoundsZoom(L.latLngBounds([[-90, -180], [90, 180]]), false);
     map!.setMinZoom(wz);
@@ -1503,7 +1491,6 @@ onMounted(() => {
     const totalMoved = Math.abs(dx) + Math.abs(dy);
 
     if (!isRightSelectDragging && totalMoved > 4) {
-      // Start the selection rectangle
       isRightSelectDragging = true;
       didRightDrag = true;
       map.dragging.disable();
@@ -1535,7 +1522,6 @@ onMounted(() => {
     map?.dragging.enable();
 
     if (isRightSelectDragging && rightSelectRect && map) {
-      // Collect all features whose bounds intersect the rectangle
       const selBounds = rightSelectRect.getBounds();
       const selectedIds: string[] = [];
       featureLayerManager.layers.forEach((layer, id) => {
@@ -1559,7 +1545,6 @@ onMounted(() => {
     activeBoxButton = null;
   };
 
-  // Suppress context menu if we just completed a selection drag
   const onContainerContextmenu = (e: MouseEvent) => {
     if (didRightDrag) {
       e.preventDefault();
@@ -1579,9 +1564,7 @@ onMounted(() => {
     container.removeEventListener('contextmenu', onContainerContextmenu);
     if (rightSelectRect && map) { map.removeLayer(rightSelectRect); rightSelectRect = null; }
   };
-  
-  // pmIgnore values saved before edit/rotate mode is enabled, restored after.
-  // This makes geoman only process the selected feature (O(1)) instead of every layer.
+
   const savedPmIgnore = new Map<L.Layer, boolean | undefined>();
 
   const restorePmIgnore = () => {
@@ -1610,7 +1593,6 @@ onMounted(() => {
       return;
     }
 
-    // Only intercept the turn-ON click for edit and rotate modes.
     if (btnName === "editMode" && pm?.globalEditModeEnabled?.()) return;
     if (btnName === "rotateMode" && pm?.globalRotateModeEnabled?.()) return;
     if (btnName !== "editMode" && btnName !== "rotateMode") return;
@@ -1626,8 +1608,6 @@ onMounted(() => {
     };
     if (selectedLayer) addLayersDeep(selectedLayer);
 
-    // Set pmIgnore on every non-selected layer so geoman's findLayers()
-    // skips them when enabling the mode.
     savedPmIgnore.clear();
     map!.eachLayer((l: L.Layer) => {
       if (selectedLayers.has(l)) return;
@@ -1639,8 +1619,6 @@ onMounted(() => {
 
   map.on("pm:globaleditmodetoggled", restorePmIgnore);
   map.on("pm:globaleditmodetoggled", (e: { enabled?: boolean }) => {
-    // While vertex-edit mode is active the zone must not be draggable —
-    // the vertex handles wouldnt move with the shape leaving them behind.
     if (!selectedFeatureId.value || leavingModesForSelectionChange) return;
     const selectedLayer = featureLayerManager.layers.get(selectedFeatureId.value);
     if (!selectedLayer || selectedLayer instanceof L.ImageOverlay) return;
@@ -1714,7 +1692,6 @@ onMounted(() => {
     if (!map) return;
     const pm = (map as MapWithPm).pm;
 
-    // Clear multi-select on Escape
     if (e.key === "Escape" && multiSelectedIds.value.size > 0) {
       multiSelectedIds.value = new Set();
       emit("select-features", []);
@@ -1722,29 +1699,23 @@ onMounted(() => {
     }
 
     if (e.key !== "Escape") return;
-    // Cancel city placement mode
     if (addCityMode.value) {
       cityMode.cancel();
       return;
     }
-    // Cancel active freehand drawing — also untoggle the custom toolbar button
     if (drawing.activeDrawingMode.value === "freehand") {
       drawing.stopFreehandDrawing(map);
       drawing.activeDrawingMode.value = null;
       pm?.Toolbar?.toggleButton?.("drawFreehand", false);
       return;
     }
-    // Cancel active regular draw mode
     if (drawing.activeDrawingMode.value !== null) {
       pm?.disableDraw();
       return;
     }
-    // Cancel active global removal mode
     if (pm?.globalRemovalModeEnabled?.()) { pm.disableGlobalRemovalMode?.(); return; }
-    // Cancel active global edit/rotate mode (fires even when scoped to a selected feature)
     if (pm?.globalEditModeEnabled?.()) { pm.disableGlobalEditMode?.(); return; }
     if (pm?.globalRotateModeEnabled?.()) { pm.disableGlobalRotateMode?.(); return; }
-    // Deselect the currently selected feature if no mode is active
     if (selectedFeatureId.value !== null) {
       resetSelection();
       return;
@@ -1799,8 +1770,6 @@ watch(
   },
 );
 
-// While any draw mode is active, disable pointer-events on the canvas so that
-// hovering/clicking existing features doesn't override the draw cursor or steal clicks.
 watch(drawing.activeDrawingMode, (mode: string | null) => {
   if (!map) return;
   map.getContainer().querySelectorAll<HTMLCanvasElement>('canvas').forEach((canvas: HTMLCanvasElement) => {
@@ -1812,8 +1781,6 @@ watch(
   () => props.features,
   (newFeatures: Feature[]) => {
     localFeaturesSnapshot.value = [...newFeatures];
-    // The map emitted draw-update, which echoed back here via props. Skip the
-    // re-render so we don't destroy the layer the user is actively interacting with.
     if (suppressNextPropsRender) {
       suppressNextPropsRender = false;
       return;
@@ -1833,8 +1800,6 @@ function clearSelection(oldId?: string | null) {
   clearAllSelectionStyles();
   clearMultiSelectStylesAndDrag();
 
-  // Edit and rotate modes were enabled for the previous zone only (pmIgnore on
-  // every other layer): leave them, or its vertex handles stay on the map.
   if (oldId != null && selectedFeatureId.value !== oldId) {
     const pm = (map as MapWithPm)?.pm;
     leavingModesForSelectionChange = true;
@@ -1846,7 +1811,6 @@ function clearSelection(oldId?: string | null) {
     }
   }
 
-  // Restore the original stroke color on the previously selected layer
   if (oldId != null) {
     const oldLayer = featureLayerManager.layers.get(String(oldId));
     if (oldLayer instanceof L.ImageOverlay) {
@@ -1878,16 +1842,22 @@ function applySelectionEffects(id: string) {
     if (map && !map.hasLayer(layer)) {
       map.addLayer(layer);
     }
-    // Texts / Cities / Labels: enable label toolbar and show selection highlight
     drawing.setToolbarMode("label");
     enablePerFeatureDrag(layer);
-    pixelSpaceDragCleanup = enablePixelSpaceDrag(map!, layer);
+    pixelSpaceDragCleanup = enablePixelSpaceDrag(
+      map!,
+      layer,
+      () => (selectedCityRing ? [selectedCityRing] : []),
+    );
 
     let cityLatLng: L.LatLng | null = null;
+    let cityPointRadius = 6;
     let cityLabel: L.Marker | null = null;
     forEachLeafLayer(layer, (leaf) => {
       if (!cityLatLng && leaf instanceof L.CircleMarker) {
-        cityLatLng = (leaf as L.CircleMarker).getLatLng();
+        const cm = leaf as L.CircleMarker;
+        cityLatLng = cm.getLatLng();
+        cityPointRadius = cm.getRadius();
       }
       if (!cityLabel && leaf instanceof L.Marker && !(leaf instanceof L.CircleMarker)) {
         cityLabel = leaf as L.Marker;
@@ -1923,11 +1893,12 @@ function applySelectionEffects(id: string) {
     nextTick(applyLabelClasses);
 
     if (cityLatLng && map) {
+      const ringSize = Math.round(cityPointRadius * 2 + 10);
       selectedCityRing = L.marker(cityLatLng, {
         icon: L.divIcon({
           className: "city-selection-ring",
-          iconSize: [22, 22],
-          iconAnchor: [11, 11],
+          iconSize: [ringSize, ringSize],
+          iconAnchor: [ringSize / 2, ringSize / 2],
         }),
         interactive: false,
         zIndexOffset: 1000,
@@ -1950,7 +1921,6 @@ function applySelectionEffects(id: string) {
     drawing.setToolbarMode("global");
   }
 
-  // Attach/detach image overlay move+resize interaction
   imageOverlay.detach();
   shapeScaling.detach();
   if (selectedFeature && getMapElementType(selectedFeature) === "image") {
@@ -2013,9 +1983,6 @@ watch(selectedFeatureId, async (id: string | null, oldId: string | null) => {
     await nextTick();
     applySelectionEffects(id);
   } else {
-    // Disable any active per-feature edit/rotate mode so geoman stops
-    // intercepting canvas clicks and restorePmIgnore() fires via the
-    // pm:globaleditmodetoggled / pm:globalrotatemodetoggled events.
     const pm = (map as MapWithPm)?.pm;
     if (pm?.globalEditModeEnabled?.()) pm.disableGlobalEditMode?.();
     if (pm?.globalRotateModeEnabled?.()) pm.disableGlobalRotateMode?.();
@@ -2269,10 +2236,9 @@ watch(
 .label-anchor.rotate-handle {
   top: -20px;
   left: 50%;
-  margin-left: -5px; /* Offset to perfectly center the 10px handle */
+  margin-left: -5px;
 }
 
-/* For image rotate handle (which is a standalone L.Marker) */
 .image-rotate-handle {
   width: 14px !important;
   height: 14px !important;
@@ -2297,7 +2263,7 @@ watch(
   content: '';
   position: absolute;
   top: 10px;
-  left: 4px; /* Center of the 10px handle (minus 1px for border) */
+  left: 4px;
   width: 1px;
   height: 10px;
   background-color: #3b82f6;
@@ -2305,8 +2271,6 @@ watch(
 }
 
 .city-selection-ring {
-  width: 22px !important;
-  height: 22px !important;
   border-radius: 50%;
   border: 2.5px solid #3b82f6;
   background: transparent;
