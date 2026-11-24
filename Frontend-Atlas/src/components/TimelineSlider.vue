@@ -5,7 +5,7 @@
         <!-- Discreet legend + Date filters -->
         <div
           v-if="!isZoomMode"
-          class="flex items-center justify-start gap-4 pb-1.5 text-[11px] text-base-content opacity-70 select-none flex-wrap"
+          class="flex items-center justify-start gap-4 pb-1.5 text-[11px] text-base-content select-none flex-wrap"
         >
           <span v-if="displayedPeriods.length > 0" class="inline-flex items-center gap-1.5">
             <span class="inline-block w-8 h-2 rounded-full bg-gradient-to-r from-sky-500 via-emerald-500 to-amber-500 shadow-xs"></span>
