@@ -68,7 +68,7 @@
             >
               <div
                 class="flex items-center justify-between rounded-lg px-2 py-1 bg-gray-100 hover:bg-gray-200/80 border border-gray-300 group transition-colors cursor-pointer"
-                :class="{ 'ring-2 ring-primary border-primary bg-primary/5': props.activeMapId && mapGroup.id === props.activeMapId }"
+                :class="{ 'ring-2 ring-primary border-primary bg-primary/5': props.selectedMapId && String(mapGroup.id) === String(props.selectedMapId) }"
                 @click="mapGroup.id !== null && emit('select-map', mapGroup.id)"
                 @dblclick="mapGroup.id !== null && emit('edit-map', mapGroup.id)"
               >
@@ -149,7 +149,7 @@
                   class="flex w-full flex-row items-center justify-between gap-1 rounded-lg px-2 py-1 transition-all cursor-pointer select-none"
                   :class="[
                     isFeatureSelected(feature.id)
-                      ? 'border-2 border-primary bg-primary/10 font-semibold shadow-sm'
+                      ? 'border-2 border-primary-700 ring-1 ring-primary-700/60 bg-primary-100/60 dark:bg-primary-950/40 font-semibold shadow-sm'
                       : 'border-2 border-transparent hover:bg-base-200/60'
                   ]"
                   @click="onFeatureItemClick(feature, $event)"
@@ -945,6 +945,7 @@ const props = defineProps<{
   multiSelectedFeatureIds?: string[];
   customLabelStyles?: CustomLabelStyle[];
   activeMapId?: string | null;
+  selectedMapId?: string | null;
 }>();
 
 const editFeatureDialogRef = ref<HTMLDialogElement | undefined>(undefined);

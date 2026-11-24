@@ -47,6 +47,7 @@ INPUT_KEYS = (
     "shapes",
     "options",
     "ignoredAreas",
+    # exclusionZones is a legacy alias for ignoredAreas
     "exclusionZones",
 )
 
@@ -154,10 +155,9 @@ def apply_inputs_patch(
         elif key == "options":
             merged[key] = _validate_options(value)
         elif key in ("ignoredAreas", "exclusionZones"):
+            # exclusionZones is treated as a legacy alias for ignoredAreas
             validated = _validate_ignored_areas(value)
             merged["ignoredAreas"] = validated
-            if key == "exclusionZones":
-                merged["exclusionZones"] = validated
 
     previous_frame = (current or {}).get("frameBounds")
     frame_changed = (

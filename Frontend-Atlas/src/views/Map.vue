@@ -17,6 +17,7 @@
           :selected-feature-id="selectedFeatureId"
           :multi-selected-feature-ids="multiSelectedFeatureIds"
           :active-map-id="activeMapPeriod?.id ?? null"
+          :selected-map-id="selectedMapId"
           @select-feature="selectFeature"
           @select-features="onSelectFeatures"
           @toggle-feature="toggleFeatureVisibility"
@@ -94,6 +95,8 @@
             @undo="onUndo"
             @redo="onRedo"
             @edit-feature-request="onEditFeatureRequest"
+            @move-selected="nudgeSelectedFeatures"
+            @select-all="onSelectAll"
           />
           <div
             v-show="!showTextValidationModal && isLegendVisible"
@@ -132,17 +135,17 @@
           :map-periods="enrichedPeriods"
           :element-markers="timelineElementMarkers"
           :current-exact-date="selectedExactDate"
-          @update:year="selectedYear = $event"
+          @update:year="onTimelineYearUpdate"
           @update:mode="timelineMode = $event"
-          @exact-date-change="onExactDateChange"
-          @select-date="onTimelineDateSelect"
+          @exact-date-change="onTimelineExactDateChange"
+          @select-date="onTimelineSelectDate"
           @select-map="selectMap"
           @edit-map="openEditMapDialog"
           @edit-element="onEditElementFromTimeline"
           @select-element="onSelectElementFromTimeline"
           @select-elements="onSelectFeatures"
-          @prev-milestone="goToPrevMilestone"
-          @next-milestone="goToNextMilestone"
+          @prev-milestone="onTimelinePrevMilestone"
+          @next-milestone="onTimelineNextMilestone"
           @toggle-legend="toggleLegend"
           @toggle-timeline="toggleTimeline"
           @start-resize="startTimelineResize"
@@ -196,7 +199,6 @@ import {
   camelToSnake,
   isUuid,
   prepareFeaturesForSave,
-  rgbToHex,
   snakeToCamel,
   toImageSrc,
 } from "../utils/utils";
@@ -223,16 +225,10 @@ import { getNudgeDelta, getSelectedTargetFeatures } from "../utils/selectionUtil
 import {
   Bars3Icon,
   ChevronLeftIcon,
-  ChevronRightIcon,
   ArrowsPointingOutIcon,
   ArrowsPointingInIcon,
-  EyeIcon,
-  EyeSlashIcon,
 } from "@heroicons/vue/24/outline";
-import type {
-  CreatedProjectRef,
-  CreateProjectDialogExposed,
-} from "../typescript/project";
+import type { CreatedProjectRef } from "../typescript/project";
 import {
   type TextValidationEntry,
   featureToValidationEntry,
@@ -240,17 +236,12 @@ import {
   isUnrecognizedTextFeature,
 } from "../utils/textValidation";
 import { isVisibleInMainLayers } from "../utils/featureValidationState";
-import { isTextFeature, normalizeWordType } from "../utils/wordStyles";
+import { normalizeWordType } from "../utils/wordStyles";
 import {
   applyCustomLabelStyleToFeature,
   removeCustomLabelStyleFromFeature,
 } from "../utils/featureTextEditing";
-import {
-  useMapTimeline,
-  getFeatureCustomYears,
-  type TimelineFilterMode,
-  type TimelineMilestone,
-} from "../composables/useMapTimeline";
+import { useMapTimeline, getFeatureCustomYears } from "../composables/useMapTimeline";
 
 const route = useRoute();
 const router = useRouter();
@@ -287,6 +278,7 @@ function onSelectFeatures(ids: string[]) {
   multiSelectedFeatureIds.value = ids;
   if (ids.length > 0) {
     selectedFeatureId.value = null;
+    selectedMapId.value = null;
     nextTick(() => {
       mapGeoJsonRef.value?.fitToVisibleFeatures?.(ids, true);
     });
@@ -352,6 +344,7 @@ async function onEditElementFromTimeline(featureId: string) {
 function selectFeature(id: string | null) {
   selectedFeatureId.value = id;
   if (id) {
+    selectedMapId.value = null;
     multiSelectedFeatureIds.value = [];
     nextTick(() => {
       mapGeoJsonRef.value?.fitToVisibleFeatures?.([id], true);
@@ -422,6 +415,7 @@ function selectFeature(id: string | null) {
 const features = ref<Feature[]>([]);
 const selectedFeatureId = ref<string | null>(null);
 const multiSelectedFeatureIds = ref<string[]>([]);
+const selectedMapId = ref<string | null>(null);
 const copiedFeatures = ref<Feature[]>([]);
 
 // Presentation mode & Visibility states (Points 1, 6)
@@ -693,7 +687,6 @@ const {
   timelineMode,
   enrichedPeriods,
   periodByMapId,
-  customFeatureYears,
   timelineElementMarkers,
   sortedTimelineMilestones,
   prevMilestone,
@@ -703,13 +696,10 @@ const {
   goToPrevMilestone,
   goToNextMilestone,
   onTimelineDateSelect,
-  allTimelineStartYears,
-  allTimelineEndYears,
   timelineMinYear,
   timelineMaxYear,
   timelineMarkerYears,
   periodStartYears,
-  periodStartDates,
   activeMapPeriod,
   filteredFeatures,
   onExactDateChange,
@@ -754,7 +744,7 @@ const combinedFeatureVisibility = computed(() => {
       return;
     }
 
-    const explicitlyVisible = featureVisibility.valueOf.get(id) ?? true;
+    const explicitlyVisible = featureVisibility.value.get(id) ?? true;
     const isTimelineVisible = visibleByTimeline.has(id);
 
     combined.set(id, explicitlyVisible && isTimelineVisible);
@@ -1282,7 +1272,7 @@ function onOpenTextValidation(mapId: string | null) {
   }
 
   textValidationEntries.value = targetFeatures.map((f: Feature) =>
-    featureToValidationEntry(f, featureVisibility.valueOf.get(f.id) !== false),
+    featureToValidationEntry(f, featureVisibility.value.get(f.id) !== false),
   );
 
   showTextValidationModal.value = true;
@@ -1302,7 +1292,7 @@ async function onConfirmTextValidation(validatedItems: TextValidationEntry[]) {
 
     for (const id of openedIds) {
       if (!validatedMap.has(id)) {
-        featureVisibility.valueOf.delete(id);
+        featureVisibility.value.delete(id);
       }
     }
 
@@ -1312,11 +1302,11 @@ async function onConfirmTextValidation(validatedItems: TextValidationEntry[]) {
         const validated = validatedMap.get(f.id);
         if (!validated) return f;
 
-        featureVisibility.valueOf.set(f.id, validated.selected);
+        featureVisibility.value.set(f.id, validated.selected);
         return applyValidationToFeature(f, validated);
       });
 
-    featureVisibility.valueOf = new Map(featureVisibility.valueOf);
+    featureVisibility.value = new Map(featureVisibility.value);
     commitFeatureSnapshot(nextFeatures, "Validation des textes");
     await onSaveMap(nextFeatures);
     showTextValidationModal.value = false;
@@ -1354,6 +1344,7 @@ function openAddMapDialog() {
 }
 
 function selectMap(mapId: string) {
+  selectedMapId.value = String(mapId);
   const period =
     enrichedPeriods.value.find((p: SliderPeriod) => String(p.id) === String(mapId)) ??
     mapPeriods.value.find((p: MapPeriod) => String(p.id) === String(mapId));
@@ -1612,7 +1603,7 @@ async function onDuplicateMapSubmit(payload: {
 }
 
 function reconcileVisibility(list: Feature[]) {
-  const next = new Map<string, boolean>(featureVisibility.valueOf);
+  const next = new Map<string, boolean>(featureVisibility.value);
   for (const f of list) {
     const id = f?.id;
     if (id != null && next.get(id) === undefined) {
@@ -1625,13 +1616,13 @@ function reconcileVisibility(list: Feature[]) {
   for (const k of next.keys()) {
     if (!ids.has(k)) next.delete(k);
   }
-  featureVisibility.valueOf = next;
+  featureVisibility.value = next;
 }
 
 async function loadInitialFeatures() {
   if (!projectId.value) {
     features.value = [];
-    featureVisibility.valueOf = new Map();
+    featureVisibility.value = new Map();
     return;
   }
 
@@ -1722,9 +1713,9 @@ async function openCreateCopyDialog() {
 }
 
 function toggleFeatureVisibility(featureId: string, visible: boolean) {
-  const next = new Map<string, boolean>(featureVisibility.valueOf);
+  const next = new Map<string, boolean>(featureVisibility.value);
   next.set(featureId, visible);
-  featureVisibility.valueOf = next;
+  featureVisibility.value = next;
 }
 
 function isEditableTarget(target: EventTarget | null): boolean {
@@ -2102,7 +2093,7 @@ watch(
   ) => {
     if (!newMapId || newMapId === oldMapId) return;
 
-    featureVisibility.valueOf = new Map();
+    featureVisibility.value = new Map();
     await loadCurrentMapInfo();
 
     if (shouldSaveAfterCopy.value) {
@@ -2218,7 +2209,7 @@ async function onSaveMap(featuresOverride?: Feature[]) {
       properties: {
         ...feature.properties,
         isVisible:
-          featureVisibility.valueOf.get(feature.id) ??
+          featureVisibility.value.get(feature.id) ??
           feature.properties?.isVisible ??
           true,
       },

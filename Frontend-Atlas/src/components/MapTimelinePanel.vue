@@ -76,7 +76,6 @@
           type="button"
           class="btn btn-ghost btn-xs text-base-content/70 hover:text-base-content gap-1"
           data-testid="hide-legend-button"
-          :title="isLegendVisible ? 'Masquer la légende' : 'Afficher la légende'"
           @click="emit('toggle-legend')"
         >
           <EyeSlashIcon v-if="isLegendVisible" class="w-3.5 h-3.5" />
@@ -87,7 +86,6 @@
           type="button"
           class="btn btn-ghost btn-xs text-base-content/70 hover:text-base-content gap-1"
           data-testid="hide-timeline-button"
-          :title="isTimelineVisible ? 'Masquer la ligne du temps' : 'Afficher la ligne du temps'"
           @click="emit('toggle-timeline')"
         >
           <EyeSlashIcon v-if="isTimelineVisible" class="w-3.5 h-3.5" />

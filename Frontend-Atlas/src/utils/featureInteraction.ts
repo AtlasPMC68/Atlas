@@ -52,13 +52,8 @@ export function createFeatureDoubleClickHandler<T = Feature>(
     lastClickTime = 0;
     lastClickId = null;
 
-    if (event !== undefined) {
-      options.onSelect?.(item, event);
-      options.onEdit?.(item, event);
-    } else {
-      options.onSelect?.(item);
-      options.onEdit?.(item);
-    }
+    options.onSelect?.(item, event);
+    options.onEdit?.(item, event);
   };
 
   const handleClick = (item: T, event?: unknown) => {
@@ -76,11 +71,7 @@ export function createFeatureDoubleClickHandler<T = Feature>(
     } else {
       lastClickTime = now;
       lastClickId = id;
-      if (event !== undefined) {
-        options.onSelect?.(item, event);
-      } else {
-        options.onSelect?.(item);
-      }
+      options.onSelect?.(item, event);
     }
   };
 

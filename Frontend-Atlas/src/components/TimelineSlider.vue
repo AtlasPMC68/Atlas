@@ -13,7 +13,7 @@
           </span>
           <span v-if="groupedElementMarkers.length > 0" class="inline-flex items-center gap-1.5">
             <span class="inline-block w-2.5 h-2.5 rounded-full bg-info"></span>
-            <span>Dates personnalisées</span>
+            <span>Éléments datés (sans carte associée)</span>
           </span>
 
           <!-- 3 Date filter buttons placed to the right of Custom dates -->
@@ -128,7 +128,7 @@
               <span
                 v-if="marker.hasCustomItem"
                 class="w-1.5 h-1.5 rounded-full bg-info shrink-0"
-                title="Élément avec date personnalisée"
+                title="Éléments datés (sans carte associée)"
               >
                 *
               </span>
@@ -148,7 +148,7 @@
               <div class="flex items-center justify-between gap-2 pb-2 border-b border-gray-200">
                 <div class="flex items-center gap-1.5 text-sm font-semibold text-base-content truncate">
                   <span>
-                    {{ marker.items.length }} élément{{ marker.items.length > 1 ? "s" : "" }}
+                    {{ marker.items.length }} {{ marker.items.length > 1 ? "éléments datés" : "élément daté" }}
                   </span>
                 </div>
                 <span class="text-xs font-mono text-base-content opacity-60 shrink-0">

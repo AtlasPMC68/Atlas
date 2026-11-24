@@ -76,7 +76,7 @@ const emit = defineEmits<{
   (e: "create-map", payload: any): void;
   (e: "duplicate-map", payload: any): void;
   (e: "save-map-period", payload: any): void;
-  (e: "project-created", payload: CreatedProjectRef): void;
+  (e: "project-created", payload: CreatedProjectRef | null): void;
   (e: "project-error", message: string): void;
   (e: "project-dialog-closed"): void;
   (e: "confirm-text-validation", items: TextValidationEntry[]): void;

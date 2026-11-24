@@ -339,7 +339,7 @@ const { handleClick: handleLayerClick, handleDblClick: handleLayerDblClick } =
       emit("select-feature", String(feature.id));
       emit("edit-feature-request", feature);
     },
-    getId: (feature: Feature) => feature.id,
+    getId: (feature: Feature) => feature.id ?? feature.properties?.id,
   });
 
 const featureLayerManager = {
@@ -394,7 +394,9 @@ const featureLayerManager = {
 
       lastMapAnchorId = id;
       emit("select-features", []);
-      const feature = props.features.find((f: Feature) => String(f.id) === id);
+      const feature = props.features.find(
+        (f: Feature) => String(f.id) === id || String(f.properties?.id) === id,
+      );
       if (feature) {
         handleLayerClick(feature);
       } else {
@@ -424,7 +426,9 @@ const featureLayerManager = {
       }, 100);
       if (addCityMode.value) cityMode.cancel();
 
-      const feature = props.features.find((f: Feature) => String(f.id) === id);
+      const feature = props.features.find(
+        (f: Feature) => String(f.id) === id || String(f.properties?.id) === id,
+      );
       if (feature) {
         handleLayerDblClick(feature);
       }
