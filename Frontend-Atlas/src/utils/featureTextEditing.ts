@@ -276,7 +276,7 @@ export function coerceEditedFeature(
     };
   }
   const isLabel = styledFeature.properties.mapElementType === "label";
-  const labelColorHex = payload.textColorHex ?? payload.colorHex;
+  const labelColorHex = payload.colorHex ?? payload.textColorHex;
   // A label has no symbol, so its one colour is its text colour (stored in colorRgb, without redundant textColorRgb).
   // A point keeps a separate text colour only when it differs from the symbol's.
   const textColorHex =

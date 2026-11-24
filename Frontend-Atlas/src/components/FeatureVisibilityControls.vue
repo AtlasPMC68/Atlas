@@ -638,7 +638,7 @@
                 for="edit-stroke-opacity"
                 title="Opacité du contour (0 à 1)"
               >
-                Opacité bord
+                Opacité contour
               </label>
               <input
                 id="edit-stroke-opacity"
@@ -660,7 +660,7 @@
                 for="edit-stroke-width"
                 title="Épaisseur du contour en pixels"
               >
-                Épaisseur
+                Épaisseur contour
               </label>
               <input
                 id="edit-stroke-width"
