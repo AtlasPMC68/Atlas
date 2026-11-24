@@ -139,6 +139,10 @@ def _media_root() -> str:
     return os.getenv("MEDIA_ROOT", "/app/media")
 
 
+def _is_under_media_root(abs_path: str, media_root_abs: str) -> bool:
+    return abs_path == media_root_abs or abs_path.startswith(media_root_abs + os.sep)
+
+
 def _delete_reference_image_file(map_obj: Map) -> None:
     rel_path = cast(str | None, map_obj.reference_image_path)
     if not rel_path:
@@ -146,9 +150,7 @@ def _delete_reference_image_file(map_obj: Map) -> None:
     media_root = _media_root()
     abs_path = os.path.abspath(os.path.join(media_root, rel_path))
     media_root_abs = os.path.abspath(media_root)
-    if not (
-        abs_path == media_root_abs or abs_path.startswith(media_root_abs + os.sep)
-    ) or not os.path.isfile(abs_path):
+    if not _is_under_media_root(abs_path, media_root_abs) or not os.path.isfile(abs_path):
         return
     try:
         os.unlink(abs_path)
@@ -163,8 +165,9 @@ async def _copy_reference_image(source_map: Map, new_map: Map) -> str | None:
         return None
 
     media_root = _media_root()
+    media_root_abs = os.path.abspath(media_root)
     source_abs = os.path.abspath(os.path.join(media_root, src_ref_path))
-    if not os.path.isfile(source_abs):
+    if not _is_under_media_root(source_abs, media_root_abs) or not os.path.isfile(source_abs):
         setattr(new_map, "reference_image_path", None)
         setattr(new_map, "reference_image_content_type", None)
         return None
