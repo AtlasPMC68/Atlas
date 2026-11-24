@@ -11,7 +11,12 @@ import {
   applyWordStyleToFeature,
   WORD_TYPE_TAXONOMY,
 } from "../../src/utils/wordStyles";
-import { getLabelPresentation } from "../../src/utils/labelPresentation";
+import {
+  getLabelPresentation,
+  getWordTypeOptionStyle,
+  getCustomStyleObject,
+  type CustomLabelStyle,
+} from "../../src/utils/labelPresentation";
 import { getMapElementType } from "../../src/utils/featureHelpers";
 import {
   prepareFeatureForEdit,
@@ -352,5 +357,36 @@ describe("shared word styles and label presentation", () => {
     const presentation = getLabelPresentation(feature);
     expect(presentation.colorCss).toBe("rgb(0, 255, 136)");
     expect(presentation.styleAttribute).toContain("color: rgb(0, 255, 136)");
+  });
+
+  it("ensures getWordTypeOptionStyle and getCustomStyleObject define explicit text colors", () => {
+    const cityOptionStyle = getWordTypeOptionStyle("city");
+    expect(cityOptionStyle.color).toBe("#000000");
+
+    const riverOptionStyle = getWordTypeOptionStyle("river");
+    expect(riverOptionStyle.color).toBe("#000000");
+
+    const customWithColor: CustomLabelStyle = {
+      id: "c-1",
+      name: "Fort",
+      sizePx: 14,
+      fontStyle: "normal",
+      textTransform: "none",
+      color: "#10b981",
+      priority: 50,
+      minZoom: 1,
+    };
+    expect(getCustomStyleObject(customWithColor).color).toBe("#10b981");
+
+    const customWithoutColor: CustomLabelStyle = {
+      id: "c-2",
+      name: "Sans couleur",
+      sizePx: 14,
+      fontStyle: "normal",
+      textTransform: "none",
+      priority: 50,
+      minZoom: 1,
+    };
+    expect(getCustomStyleObject(customWithoutColor).color).toBe("#000000");
   });
 });

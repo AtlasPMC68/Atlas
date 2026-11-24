@@ -50,7 +50,7 @@ export function getCustomStyleObject(style: CustomLabelStyle): CSSProperties {
   const isBold = style.fontWeight === "bold" || Boolean(style.bold);
 
   return {
-    color: style.color || "inherit",
+    color: style.color || "#000000",
     fontWeight: isBold ? "bold" : "normal",
     fontStyle: style.fontStyle || "normal",
     textTransform: style.textTransform || "none",
@@ -140,8 +140,9 @@ export function formatCustomStyleOptionLabel(
 export function getWordTypeOptionStyle(typeKey: string): CSSProperties {
   const norm = normalizeWordType(typeKey);
   const tax = WORD_TYPE_TAXONOMY[norm];
-  if (!tax) return {};
+  if (!tax) return { color: "#000000" };
   return {
+    color: "#000000",
     fontStyle: tax.fontStyle,
     fontWeight: "bold",
     textTransform: tax.textTransform,

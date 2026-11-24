@@ -243,8 +243,13 @@ describe("featureTextEditing", () => {
 
       expect(withCustom.properties.mapElementType).toBe("point");
       expect(withCustom.properties.colorRgb).toEqual([255, 0, 0]);
+      expect(withCustom.properties.textColorRgb).toEqual([225, 29, 72]);
       expect(withCustom.properties.strokeWidth).toBe(2);
       expect(withCustom.properties.fillOpacity).toBe(0.8);
+
+      const editState = prepareFeatureForEdit(withCustom);
+      expect(editState.draft.colorHex).toBe("#ff0000");
+      expect(editState.draft.textColorHex).toBe("#e11d48");
     });
   });
 

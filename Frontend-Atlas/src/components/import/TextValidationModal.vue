@@ -497,8 +497,6 @@ function getItemWordTypeSelectStyle(item: TextValidationEntry): CSSProperties {
       (candidate: CustomLabelStyle) => candidate.id === selection.slice("custom:".length),
     ) ?? item.customLabelStyle;
     if (style) return getCustomStyleObject(style);
-  } else if (item.customLabelStyle) {
-    return getCustomStyleObject(item.customLabelStyle);
   }
   return getWordTypeOptionStyle(item.wordType || "city");
 }

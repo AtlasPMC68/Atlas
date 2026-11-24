@@ -114,6 +114,7 @@ export function applyCustomLabelStyleToFeature(
       fontWeight: isBold ? "bold" : "normal",
       bold: isBold,
       colorRgb: targetElementType === "point" ? hexToRgb(pointColor) : hexToRgb(style.color),
+      textColorRgb: hexToRgb(style.color),
       strokeColor: targetElementType === "point" ? hexToRgb(pointStroke) : undefined,
       fillOpacity: targetElementType === "point" ? (style.pointFillOpacity ?? 0.5) : undefined,
       strokeOpacity: targetElementType === "point" ? (style.pointStrokeOpacity ?? 1) : undefined,
@@ -153,9 +154,26 @@ export function prepareFeatureForEdit(feature: Feature): FeatureEditState {
     feature.properties.labelText ?? (isText ? feature.properties.name : undefined);
 
   const initialMapIds = getFeatureMapIds(feature);
-  const colorHex =
-    rgbToHex(feature.properties.colorRgb) ??
-    (elementType === "label" || elementType === "point" ? "#000000" : undefined);
+  const customStyle = feature.properties.customLabelStyle;
+  const hasCustomStyle = Boolean(feature.properties.customLabelStyleId || customStyle);
+
+  const rawColorHex = rgbToHex(feature.properties.colorRgb);
+  const rawTextColorHex = rgbToHex(feature.properties.textColorRgb);
+
+  let colorHex: string | undefined;
+  let textColorHex: string | undefined;
+
+  if (hasCustomStyle && customStyle) {
+    colorHex = customStyle.pointColor || customStyle.color || rawColorHex || "#000000";
+    textColorHex = customStyle.color || rawTextColorHex || "#000000";
+  } else {
+    colorHex =
+      rawColorHex ??
+      (elementType === "label" || elementType === "point" ? "#000000" : undefined);
+    textColorHex =
+      rawTextColorHex ??
+      (elementType === "label" ? (colorHex || "#000000") : "#000000");
+  }
 
   return {
     feature,
@@ -170,7 +188,7 @@ export function prepareFeatureForEdit(feature: Feature): FeatureEditState {
       customLabelStyleId: feature.properties.customLabelStyleId,
       customLabelStyle: feature.properties.customLabelStyle,
       colorHex,
-      textColorHex: rgbToHex(feature.properties.textColorRgb) ?? colorHex,
+      textColorHex,
       textSizePx: isText
         ? normalizeTextSizePx(feature.properties.textSizePx) ??
           getDefaultTextSizePx(wordType)
@@ -258,7 +276,7 @@ export function coerceEditedFeature(
     };
   }
   const isLabel = styledFeature.properties.mapElementType === "label";
-  const labelColorHex = payload.colorHex ?? payload.textColorHex;
+  const labelColorHex = payload.textColorHex ?? payload.colorHex;
   // A label has no symbol, so its one colour is its text colour (stored in colorRgb, without redundant textColorRgb).
   // A point keeps a separate text colour only when it differs from the symbol's.
   const textColorHex =
