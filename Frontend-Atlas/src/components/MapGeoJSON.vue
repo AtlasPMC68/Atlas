@@ -891,7 +891,6 @@ function applyLabelPresentationStyle(
   el.style.setProperty("--label-weight", presentation.fontWeight);
   el.style.setProperty("--label-transform", presentation.textTransform);
   el.dataset.sizePx = String(presentation.sizePx);
-  el.dataset.priority = String(presentation.sizePx);
   el.dataset.wordType = presentation.wordType;
   el.dataset.featureId = String(featureId);
   if (selectedFeatureId.value === String(featureId)) {

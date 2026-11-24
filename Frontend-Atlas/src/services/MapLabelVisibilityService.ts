@@ -22,6 +22,17 @@ function updatePointVisibility(
   });
 }
 
+function readLabelSizePx(label: HTMLElement): number {
+  const fromData = Number.parseFloat(label.dataset.sizePx || "");
+  if (Number.isFinite(fromData) && fromData > 0) return fromData;
+  const raw =
+    label.style.getPropertyValue("--label-size") ||
+    getComputedStyle(label).getPropertyValue("--label-size") ||
+    getComputedStyle(label).fontSize;
+  const fromCss = Number.parseFloat(raw);
+  return Number.isFinite(fromCss) && fromCss > 0 ? fromCss : 0;
+}
+
 function findCircleMarker(layer: L.Layer | undefined): L.CircleMarker | null {
   if (!layer) return null;
   if (layer instanceof L.CircleMarker) return layer;
@@ -53,23 +64,12 @@ export function updateMapLabelVisibility(
   });
 
   const candidates = labels
-    .map((label) => {
-      const sizeFromData = Number.parseFloat(
-        label.dataset.sizePx || label.dataset.priority || "",
-      );
-      const sizeFromCss = Number.parseFloat(label.style.getPropertyValue("--label-size"));
-      const sizePx = Number.isFinite(sizeFromData)
-        ? sizeFromData
-        : Number.isFinite(sizeFromCss)
-          ? sizeFromCss
-          : 0;
-      return {
-        id: label.dataset.featureId || "",
-        text: label.textContent || "",
-        sizePx,
-        rectangle: label.getBoundingClientRect(),
-      };
-    })
+    .map((label) => ({
+      id: label.dataset.featureId || "",
+      text: label.textContent || "",
+      sizePx: readLabelSizePx(label),
+      rectangle: label.getBoundingClientRect(),
+    }))
     .filter((candidate) => candidate.id.length > 0);
 
   const visibleIds = selectVisibleLabels(
