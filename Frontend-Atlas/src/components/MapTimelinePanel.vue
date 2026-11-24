@@ -101,7 +101,6 @@
         :max="max"
         :marker-years="markerYears"
         :map-periods="mapPeriods"
-        :element-markers="elementMarkers"
         :current-exact-date="currentExactDate"
         @update:year="emit('update:year', $event)"
         @update:mode="emit('update:mode', $event)"
@@ -119,7 +118,7 @@
 
 <script setup lang="ts">
 import { ChevronLeftIcon, ChevronRightIcon, EyeIcon, EyeSlashIcon } from "@heroicons/vue/24/outline";
-import TimelineSlider, { type TimelineMarkerItem } from "./TimelineSlider.vue";
+import TimelineSlider from "./TimelineSlider.vue";
 import type { SliderPeriod } from "../typescript/map";
 import type { TimelineMilestone, TimelineFilterMode } from "../composables/useMapTimeline";
 
@@ -141,7 +140,6 @@ defineProps<{
   max: number;
   markerYears: number[];
   mapPeriods: SliderPeriod[];
-  elementMarkers: TimelineMarkerItem[];
   currentExactDate: string | null;
 }>();
 

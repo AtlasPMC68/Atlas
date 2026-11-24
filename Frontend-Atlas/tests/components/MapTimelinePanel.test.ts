@@ -25,7 +25,6 @@ describe("MapTimelinePanel.vue", () => {
     max: 1900,
     markerYears: [1800, 1850, 1900],
     mapPeriods: [],
-    elementMarkers: [],
     currentExactDate: null,
   };
 

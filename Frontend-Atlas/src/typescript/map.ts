@@ -20,21 +20,6 @@ export type DayTick = {
   isExactDate: boolean;
 };
 
-export interface TimelineElementMarker {
-  id: string;
-  name: string;
-  year: number;
-  endYear?: number | null;
-  startYear?: number | null;
-  startDate?: string | null;
-  endDate?: string | null;
-  type?: string;
-  color?: string;
-  mapId?: string | null;
-  mapTitle?: string | null;
-  isNameMissing?: boolean;
-}
-
 export interface MapData {
   id: string;
   userId: string;

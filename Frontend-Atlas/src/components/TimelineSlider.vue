@@ -167,9 +167,7 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { parseIsoDateUtc, toIsoDateUtc } from "../utils/dateUtils";
-import type { DayTick, SliderPeriod, TimelineElementMarker } from "../typescript/map";
-
-export type TimelineMarkerItem = TimelineElementMarker;
+import type { DayTick, SliderPeriod } from "../typescript/map";
 
 const props = defineProps<{
   year: number;
@@ -178,7 +176,6 @@ const props = defineProps<{
   markerYears?: number[];
   currentExactDate?: string | null;
   mapPeriods?: SliderPeriod[];
-  elementMarkers?: TimelineMarkerItem[];
   filterByDate?: boolean;
   mode?: "specific" | "cumulative" | "global";
   selectedFeatureId?: string | null;

@@ -279,7 +279,7 @@
   <!-- Standardized element edit modal -->
   <dialog ref="editFeatureDialogRef" class="modal" v-if="featureToEdit">
     <div
-      class="modal-box w-11/12 flex flex-col gap-4 max-h-[90vh] overflow-y-auto"
+      class="modal-box w-11/12 flex flex-col gap-5 max-h-[90vh] overflow-y-auto"
       :class="editModalBoxClass"
     >
       <h3 class="text-lg font-bold truncate">
@@ -289,22 +289,21 @@
         </span>
       </h3>
 
-      <fieldset
-        class="grid grid-cols-1 gap-6 items-start"
-        :class="isTextElement ? 'lg:grid-cols-2' : 'lg:grid-cols-[1.2fr_1fr]'"
-      >
+      <fieldset class="grid grid-cols-1 lg:grid-cols-2 gap-x-6 gap-y-5 items-start">
         <!-- Section 1 (Top Left): Informations générales -->
-        <div class="flex flex-col gap-1.5 min-w-0 order-1 lg:col-start-1 lg:row-start-1">
-          <span class="section-title">
-            Informations générales
-          </span>
+        <div class="flex flex-col gap-2 min-w-0 order-1 lg:col-start-1 lg:row-start-1">
+          <div class="flex items-center justify-between min-h-[1.75rem]">
+            <span class="section-title">
+              Informations générales
+            </span>
+          </div>
 
           <div
             class="grid grid-cols-1 gap-3 items-start w-full"
             :class="isTextElement ? 'sm:grid-cols-2' : 'grid-cols-1'"
           >
-            <div class="flex flex-col gap-1 min-w-0">
-              <label class="field-label" for="edit-feature-name">
+            <div class="flex flex-col gap-1.5 min-w-0">
+              <label class="field-label leading-5" for="edit-feature-name">
                 Nom de l'élément
               </label>
 
@@ -314,7 +313,7 @@
                   ref="labelTextareaRef"
                   v-model="editDraft.name"
                   rows="2"
-                  class="textarea textarea-bordered w-full bg-base-100 text-sm leading-snug resize-y"
+                  class="textarea textarea-bordered w-full min-h-[60px] bg-base-100 text-sm leading-snug resize-y"
                   :class="isEditNameMissing ? 'border-error ring-1 ring-error' : 'border-gray-400'"
                   placeholder="Nom de l'élément"
                   required
@@ -330,7 +329,7 @@
                 id="edit-feature-name"
                 v-model="editDraft.name"
                 type="text"
-                class="input input-bordered w-full text-sm"
+                class="input input-bordered w-full h-[50px] text-sm"
                 :class="isEditNameMissing ? 'border-error ring-1 ring-error' : 'border-gray-400'"
                 placeholder="Nom de l'élément"
                 required
@@ -338,13 +337,13 @@
               />
             </div>
 
-            <div v-if="isTextElement" class="flex flex-col gap-1 min-w-0">
-              <span class="field-label">
+            <div v-if="isTextElement" class="flex flex-col gap-1.5 min-w-0">
+              <span class="field-label leading-5">
                 Aperçu
               </span>
-              <div class="preview-frame p-2">
+              <div class="preview-frame p-2 min-h-[60px] flex items-center">
                 <div
-                  class="preview-box px-3 py-1.5 min-h-[42px] pr-4"
+                  class="preview-box px-3 py-1.5 min-h-[42px] w-full"
                   :style="editTextStyle"
                 >
                   <span
@@ -355,14 +354,14 @@
                       borderColor: pointPreviewStrokeColor || undefined,
                     }"
                   ></span>
-                  <span class="whitespace-pre-line break-words pr-4">
+                  <span class="whitespace-pre-line break-words">
                     {{ editDraft.labelText || editDraft.name || "Exemple de texte" }}
                   </span>
                 </div>
               </div>
               <span
                 v-if="isPreviewClamped"
-                class="text-xs text-red-700 bg-white border border-red-500 rounded px-2 py-1 mt-1"
+                class="text-xs text-red-700 bg-white border border-red-500 rounded px-2 py-1"
                 data-testid="preview-limit-notice"
               >
                 L'aperçu est plafonné pour tenir dans la fenêtre.
@@ -371,64 +370,76 @@
           </div>
         </div>
 
-        <!-- Section 2 (Top Right): Cartes associées -->
+        <!-- Section 2 (Top Right, spans 2 rows when no bottom-right section): Cartes associées -->
         <div
           v-if="props.mapPeriods && props.mapPeriods.length > 0"
-          class="flex flex-col gap-1.5 min-w-0 order-3 lg:col-start-2 lg:row-start-1"
+          class="flex flex-col gap-2 min-w-0 order-3 lg:col-start-2 lg:row-start-1"
+          :class="hasBottomRightSection ? '' : 'lg:row-span-2'"
           data-testid="map-assignment-section"
         >
-          <div class="flex items-center justify-between">
+          <div class="flex items-center justify-between gap-2 min-h-[1.75rem]">
             <label class="section-title">
               Cartes associées
             </label>
             <button
               type="button"
-              class="btn btn-ghost btn-xs text-primary font-semibold hover:bg-primary/10"
+              class="btn btn-ghost btn-xs text-primary font-semibold hover:bg-primary/10 shrink-0"
               @click="toggleSelectAllMaps"
             >
               {{ areAllMapsSelected ? "Tout désélectionner" : "Tout sélectionner" }}
             </button>
           </div>
-          <div
-            class="flex flex-col gap-1 overflow-y-auto border border-gray-400 rounded-lg p-2 bg-base-100"
-            :class="hasGeometryControls && isTextElement ? 'max-h-36 sm:max-h-40' : 'max-h-72 sm:max-h-80'"
-          >
-            <label
-              v-for="period in props.mapPeriods"
-              :key="period.id"
-              class="flex items-center gap-2 rounded px-1.5 py-0.5 cursor-pointer hover:bg-base-200/50"
+
+          <div class="flex flex-col gap-1.5 min-w-0">
+            <span class="field-label leading-5">
+              Sélection des cartes
+            </span>
+            <div
+              class="flex flex-col gap-1 overflow-y-auto border border-gray-400 rounded-lg p-2 bg-base-100"
+              :class="hasBottomRightSection ? 'max-h-36 sm:max-h-40' : 'max-h-72 sm:max-h-80'"
             >
-              <input
-                type="checkbox"
-                :value="period.id"
-                v-model="editDraft.selectedMapIds"
-                class="checkbox checkbox-xs checkbox-primary"
-                :data-testid="`map-checkbox-${period.id}`"
-              />
-              <span class="text-sm truncate">{{ period.title }}</span>
-            </label>
+              <label
+                v-for="period in props.mapPeriods"
+                :key="period.id"
+                class="flex items-center gap-2 rounded px-1.5 py-0.5 cursor-pointer hover:bg-base-200/50"
+              >
+                <input
+                  type="checkbox"
+                  :value="period.id"
+                  v-model="editDraft.selectedMapIds"
+                  class="checkbox checkbox-xs checkbox-primary shrink-0"
+                  :data-testid="`map-checkbox-${period.id}`"
+                />
+                <span class="text-sm truncate">{{ period.title }}</span>
+              </label>
+            </div>
+            <div
+              v-if="editDraft.selectedMapIds && editDraft.selectedMapIds.length > 1"
+              class="alert alert-info py-1.5 px-2.5 text-xs rounded-lg flex items-center gap-2"
+            >
+              <InformationCircleIcon class="w-4 h-4 shrink-0 text-info" />
+              <span>Cet élément est partagé sur {{ editDraft.selectedMapIds.length }} cartes. Toute modification sera synchronisée sur l'ensemble de ces cartes.</span>
+            </div>
+            <span class="field-hint">
+              Si aucune carte n'est sélectionnée, l'élément reste dans « Éléments généraux ».
+            </span>
           </div>
-          <div
-            v-if="editDraft.selectedMapIds && editDraft.selectedMapIds.length > 1"
-            class="alert alert-info py-1.5 px-2.5 text-xs rounded-lg flex items-center gap-2 mt-1"
-          >
-            <InformationCircleIcon class="w-4 h-4 shrink-0 text-info" />
-            <span>Cet élément est partagé sur {{ editDraft.selectedMapIds.length }} cartes. Toute modification sera synchronisée sur l'ensemble de ces cartes.</span>
-          </div>
-          <span class="field-hint">
-            Si aucune carte n'est sélectionnée, l'élément reste dans « Éléments généraux ».
-          </span>
         </div>
 
-        <!-- Section 3 (Bottom Left): Text settings -->
-        <div v-if="isTextElement" class="editor-section order-2 lg:col-start-1 lg:row-start-2">
-          <span class="section-title">
-            Réglages du texte
-          </span>
+        <!-- Section 3 (Bottom Left): Réglages du texte -->
+        <div
+          v-if="isTextElement"
+          class="editor-section flex flex-col gap-3 pt-4 order-2 lg:col-start-1 lg:row-start-2"
+        >
+          <div class="flex items-center justify-between gap-2 min-h-[1.75rem]">
+            <span class="section-title">
+              Réglages du texte
+            </span>
+          </div>
 
-          <div class="flex flex-col gap-1">
-            <label class="field-label">Type de mot</label>
-            <div class="flex flex-row items-center gap-2 w-full">
+          <div class="flex flex-col gap-1.5">
+            <label class="field-label leading-5">Type de mot</label>
+            <div class="flex flex-row items-center gap-2.5 w-full">
               <select
                 v-model="editDraft.labelStyleSelection"
                 data-testid="word-type-select"
@@ -468,10 +479,10 @@
 
           <div
             v-if="!editDraft.customLabelStyleId"
-            class="flex flex-col gap-1 w-full"
+            class="flex flex-col gap-1.5 w-full"
           >
             <div class="grid grid-cols-1 sm:grid-cols-2 gap-2.5 w-full">
-              <div class="setting-card">
+              <div class="setting-card h-[50px]">
                 <label class="setting-card-label" for="edit-feature-text-color">
                   Couleur texte
                 </label>
@@ -485,7 +496,7 @@
               </div>
 
               <div
-                class="setting-card"
+                class="setting-card h-[50px]"
                 :class="{ 'border-error': isTextSizeOverMax }"
               >
                 <label class="setting-card-label" for="edit-feature-text-size">
@@ -507,7 +518,7 @@
 
             <span
               v-if="isTextSizeOverMax"
-              class="text-xs text-red-700 bg-white border border-red-500 rounded px-2 py-1 mt-1"
+              class="text-xs text-red-700 bg-white border border-red-500 rounded px-2 py-1"
               data-testid="text-size-max-warning"
             >
               La taille maximale autorisée est de {{ MAX_TEXT_SIZE_PX }} px (la valeur a été plafonnée).
@@ -515,9 +526,13 @@
           </div>
         </div>
 
-        <!-- Section 4 (Bottom Right): Point settings for text elements with points -->
-        <div v-if="hasGeometryControls && isTextElement" class="editor-section order-4 lg:col-start-2 lg:row-start-2">
-          <div class="flex items-baseline justify-between gap-2">
+        <!-- Section 4 (Bottom Right for Text+Point, Bottom Left for Shape): Réglages géométriques unifiés -->
+        <div
+          v-if="hasGeometryControls"
+          class="editor-section flex flex-col gap-3 pt-4"
+          :class="isTextElement ? 'order-4 lg:col-start-2 lg:row-start-2' : 'order-2 lg:col-start-1 lg:row-start-2'"
+        >
+          <div class="flex items-center justify-between gap-2 min-h-[1.75rem]">
             <span class="section-title">
               {{ geometrySectionTitle }}
             </span>
@@ -526,193 +541,78 @@
             </span>
           </div>
 
-          <div class="grid grid-cols-1 sm:grid-cols-3 gap-2.5 w-full">
-            <div class="setting-card">
-              <label class="setting-card-label" for="edit-point-fill-color">
-                Fond
-              </label>
-              <input
-                id="edit-point-fill-color"
-                v-model="editDraft.colorHex"
-                data-testid="color-input"
-                type="color"
-                class="setting-color-input"
-              />
-            </div>
+          <div class="flex flex-col gap-1.5">
+            <span class="field-label leading-5">Couleurs et aperçu</span>
+            <div class="grid grid-cols-1 sm:grid-cols-3 gap-2.5 w-full">
+              <div class="setting-card h-[50px]">
+                <label class="setting-card-label" for="edit-feature-fill-color">
+                  Fond
+                </label>
+                <input
+                  id="edit-feature-fill-color"
+                  v-model="editDraft.colorHex"
+                  data-testid="color-input"
+                  type="color"
+                  class="setting-color-input"
+                />
+              </div>
 
-            <div class="setting-card">
-              <label class="setting-card-label" for="edit-point-stroke-color">
-                Contour
-              </label>
-              <input
-                id="edit-point-stroke-color"
-                v-model="editDraft.strokeColorHex"
-                data-testid="point-stroke-color-input"
-                type="color"
-                class="setting-color-input"
-              />
-            </div>
+              <div class="setting-card h-[50px]">
+                <label class="setting-card-label" for="edit-feature-stroke-color">
+                  Contour
+                </label>
+                <input
+                  id="edit-feature-stroke-color"
+                  v-model="editDraft.strokeColorHex"
+                  data-testid="point-stroke-color-input"
+                  type="color"
+                  class="setting-color-input"
+                />
+              </div>
 
-            <!-- Preview card: untruncated label and centered SVG preview -->
-            <div
-              class="setting-card flex items-center justify-between gap-2 px-3"
-              data-testid="point-preview-container"
-            >
-              <span class="setting-card-label">
-                Aperçu
-              </span>
-              <div class="flex items-center justify-center shrink-0">
-                <svg width="34" height="34" viewBox="0 0 40 40" class="overflow-visible">
-                  <circle
-                    cx="20"
-                    cy="20"
-                    r="14"
-                    :fill="pointPreviewFillColor"
-                    :fill-opacity="pointPreviewFillOpacity"
-                    :stroke="pointPreviewStrokeColor"
-                    :stroke-width="pointPreviewStrokeWidth"
-                    :stroke-opacity="pointPreviewStrokeOpacity"
-                  />
-                </svg>
+              <div
+                class="setting-card h-[50px] flex items-center justify-between gap-2 px-3"
+                data-testid="point-preview-container"
+              >
+                <span class="setting-card-label">
+                  Aperçu
+                </span>
+                <div class="flex items-center justify-center shrink-0">
+                  <svg width="32" height="32" viewBox="0 0 40 40" class="overflow-visible">
+                    <circle
+                      v-if="isEditingPoint"
+                      cx="20"
+                      cy="20"
+                      r="14"
+                      :fill="pointPreviewFillColor"
+                      :fill-opacity="pointPreviewFillOpacity"
+                      :stroke="pointPreviewStrokeColor"
+                      :stroke-width="pointPreviewStrokeWidth"
+                      :stroke-opacity="pointPreviewStrokeOpacity"
+                    />
+                    <rect
+                      v-else
+                      x="3"
+                      y="5"
+                      width="34"
+                      height="30"
+                      rx="5"
+                      :fill="pointPreviewFillColor"
+                      :fill-opacity="pointPreviewFillOpacity"
+                      :stroke="pointPreviewStrokeColor"
+                      :stroke-width="pointPreviewStrokeWidth"
+                      :stroke-opacity="pointPreviewStrokeOpacity"
+                    />
+                  </svg>
+                </div>
               </div>
             </div>
           </div>
 
           <div class="grid grid-cols-1 sm:grid-cols-3 gap-2.5 w-full">
-            <div class="setting-card px-2.5">
+            <div class="setting-card h-[50px] px-2.5 gap-1.5">
               <label
-                class="setting-card-label text-xs sm:text-xs xl:text-sm font-medium"
-                for="edit-point-fill-opacity"
-                title="Opacité du fond (0 à 1)"
-              >
-                Opacité fond
-              </label>
-              <input
-                id="edit-point-fill-opacity"
-                v-model.number="editDraft.fillOpacity"
-                data-testid="fill-opacity-input"
-                type="number"
-                step="0.1"
-                min="0"
-                max="1"
-                placeholder="0–1"
-                class="setting-number-input w-12 sm:w-14"
-                @change="editDraft.fillOpacity = normalizeOpacity(editDraft.fillOpacity)"
-              />
-            </div>
-
-            <div class="setting-card px-2.5">
-              <label
-                class="setting-card-label text-xs sm:text-xs xl:text-sm font-medium"
-                for="edit-point-stroke-opacity"
-                title="Opacité du contour (0 à 1)"
-              >
-                Opacité contour
-              </label>
-              <input
-                id="edit-point-stroke-opacity"
-                v-model.number="editDraft.strokeOpacity"
-                data-testid="stroke-opacity-input"
-                type="number"
-                step="0.1"
-                min="0"
-                max="1"
-                placeholder="0–1"
-                class="setting-number-input w-12 sm:w-14"
-                @change="editDraft.strokeOpacity = normalizeOpacity(editDraft.strokeOpacity)"
-              />
-            </div>
-
-            <div class="setting-card px-2.5">
-              <label
-                class="setting-card-label text-xs sm:text-xs xl:text-sm font-medium"
-                for="edit-point-stroke-width"
-                title="Épaisseur du contour en pixels"
-              >
-                Épaisseur
-              </label>
-              <input
-                id="edit-point-stroke-width"
-                v-model.number="editDraft.strokeWidth"
-                data-testid="stroke-width-input"
-                type="number"
-                min="0"
-                :max="MAX_STROKE_WIDTH_PX"
-                class="setting-number-input w-12 sm:w-14"
-                @change="editDraft.strokeWidth = normalizeStrokeWidth(editDraft.strokeWidth)"
-              />
-            </div>
-          </div>
-        </div>
-
-        <!-- Section 5 (Shapes): Geometric settings for Shapes / Zones / Lines only -->
-        <div v-if="hasGeometryControls && !isTextElement" class="editor-section order-2 lg:col-start-1 lg:row-start-2">
-          <div class="flex items-baseline justify-between gap-2">
-            <span class="section-title">
-              {{ geometrySectionTitle }}
-            </span>
-            <span class="field-hint">
-              {{ geometrySectionHint }}
-            </span>
-          </div>
-
-          <div class="grid grid-cols-1 sm:grid-cols-3 gap-2.5 w-full">
-            <div class="setting-card">
-              <label class="setting-card-label" for="edit-feature-fill-color">
-                Fond
-              </label>
-              <input
-                id="edit-feature-fill-color"
-                v-model="editDraft.colorHex"
-                data-testid="color-input"
-                type="color"
-                class="setting-color-input"
-              />
-            </div>
-
-            <div class="setting-card">
-              <label class="setting-card-label" for="edit-feature-stroke-color">
-                Contour
-              </label>
-              <input
-                id="edit-feature-stroke-color"
-                v-model="editDraft.strokeColorHex"
-                data-testid="point-stroke-color-input"
-                type="color"
-                class="setting-color-input"
-              />
-            </div>
-
-            <div
-              class="setting-card flex items-center justify-between gap-2 px-3"
-              data-testid="point-preview-container"
-            >
-              <span class="setting-card-label">
-                Aperçu
-              </span>
-              <div class="flex items-center justify-center shrink-0">
-                <svg width="34" height="34" viewBox="0 0 40 40" class="overflow-visible">
-                  <rect
-                    x="3"
-                    y="5"
-                    width="34"
-                    height="30"
-                    rx="5"
-                    :fill="pointPreviewFillColor"
-                    :fill-opacity="pointPreviewFillOpacity"
-                    :stroke="pointPreviewStrokeColor"
-                    :stroke-width="pointPreviewStrokeWidth"
-                    :stroke-opacity="pointPreviewStrokeOpacity"
-                  />
-                </svg>
-              </div>
-            </div>
-          </div>
-
-          <div class="grid grid-cols-1 sm:grid-cols-3 gap-2.5 w-full">
-            <div class="setting-card px-2.5">
-              <label
-                class="setting-card-label text-xs sm:text-xs xl:text-sm font-medium"
+                class="setting-card-label text-xs xl:text-sm font-medium whitespace-nowrap"
                 for="edit-fill-opacity"
                 title="Opacité du fond (0 à 1)"
               >
@@ -732,13 +632,13 @@
               />
             </div>
 
-            <div class="setting-card px-2.5">
+            <div class="setting-card h-[50px] px-2.5 gap-1.5">
               <label
-                class="setting-card-label text-xs sm:text-xs xl:text-sm font-medium"
+                class="setting-card-label text-xs xl:text-sm font-medium whitespace-nowrap"
                 for="edit-stroke-opacity"
                 title="Opacité du contour (0 à 1)"
               >
-                Opacité contour
+                Opacité bord
               </label>
               <input
                 id="edit-stroke-opacity"
@@ -754,9 +654,9 @@
               />
             </div>
 
-            <div class="setting-card px-2.5">
+            <div class="setting-card h-[50px] px-2.5 gap-1.5">
               <label
-                class="setting-card-label text-xs sm:text-xs xl:text-sm font-medium"
+                class="setting-card-label text-xs xl:text-sm font-medium whitespace-nowrap"
                 for="edit-stroke-width"
                 title="Épaisseur du contour en pixels"
               >
@@ -777,7 +677,7 @@
         </div>
       </fieldset>
 
-      <div class="modal-action mt-2">
+      <div class="modal-action mt-0 pt-3 border-t border-base-200 flex items-center justify-end gap-2">
         <button
           class="modal-secondary-btn w-32"
           :disabled="isEditing"
@@ -1099,8 +999,7 @@ const editModalBoxClass = computed(() => {
   if (!featureToEdit.value) return "max-w-3xl";
   const elementType = getMapElementType(featureToEdit.value);
   if (elementType === "image") return "max-w-xl";
-  if (isTextElement.value) return "max-w-6xl";
-  return "max-w-4xl";
+  return "max-w-6xl";
 });
 
 const isTextSizeOverMax = computed(() => {
@@ -1166,6 +1065,10 @@ const hasGeometryControls = computed(() => {
   if (activeCustomLabelStyle.value || editDraft.value.customLabelStyleId) return false;
   return isEditingPoint.value || !isTextElement.value;
 });
+
+const hasBottomRightSection = computed(
+  () => hasGeometryControls.value && isTextElement.value,
+);
 
 const geometrySectionTitle = computed(() => {
   return isEditingPoint.value ? "Réglages du point" : "Réglages de la forme";

@@ -133,7 +133,6 @@
           :max="timelineMaxYear"
           :marker-years="timelineMarkerYears"
           :map-periods="enrichedPeriods"
-          :element-markers="timelineElementMarkers"
           :current-exact-date="selectedExactDate"
           @update:year="onTimelineYearUpdate"
           @update:mode="timelineMode = $event"
@@ -678,7 +677,6 @@ const {
   timelineMode,
   enrichedPeriods,
   periodByMapId,
-  timelineElementMarkers,
   sortedTimelineMilestones,
   prevMilestone,
   nextMilestone,
@@ -1995,8 +1993,6 @@ function onDocumentClick(e: MouseEvent) {
     target.closest(".sidebar-wrapper") ||
     target.closest(".map-timeline-container") ||
     target.closest(".timeline-container") ||
-    target.closest(".element-marker-pin") ||
-    target.closest(".element-marker-popover") ||
     target.closest(".modal") ||
     target.closest("dialog") ||
     target.closest(".leaflet-control") ||

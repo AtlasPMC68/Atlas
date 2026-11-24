@@ -1,6 +1,6 @@
 import { ref, computed, watch, nextTick, type Ref } from "vue";
 import type { Feature } from "../typescript/feature";
-import type { MapPeriod, SliderPeriod, TimelineElementMarker } from "../typescript/map";
+import type { MapPeriod, SliderPeriod } from "../typescript/map";
 import { toYear, isPeriodActiveAt } from "../utils/dateUtils";
 import { getFeatureMapId, getFeatureMapIds } from "../utils/featureHelpers";
 
@@ -12,8 +12,6 @@ export interface TimelineMilestone {
   type: "map" | "element";
   id?: string;
 }
-
-export type TimelineMarkerItem = TimelineElementMarker;
 
 export interface UseMapTimelineOptions {
   features: Ref<Feature[]>;
@@ -107,8 +105,6 @@ export function useMapTimeline({
     }
     return map;
   });
-
-  const timelineElementMarkers = computed<TimelineMarkerItem[]>(() => []);
 
   const sortedTimelineMilestones = computed<TimelineMilestone[]>(() => {
     const list: TimelineMilestone[] = [];
@@ -334,7 +330,6 @@ export function useMapTimeline({
     timelineMode,
     enrichedPeriods,
     periodByMapId,
-    timelineElementMarkers,
     sortedTimelineMilestones,
     prevMilestone,
     nextMilestone,
