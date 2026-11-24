@@ -1,6 +1,6 @@
 <template>
   <dialog ref="dialogRef" class="modal">
-    <div class="modal-box w-11/12 max-w-7xl max-h-[90vh] md:h-[680px] flex flex-col gap-4 relative">
+    <div class="modal-box w-11/12 max-w-5xl max-h-[90vh] md:h-[680px] flex flex-col gap-4 relative">
       <button
         type="button"
         class="btn btn-sm btn-circle btn-ghost absolute right-4 top-4 z-10"
@@ -11,9 +11,9 @@
 
       <h3 class="text-xl font-bold shrink-0 pr-10">Modification des styles de libellé</h3>
 
-      <div class="grid grid-cols-1 md:grid-cols-[1fr_0.75fr_1.45fr] gap-5 items-start min-h-0 flex-1 overflow-y-auto pr-1">
-        <!-- Left column: Custom styles list -->
-        <div class="flex flex-col gap-2.5 min-w-0">
+      <div class="grid grid-cols-1 md:grid-cols-[1fr_1.35fr] gap-6 items-start min-h-0 flex-1 overflow-y-auto pr-1">
+        <!-- Left column: Custom styles list & Preview underneath -->
+        <div class="flex flex-col gap-3 min-w-0">
           <div class="flex items-center justify-between gap-2">
             <h4 class="section-title">Styles personnalisés</h4>
             <button
@@ -28,7 +28,7 @@
             </button>
           </div>
 
-          <div class="flex flex-col gap-2 overflow-y-auto max-h-[380px] p-1 -m-1">
+          <div class="flex flex-col gap-2 overflow-y-auto max-h-[300px] p-1 -m-1">
             <div
               v-for="(style, index) in draftStyles"
               :key="style.id"
@@ -83,32 +83,29 @@
               Aucun style personnalisé.
             </p>
           </div>
-        </div>
 
-        <!-- Middle column: Dedicated preview frame (text style only) -->
-        <div
-          class="flex flex-col gap-2.5 min-w-0 md:border-l md:border-r md:border-gray-300 md:px-3.5 md:py-0.5"
-          data-testid="middle-style-preview"
-        >
-          <h4 class="section-title">Aperçu</h4>
-          <div v-if="isTextStyleActive" class="preview-frame h-[132px]">
-            <div
-              class="preview-box overflow-hidden max-w-full"
-              :style="{ ...previewStyle(currentLiveStyle, true, 44), lineHeight: '1.15' }"
-            >
-              <span
-                v-if="draft.hasPoint"
-                class="inline-block h-3 w-3 rounded-full shrink-0 border border-base-content"
-                :style="{ backgroundColor: draft.pointColor || draft.color || '#000000' }"
-              ></span>
-              <span class="truncate break-words min-w-0 max-w-full">{{ draft.name.trim() || "Exemple de texte" }}</span>
+          <!-- Preview underneath styles list -->
+          <div class="flex flex-col gap-2 min-w-0 pt-2 border-t border-gray-200">
+            <h4 class="section-title">Aperçu</h4>
+            <div v-if="isTextStyleActive" class="preview-frame h-[115px]">
+              <div
+                class="preview-box overflow-hidden max-w-full"
+                :style="{ ...previewStyle(currentLiveStyle, true, 44), lineHeight: '1.15' }"
+              >
+                <span
+                  v-if="draft.hasPoint"
+                  class="inline-block h-3 w-3 rounded-full shrink-0 border border-base-content"
+                  :style="{ backgroundColor: draft.pointColor || draft.color || '#000000' }"
+                ></span>
+                <span class="truncate break-words min-w-0 max-w-full">{{ draft.name.trim() || "Exemple de texte" }}</span>
+              </div>
             </div>
           </div>
         </div>
 
         <!-- Right column: Settings elements only -->
         <form
-          class="flex flex-col gap-3 min-w-0"
+          class="flex flex-col gap-3 min-w-0 md:border-l md:border-gray-300 md:pl-6"
           @submit.prevent="submitDraft"
         >
           <div class="flex items-center justify-between gap-2">

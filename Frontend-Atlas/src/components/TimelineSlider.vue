@@ -461,15 +461,50 @@ const PERIOD_PADDING_REM = 0.2;
 
 const isZoomMode = computed(() => dayZoomWindow.value != null);
 
+interface RowSlot {
+  endYear: number;
+  endPercent: number;
+}
+
 const positionedPeriods = computed(() => {
   const sorted = [...(props.mapPeriods ?? [])].sort(
     (a, b) => a.startYear - b.startYear || a.endYear - b.endYear,
   );
 
-  return sorted.map((period, index) => ({
-    ...period,
-    row: index,
-  }));
+  const rows: RowSlot[] = [];
+  const minGapPercent = (3 / axisWidthPx.value) * 100;
+
+  return sorted.map((period) => {
+    const startPercent = positionForYear(period.startYear);
+    const endPercent = positionForYear(period.endYear);
+    const widthPercent = Math.max(0.8, endPercent - startPercent);
+    const periodEndPercent = startPercent + widthPercent;
+
+    let rowIndex = rows.findIndex(
+      (slot) =>
+        period.startYear > slot.endYear &&
+        startPercent >= slot.endPercent + minGapPercent,
+    );
+
+    if (rowIndex === -1) {
+      rowIndex = rows.length;
+      rows.push({
+        endYear: period.endYear,
+        endPercent: periodEndPercent,
+      });
+    } else {
+      rows[rowIndex].endYear = Math.max(rows[rowIndex].endYear, period.endYear);
+      rows[rowIndex].endPercent = Math.max(
+        rows[rowIndex].endPercent,
+        periodEndPercent,
+      );
+    }
+
+    return {
+      ...period,
+      row: rowIndex,
+    };
+  });
 });
 
 const displayedPeriods = computed(() => {

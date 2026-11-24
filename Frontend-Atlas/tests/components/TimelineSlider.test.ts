@@ -166,7 +166,7 @@ describe("TimelineSlider filter modes", () => {
     expect(ticks.length).toBe(2);
   });
 
-  it("positions each period track on its own row one above the other", () => {
+  it("positions each period track on its own row one above the other when they overlap", () => {
     const wrapper = mount(TimelineSlider, {
       props: {
         year: 1700,
@@ -183,5 +183,24 @@ describe("TimelineSlider filter modes", () => {
     const bottom1 = parseFloat(tracks[0].attributes("style")?.match(/bottom:\s*([\d.]+)rem/)?.[1] || "0");
     const bottom2 = parseFloat(tracks[1].attributes("style")?.match(/bottom:\s*([\d.]+)rem/)?.[1] || "0");
     expect(bottom2).toBeGreaterThan(bottom1);
+  });
+
+  it("shares the same row when periods do not overlap and space is free", () => {
+    const wrapper = mount(TimelineSlider, {
+      props: {
+        year: 1700,
+        min: 1600,
+        max: 1800,
+        mapPeriods: [
+          { id: "p1", title: "Map 1", startYear: 1610, endYear: 1630, color: "#10b981", exactDate: false },
+          { id: "p2", title: "Map 2", startYear: 1660, endYear: 1690, color: "#f59e0b", exactDate: false },
+        ],
+      },
+    });
+    const tracks = wrapper.findAll(".period-track");
+    expect(tracks.length).toBe(2);
+    const bottom1 = parseFloat(tracks[0].attributes("style")?.match(/bottom:\s*([\d.]+)rem/)?.[1] || "0");
+    const bottom2 = parseFloat(tracks[1].attributes("style")?.match(/bottom:\s*([\d.]+)rem/)?.[1] || "0");
+    expect(bottom2).toBe(bottom1);
   });
 });
