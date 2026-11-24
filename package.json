@@ -1,4 +1,8 @@
 {
+  "scripts": {
+    "export": "bash scripts/project-transfer.sh export",
+    "import": "bash scripts/project-transfer.sh import"
+  },
   "dependencies": {
     "keycloak-js": "^26.2.2",
     "leaflet": "^1.9.4",
