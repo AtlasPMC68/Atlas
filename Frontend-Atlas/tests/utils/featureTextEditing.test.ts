@@ -194,7 +194,7 @@ describe("featureTextEditing", () => {
       });
 
       expect(edited.properties.colorRgb).toEqual([0, 255, 136]);
-      expect(edited.properties.textColorRgb).toEqual([0, 255, 136]);
+      expect(edited.properties.textColorRgb).toBeUndefined();
     });
 
     it("persists symbol fill and text color separately for point elements", () => {

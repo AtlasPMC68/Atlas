@@ -1544,6 +1544,12 @@ async function onEditFeature() {
   if (!featureToEdit.value) return;
   isEditing.value = true;
 
+  // For a label without geometry controls, its text colour is its primary element colour.
+  const isLabel = getMapElementType(featureToEdit.value) === "label";
+  if ((isLabel || !hasGeometryControls.value) && editDraft.value.textColorHex) {
+    editDraft.value.colorHex = editDraft.value.textColorHex;
+  }
+
   const currentCustomStyle = activeCustomLabelStyle.value ?? editDraft.value.customLabelStyle;
   const updatedFeature = coerceEditedFeature(featureToEdit.value, {
     ...editDraft.value,
