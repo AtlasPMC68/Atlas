@@ -178,13 +178,7 @@
                       {{ getFeatureDisplayName(feature) }}
                     </span>
                     <span
-                      v-if="feature.properties?.startYear != null || feature.properties?.endYear != null"
-                      class="badge badge-ghost badge-xs font-normal opacity-70 shrink-0 ml-auto"
-                    >
-                      {{ feature.properties.startYear }}{{ feature.properties.endYear && feature.properties.endYear !== feature.properties.startYear ? ' - ' + feature.properties.endYear : '' }}
-                    </span>
-                    <span
-                      v-else-if="getFeatureMapIds(feature).length > 1"
+                      v-if="getFeatureMapIds(feature).length > 1"
                       class="badge badge-info badge-outline badge-xs font-semibold shrink-0 ml-auto"
                       :title="`Partagé sur ${getFeatureMapIds(feature).length} cartes`"
                     >
@@ -625,8 +619,7 @@
               </label>
               <button
                 type="button"
-                class="btn btn-ghost btn-xs text-primary font-semibold hover:bg-primary/10 disabled:opacity-40 disabled:cursor-not-allowed"
-                :disabled="hasCustomDate"
+                class="btn btn-ghost btn-xs text-primary font-semibold hover:bg-primary/10"
                 @click="toggleSelectAllMaps"
               >
                 {{ areAllMapsSelected ? "Tout désélectionner" : "Tout sélectionner" }}
@@ -643,8 +636,7 @@
               <label
                 v-for="period in props.mapPeriods"
                 :key="period.id"
-                class="flex items-center gap-2 rounded px-1.5 py-0.5"
-                :class="hasCustomDate ? 'cursor-not-allowed opacity-50' : 'cursor-pointer hover:bg-base-200/50'"
+                class="flex items-center gap-2 rounded px-1.5 py-0.5 cursor-pointer hover:bg-base-200/50"
               >
                 <input
                   type="checkbox"
@@ -652,60 +644,13 @@
                   v-model="editDraft.selectedMapIds"
                   class="checkbox checkbox-xs checkbox-primary"
                   :data-testid="`map-checkbox-${period.id}`"
-                  :disabled="hasCustomDate"
                 />
                 <span class="text-sm truncate">{{ period.title }}</span>
               </label>
             </div>
-            <div
-              v-if="hasCustomDate"
-              class="alert alert-info py-1.5 px-2.5 text-xs rounded-lg flex items-center gap-2 mt-1"
-            >
-              <InformationCircleIcon class="w-4 h-4 shrink-0 text-info" />
-              <span>Période personnalisée active : l'élément sera classé comme « élément général » (sans carte) et visible uniquement pendant la période définie.</span>
-            </div>
-            <span v-else class="field-hint">
+            <span class="field-hint">
               Si aucune carte n'est sélectionnée, l'élément reste dans « Éléments généraux ».
             </span>
-          </div>
-
-          <div
-            class="editor-section-compact"
-            data-testid="feature-years-section"
-          >
-            <div class="flex items-center gap-1.5">
-              <label class="section-title">
-                Période personnalisée
-              </label>
-            </div>
-            <div class="grid grid-cols-2 gap-3">
-              <div>
-                <label class="field-label">Année de début</label>
-                <input
-                  v-model.number="editDraft.startYear"
-                  type="number"
-                  min="1"
-                  max="9999"
-                  class="input input-bordered input-sm w-full text-sm"
-                  placeholder="Ex: 1600"
-                  data-testid="feature-start-year-input"
-                  @input="onFeatureStartYearInput"
-                />
-              </div>
-              <div>
-                <label class="field-label">Année de fin</label>
-                <input
-                  v-model.number="editDraft.endYear"
-                  type="number"
-                  min="1"
-                  max="9999"
-                  class="input input-bordered input-sm w-full text-sm"
-                  placeholder="Ex: 1650"
-                  data-testid="feature-end-year-input"
-                  @input="onFeatureEndYearInput"
-                />
-              </div>
-            </div>
           </div>
         </div>
       </fieldset>
@@ -904,7 +849,6 @@ import {
   type FeatureEditSubmitPayload,
 } from "../utils/featureTextEditing";
 import { rgbToHex } from "../utils/utils";
-import { syncEndFromStart } from "../utils/dateUtils";
 import {
   groupFeaturesByType,
   groupFeaturesByMap,
@@ -968,42 +912,12 @@ const areAllMapsSelected = computed(() => {
   return props.mapPeriods.every((p: MapPeriod) => selected.includes(p.id));
 });
 
-const hasCustomDate = computed(() => {
-  const s = editDraft.value.startYear;
-  const e = editDraft.value.endYear;
-  const hasStart = s !== null && s !== undefined && (typeof s !== "string" || (s as string).trim() !== "");
-  const hasEnd = e !== null && e !== undefined && (typeof e !== "string" || (e as string).trim() !== "");
-  return hasStart || hasEnd;
-});
-
 function toggleSelectAllMaps() {
-  if (!props.mapPeriods || hasCustomDate.value) return;
+  if (!props.mapPeriods) return;
   if (areAllMapsSelected.value) {
     editDraft.value.selectedMapIds = [];
   } else {
     editDraft.value.selectedMapIds = props.mapPeriods.map((p: MapPeriod) => p.id);
-  }
-}
-
-let previousFeatureStartYear: number | null = null;
-
-function onFeatureStartYearInput() {
-  if (editDraft.value.startYear !== null && editDraft.value.startYear !== undefined) {
-    editDraft.value.endYear = syncEndFromStart(
-      editDraft.value.startYear,
-      editDraft.value.endYear,
-      previousFeatureStartYear,
-    );
-    previousFeatureStartYear = editDraft.value.startYear;
-  }
-  if (hasCustomDate.value) {
-    editDraft.value.selectedMapIds = [];
-  }
-}
-
-function onFeatureEndYearInput() {
-  if (hasCustomDate.value) {
-    editDraft.value.selectedMapIds = [];
   }
 }
 
@@ -1464,7 +1378,6 @@ async function showEditFeatureDialog(feature: Feature) {
       editDraft.value.customLabelStyle = matched;
     }
   }
-  previousFeatureStartYear = editDraft.value.startYear ?? null;
 
   await nextTick();
   editFeatureDialogRef.value?.showModal();

@@ -202,7 +202,7 @@ import {
   snakeToCamel,
   toImageSrc,
 } from "../utils/utils";
-import { isPeriodActiveAt, toYear } from "../utils/dateUtils";
+import { toYear } from "../utils/dateUtils";
 import { apiFetch } from "../utils/api";
 import { useCurrentUser } from "../composables/useCurrentUser";
 import { useProjectLabelStyles } from "../composables/useProjectLabelStyles";
@@ -241,7 +241,7 @@ import {
   applyCustomLabelStyleToFeature,
   removeCustomLabelStyleFromFeature,
 } from "../utils/featureTextEditing";
-import { useMapTimeline, getFeatureCustomYears } from "../composables/useMapTimeline";
+import { useMapTimeline } from "../composables/useMapTimeline";
 
 const route = useRoute();
 const router = useRouter();
@@ -356,7 +356,6 @@ function selectFeature(id: string | null, fitView = true) {
 
     const feat = features.value.find((f: Feature) => String(f.id) === String(id));
     if (feat) {
-      const { startYear, endYear } = getFeatureCustomYears(feat);
       const featMapId = getFeatureMapId(feat);
       const featMapTitle =
         ("mapTitle" in feat ? (feat as { mapTitle?: string }).mapTitle : undefined) ||
@@ -380,12 +379,10 @@ function selectFeature(id: string | null, fitView = true) {
            ))
         : null;
 
-      let targetYear: number | null = startYear ?? endYear;
-      let targetExactDate: string | null = (feat.properties?.exactDate && feat.properties?.startDate)
-        ? feat.properties.startDate
-        : null;
+      let targetYear: number | null = null;
+      let targetExactDate: string | null = null;
 
-      if (targetYear == null && period) {
+      if (period) {
         targetYear = (period as any).startYear ?? toYear(period.startDate);
         targetExactDate = ((period as any).exactDate && period.startDate) ? period.startDate : null;
       }
@@ -399,18 +396,6 @@ function selectFeature(id: string | null, fitView = true) {
 
       if (period?.title) {
         currentMapTitle.value = period.title;
-      } else if (targetYear != null) {
-        const matchingPeriod = enrichedPeriods.value.find((p: SliderPeriod) =>
-          p.startYear != null && p.endYear != null && isPeriodActiveAt(
-            p.startYear,
-            p.endYear,
-            targetYear!,
-            periodStartYears.value,
-          ),
-        );
-        if (matchingPeriod?.title) {
-          currentMapTitle.value = matchingPeriod.title;
-        }
       }
     }
   }
@@ -705,7 +690,6 @@ const {
   timelineMinYear,
   timelineMaxYear,
   timelineMarkerYears,
-  periodStartYears,
   activeMapPeriod,
   filteredFeatures,
   onExactDateChange,
@@ -1229,19 +1213,6 @@ async function onUpdateFeature(
         ? `Modification de ${list[0].name || "l'élément"}`
         : `Modification de ${list.length} éléments`;
     commitFeatureSnapshot(nextFeatures, label);
-
-    // Immediately set timeline to the new custom year if present
-    const firstCustomYears = list
-      .map((item: Feature) => getFeatureCustomYears(item))
-      .find(
-        (y: { startYear: number | null; endYear: number | null }) =>
-          y.startYear != null || y.endYear != null,
-      );
-    const targetYear = firstCustomYears?.startYear ?? firstCustomYears?.endYear;
-    if (targetYear != null) {
-      selectedExactDate.value = null;
-      selectedYear.value = targetYear;
-    }
 
     await onSaveMap(nextFeatures);
     callbacks?.onSuccess?.();

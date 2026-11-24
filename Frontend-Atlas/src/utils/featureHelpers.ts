@@ -116,44 +116,6 @@ export function colorRgbToCss(rgb: unknown): string | null {
   return `rgb(${rgb[0]}, ${rgb[1]}, ${rgb[2]})`;
 }
 
-export function hasFeatureCustomDate(
-  feature: Feature | Record<string, unknown> | null | undefined,
-): boolean {
-  if (!feature) return false;
-  const props =
-    "properties" in feature && (feature as Feature).properties
-      ? (feature as Feature).properties
-      : (feature as Record<string, unknown>);
-
-  const hasValidNum = (val: unknown): boolean => {
-    if (val === null || val === undefined || val === "") return false;
-    const num = Number(val);
-    return Number.isFinite(num);
-  };
-
-  const hasValidDateStr = (val: unknown): boolean => {
-    if (typeof val !== "string") return false;
-    const trimmed = val.trim();
-    if (!trimmed) return false;
-    const yearMatch = trimmed.match(/^(-?\d{1,6})/);
-    return Boolean(yearMatch && Number.isFinite(Number(yearMatch[1])));
-  };
-
-  if (hasValidNum(props?.startYear) || hasValidNum(props?.endYear)) return true;
-  if (hasValidNum(props?.start_year) || hasValidNum(props?.end_year)) return true;
-  if (hasValidDateStr(props?.startDate) || hasValidDateStr(props?.endDate)) return true;
-  if (hasValidDateStr(props?.start_date) || hasValidDateStr(props?.end_date)) return true;
-
-  if ("properties" in feature) {
-    const direct = feature as Record<string, unknown>;
-    if (hasValidNum(direct.startYear) || hasValidNum(direct.endYear)) return true;
-    if (hasValidNum(direct.start_year) || hasValidNum(direct.end_year)) return true;
-    if (hasValidDateStr(direct.startDate) || hasValidDateStr(direct.endDate)) return true;
-  }
-
-  return false;
-}
-
 /**
  * Safely extracts the mapId from a feature or its properties (supporting both camelCase and snake_case).
  */
@@ -362,13 +324,6 @@ export function cloneFeatureWithOffset(
   clonedProps.map_id = null;
   clonedProps.mapIds = [];
   delete clonedProps.mapTitle;
-
-  // Clear custom dates
-  clonedProps.startYear = null;
-  clonedProps.endYear = null;
-  clonedProps.startDate = null;
-  clonedProps.endDate = null;
-  clonedProps.exactDate = false;
 
   // Preserve feature name, labelText and typography styles for duplicated elements
   const baseName = source.properties?.name || source.name || "";

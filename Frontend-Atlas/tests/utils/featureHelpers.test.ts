@@ -4,7 +4,6 @@ import {
   getGeometryAnchor,
   offsetGeometry,
   cloneFeatureWithOffset,
-  hasFeatureCustomDate,
   getFeatureMapId,
   getFeatureMapIds,
 } from "../../src/utils/featureHelpers";
@@ -172,21 +171,10 @@ describe("featureHelpers - copy / paste functionality", () => {
   });
 
   describe("cloneFeatureWithOffset", () => {
-    it("creates a new feature with new ID, preserved name, no custom dates, and translated geometry", () => {
+    it("creates a new feature with new ID, preserved name, and translated geometry", () => {
       const newId = "new-uuid-999";
       const now = "2026-05-01T12:00:00Z";
-      const sourceWithDates: Feature = {
-        ...zoneFeature,
-        properties: {
-          ...zoneFeature.properties,
-          startYear: 1608,
-          endYear: 1650,
-          startDate: "1608-01-01",
-          endDate: "1650-12-31",
-          exactDate: true,
-        },
-      };
-      const clone = cloneFeatureWithOffset(sourceWithDates, 0.5, 1.0, newId, now);
+      const clone = cloneFeatureWithOffset(zoneFeature, 0.5, 1.0, newId, now);
 
       expect(clone.id).toBe(newId);
       expect(clone.createdAt).toBe(now);
@@ -201,12 +189,6 @@ describe("featureHelpers - copy / paste functionality", () => {
       // No associated map
       expect(clone.mapId).toBeNull();
       expect(clone.properties.mapId).toBeNull();
-      // No custom dates
-      expect(clone.properties.startYear).toBeNull();
-      expect(clone.properties.endYear).toBeNull();
-      expect(clone.properties.startDate).toBeNull();
-      expect(clone.properties.endDate).toBeNull();
-      expect(clone.properties.exactDate).toBe(false);
 
       if (clone.geometry.type === "Polygon") {
         expect(clone.geometry.coordinates[0][0][0]).toBeCloseTo(-70.5);
@@ -327,39 +309,8 @@ describe("featureHelpers - copy / paste functionality", () => {
     });
   });
 
-  describe("hasFeatureCustomDate, getFeatureMapId and getFeatureMapIds", () => {
-    it("identifies custom date when startYear or endYear is present", () => {
-      const feat: Feature = {
-        ...textFeature,
-        properties: {
-          ...textFeature.properties,
-          startYear: 1678,
-          endYear: 1678,
-          mapId: "carte-2",
-        },
-      };
-      expect(hasFeatureCustomDate(feat)).toBe(true);
-      expect(getFeatureMapId(feat)).toBe("carte-2");
-      expect(getFeatureMapIds(feat)).toEqual(["carte-2"]);
-    });
-
-    it("identifies custom date when startDate or endDate string is present", () => {
-      const feat: Feature = {
-        ...zoneFeature,
-        mapId: "carte-2",
-        properties: {
-          ...zoneFeature.properties,
-          startDate: "1650-01-01",
-          mapId: "carte-2",
-          mapTitle: "Carte 2",
-        },
-      };
-      expect(hasFeatureCustomDate(feat)).toBe(true);
-      expect(getFeatureMapId(feat)).toBe("carte-2");
-      expect(getFeatureMapIds(feat)).toEqual(["carte-2"]);
-    });
-
-    it("returns correct mapId and mapIds when feature has NO custom date", () => {
+  describe("getFeatureMapId and getFeatureMapIds", () => {
+    it("returns correct mapId and mapIds", () => {
       const feat: Feature = {
         ...zoneFeature,
         mapId: "carte-1",
@@ -370,39 +321,20 @@ describe("featureHelpers - copy / paste functionality", () => {
           mapIds: ["carte-1", "carte-2"],
         },
       };
-      expect(hasFeatureCustomDate(feat)).toBe(false);
       expect(getFeatureMapId(feat)).toBe("carte-1");
       expect(getFeatureMapIds(feat)).toEqual(["carte-1", "carte-2"]);
     });
 
-    it("identifies custom date for year 0 and negative BCE years", () => {
-      const featYear0: Feature = {
+    it("returns mapId from properties when not directly on feature", () => {
+      const feat: Feature = {
         ...textFeature,
         properties: {
           ...textFeature.properties,
-          startYear: 0,
+          mapId: "carte-2",
         },
       };
-      expect(hasFeatureCustomDate(featYear0)).toBe(true);
-
-      const featNegativeYear: Feature = {
-        ...textFeature,
-        properties: {
-          ...textFeature.properties,
-          startYear: -500,
-          endYear: -450,
-        },
-      };
-      expect(hasFeatureCustomDate(featNegativeYear)).toBe(true);
-
-      const featNegativeDateStr: Feature = {
-        ...textFeature,
-        properties: {
-          ...textFeature.properties,
-          startDate: "-44-03-15",
-        },
-      };
-      expect(hasFeatureCustomDate(featNegativeDateStr)).toBe(true);
+      expect(getFeatureMapId(feat)).toBe("carte-2");
+      expect(getFeatureMapIds(feat)).toEqual(["carte-2"]);
     });
   });
 });

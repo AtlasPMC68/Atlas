@@ -1,12 +1,10 @@
 import { describe, it, expect } from "vitest";
 import { mount } from "@vue/test-utils";
 import TimelineSlider from "../../src/components/TimelineSlider.vue";
-import type { TimelineElementMarker } from "../../src/typescript/map";
 
 function mountSlider(
   markerYears: number[],
   year = markerYears[0],
-  elementMarkers?: TimelineElementMarker[],
 ) {
   return mount(TimelineSlider, {
     props: {
@@ -14,7 +12,6 @@ function mountSlider(
       min: Math.min(...markerYears),
       max: Math.max(...markerYears),
       markerYears,
-      elementMarkers,
     },
   });
 }
@@ -141,29 +138,6 @@ describe("TimelineSlider filter modes", () => {
     });
     const sliderFilled = wrapperFilled.find("input[type='range']");
     expect(sliderFilled.classes()).toContain("timeline-range--global");
-  });
-
-  it("does not render element markers row or dated elements legend item", () => {
-    const wrapper = mountSlider([1500, 1501], 1500, [
-      { id: "1", name: "ALBERTA", year: 1500, type: "Texte" },
-    ]);
-    expect(wrapper.find("[data-testid='timeline-element-markers-row']").exists()).toBe(false);
-    expect(wrapper.text()).not.toContain("Éléments datés (sans carte associée)");
-  });
-
-  it("does not generate tick marks or year labels for elementMarkers with custom dates", () => {
-    const wrapper = mount(TimelineSlider, {
-      props: {
-        year: 1500,
-        min: 1500,
-        max: 1600,
-        markerYears: [1500, 1600],
-        elementMarkers: [{ id: "feat-1", name: "Custom", year: 1550, type: "Texte" }],
-      },
-    });
-    expect(wrapper.text()).not.toContain("1550");
-    const ticks = wrapper.findAll(".tick-mark");
-    expect(ticks.length).toBe(2);
   });
 
   it("positions each period track on its own row one above the other when they overlap", () => {

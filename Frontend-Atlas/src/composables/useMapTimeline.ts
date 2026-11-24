@@ -3,8 +3,6 @@ import type { Feature } from "../typescript/feature";
 import type { MapPeriod, SliderPeriod, TimelineElementMarker } from "../typescript/map";
 import { toYear, isPeriodActiveAt } from "../utils/dateUtils";
 import { getFeatureMapId, getFeatureMapIds } from "../utils/featureHelpers";
-import { isTextFeature } from "../utils/wordStyles";
-import { rgbToHex } from "../utils/utils";
 
 export type TimelineFilterMode = "specific" | "cumulative" | "global";
 
@@ -15,23 +13,7 @@ export interface TimelineMilestone {
   id?: string;
 }
 
-export type TimelineMarkerItem = TimelineElementMarker & {
-  isCustom?: boolean;
-};
-
-export function getFeatureCustomYears(f: Feature): {
-  startYear: number | null;
-  endYear: number | null;
-} {
-  const startYear =
-    toYear(f.properties?.startYear) ??
-    (f.properties?.startDate ? toYear(f.properties.startDate) : null);
-  const endYear =
-    toYear(f.properties?.endYear) ??
-    (f.properties?.endDate ? toYear(f.properties.endDate) : null);
-
-  return { startYear, endYear };
-}
+export type TimelineMarkerItem = TimelineElementMarker;
 
 export interface UseMapTimelineOptions {
   features: Ref<Feature[]>;
@@ -126,58 +108,7 @@ export function useMapTimeline({
     return map;
   });
 
-  const customFeatureYears = computed<number[]>(() => {
-    const years: number[] = [];
-    features.value.forEach((f: Feature) => {
-      const { startYear, endYear } = getFeatureCustomYears(f);
-      if (startYear != null) years.push(startYear);
-      if (endYear != null) years.push(endYear);
-    });
-    return years;
-  });
-
-  const timelineElementMarkers = computed<TimelineMarkerItem[]>(() => {
-    const list: TimelineMarkerItem[] = [];
-
-    features.value.forEach((f: Feature) => {
-      const { startYear, endYear } = getFeatureCustomYears(f);
-      const effectiveStart = startYear ?? endYear;
-      if (effectiveStart == null) return;
-
-      const rawName =
-        f.properties?.name?.trim() ||
-        f.name?.trim() ||
-        f.properties?.labelText?.trim();
-      const hasName = Boolean(rawName);
-      const effectiveName = hasName && rawName ? rawName : "Nom manquant";
-
-      list.push({
-        id: String(
-          f.id ??
-            f.properties?.id ??
-            f.properties?.name ??
-            f.properties?.labelText ??
-            "",
-        ),
-        name: effectiveName,
-        isNameMissing: !hasName,
-        year: effectiveStart,
-        startYear: startYear != null ? startYear : effectiveStart,
-        endYear: endYear != null ? endYear : null,
-        type:
-          f.properties?.mapElementType ||
-          (isTextFeature(f) ? "Texte" : "Élément"),
-        color:
-          f.properties?.colorHex ||
-          (f.properties?.colorRgb ? rgbToHex(f.properties.colorRgb) : undefined),
-        mapId: null,
-        mapTitle: "Éléments généraux",
-        isCustom: true,
-      });
-    });
-
-    return list;
-  });
+  const timelineElementMarkers = computed<TimelineMarkerItem[]>(() => []);
 
   const sortedTimelineMilestones = computed<TimelineMilestone[]>(() => {
     const list: TimelineMilestone[] = [];
@@ -196,22 +127,8 @@ export function useMapTimeline({
       }
     }
 
-    for (const item of timelineElementMarkers.value) {
-      const key = `element-${item.id}-${item.year}`;
-      if (!seen.has(key)) {
-        seen.add(key);
-        list.push({
-          year: item.year,
-          label: item.name || `Élément (${item.year})`,
-          type: "element",
-          id: String(item.id),
-        });
-      }
-    }
-
     return list.sort(
-      (a: TimelineMilestone, b: TimelineMilestone) =>
-        a.year - b.year || (a.type === "map" ? -1 : 1),
+      (a: TimelineMilestone, b: TimelineMilestone) => a.year - b.year,
     );
   });
 
@@ -259,13 +176,11 @@ export function useMapTimeline({
   }
 
   const allTimelineStartYears = computed(() => {
-    const years = enrichedPeriods.value.map((p: SliderPeriod) => p.startYear);
-    return [...years, ...customFeatureYears.value];
+    return enrichedPeriods.value.map((p: SliderPeriod) => p.startYear);
   });
 
   const allTimelineEndYears = computed(() => {
-    const years = enrichedPeriods.value.map((p: SliderPeriod) => p.endYear);
-    return [...years, ...customFeatureYears.value];
+    return enrichedPeriods.value.map((p: SliderPeriod) => p.endYear);
   });
 
   const timelineMinYear = computed(() =>
@@ -293,27 +208,17 @@ export function useMapTimeline({
   });
 
   const periodStartYears = computed(() => {
-    const years = new Set<number>(
+    return new Set<number>(
       enrichedPeriods.value.map((p: SliderPeriod) => p.startYear),
     );
-    features.value.forEach((f: Feature) => {
-      const { startYear, endYear } = getFeatureCustomYears(f);
-      const effectiveStart = startYear ?? endYear;
-      if (effectiveStart != null) years.add(effectiveStart);
-    });
-    return years;
   });
 
   const periodStartDates = computed(() => {
-    const dates = new Set<string>(
+    return new Set<string>(
       enrichedPeriods.value
         .map((p: SliderPeriod) => p.startDate)
         .filter((date: string | null): date is string => Boolean(date)),
     );
-    features.value.forEach((f: Feature) => {
-      if (f.properties?.startDate) dates.add(f.properties.startDate);
-    });
-    return dates;
   });
 
   const activeMapPeriod = computed<SliderPeriod | null>(() => {
@@ -359,42 +264,6 @@ export function useMapTimeline({
   const filteredFeatures = computed(() => {
     return features.value.filter((feature: Feature) => {
       if (timelineMode.value === "global") return true;
-
-      const { startYear: featStartYear, endYear: featEndYear } =
-        getFeatureCustomYears(feature);
-      const hasCustomYears = featStartYear != null || featEndYear != null;
-
-      let isCustomActive = false;
-      if (hasCustomYears) {
-        const sy = featStartYear ?? (featEndYear as number);
-        const ey = featEndYear ?? sy;
-
-        if (timelineMode.value === "cumulative") {
-          isCustomActive = sy <= selectedYear.value;
-        } else if (
-          selectedExactDate.value &&
-          feature.properties?.startDate &&
-          feature.properties?.endDate
-        ) {
-          isCustomActive = isPeriodActiveAt(
-            feature.properties.startDate,
-            feature.properties.endDate,
-            selectedExactDate.value,
-            periodStartDates.value,
-          );
-        } else {
-          isCustomActive = isPeriodActiveAt(
-            sy,
-            ey,
-            selectedYear.value,
-            periodStartYears.value,
-          );
-        }
-      }
-
-      if (hasCustomYears) {
-        return isCustomActive;
-      }
 
       const featureMapIds = getFeatureMapIds(feature);
       const featureMapTitle =
@@ -465,7 +334,6 @@ export function useMapTimeline({
     timelineMode,
     enrichedPeriods,
     periodByMapId,
-    customFeatureYears,
     timelineElementMarkers,
     sortedTimelineMilestones,
     prevMilestone,

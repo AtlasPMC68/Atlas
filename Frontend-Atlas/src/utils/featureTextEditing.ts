@@ -33,8 +33,6 @@ export interface FeatureEditSubmitPayload {
   customLabelStyleId?: string | null;
   customLabelStyle?: CustomLabelStyle | null;
   selectedMapIds?: string[];
-  startYear?: number | null;
-  endYear?: number | null;
 }
 
 export const MAX_STROKE_WIDTH_PX = 50;
@@ -154,9 +152,7 @@ export function prepareFeatureForEdit(feature: Feature): FeatureEditState {
   const rawLabel =
     feature.properties.labelText ?? (isText ? feature.properties.name : undefined);
 
-  const hasCustomYears =
-    feature.properties?.startYear != null || feature.properties?.endYear != null;
-  const initialMapIds = hasCustomYears ? [] : getFeatureMapIds(feature);
+  const initialMapIds = getFeatureMapIds(feature);
   const colorHex =
     rgbToHex(feature.properties.colorRgb) ??
     (elementType === "label" || elementType === "point" ? "#000000" : undefined);
@@ -187,8 +183,6 @@ export function prepareFeatureForEdit(feature: Feature): FeatureEditState {
         normalizeOpacity(feature.properties.strokeOpacity) ??
         (elementType === "point" ? DEFAULT_POINT_STROKE_OPACITY : undefined),
       strokeWidth: normalizeStrokeWidth(feature.properties.strokeWidth),
-      startYear: feature.properties.startYear ?? null,
-      endYear: feature.properties.endYear ?? null,
     },
   };
 }
@@ -197,12 +191,10 @@ export function coerceEditedFeature(
   originalFeature: Feature,
   payload: FeatureEditSubmitPayload,
 ): Feature {
-  const hasCustomDate = payload.startYear != null || payload.endYear != null;
-  const chosenMapIds = hasCustomDate
-    ? []
-    : (payload.selectedMapIds && payload.selectedMapIds.length > 0
-        ? [...payload.selectedMapIds]
-        : []);
+  const chosenMapIds =
+    payload.selectedMapIds && payload.selectedMapIds.length > 0
+      ? [...payload.selectedMapIds]
+      : [];
   const chosenMapId = chosenMapIds.length > 0 ? chosenMapIds[0] : null;
 
   if (!isTextFeature(originalFeature)) {
@@ -225,15 +217,13 @@ export function coerceEditedFeature(
         mapId: chosenMapId,
         mapIds: chosenMapIds,
         map_id: chosenMapId,
-        mapTitle: hasCustomDate ? null : (cleanedProps.mapTitle ?? null),
+        mapTitle: cleanedProps.mapTitle ?? null,
         name: payload.name,
         colorRgb: hexToRgb(payload.colorHex),
         strokeColor: hexToRgb(payload.strokeColorHex),
         fillOpacity: normalizeOpacity(payload.fillOpacity),
         strokeOpacity: normalizeOpacity(payload.strokeOpacity),
         strokeWidth: normalizeStrokeWidth(payload.strokeWidth),
-        startYear: payload.startYear ?? null,
-        endYear: payload.endYear ?? null,
         mapElementType: cleanedProps.mapElementType || "shape",
       },
     };
@@ -263,9 +253,7 @@ export function coerceEditedFeature(
         mapId: chosenMapId,
         mapIds: chosenMapIds,
         map_id: chosenMapId,
-        mapTitle: hasCustomDate ? null : (custom.properties.mapTitle ?? null),
-        startYear: payload.startYear ?? null,
-        endYear: payload.endYear ?? null,
+        mapTitle: custom.properties.mapTitle ?? null,
       },
     };
   }
@@ -295,7 +283,7 @@ export function coerceEditedFeature(
       mapId: chosenMapId,
       mapIds: chosenMapIds,
       map_id: chosenMapId,
-      mapTitle: hasCustomDate ? null : (styledFeature.properties.mapTitle ?? null),
+      mapTitle: styledFeature.properties.mapTitle ?? null,
       customLabelStyleId: null,
       customLabelStyle: null,
       custom_label_style_id: null,
@@ -306,8 +294,6 @@ export function coerceEditedFeature(
       fillOpacity: isLabel ? undefined : normalizeOpacity(payload.fillOpacity),
       strokeOpacity: isLabel ? undefined : normalizeOpacity(payload.strokeOpacity),
       strokeWidth: isLabel ? undefined : normalizeStrokeWidth(payload.strokeWidth),
-      startYear: payload.startYear ?? null,
-      endYear: payload.endYear ?? null,
     },
   };
 }
@@ -320,28 +306,6 @@ export function createFeaturesForSelectedMaps(
   baseEditedFeature: Feature,
   selectedMapIds?: string[],
 ): Feature[] {
-  const hasCustomDate =
-    baseEditedFeature.properties?.startYear != null ||
-    baseEditedFeature.properties?.endYear != null;
-
-  if (hasCustomDate) {
-    return [
-      {
-        ...baseEditedFeature,
-        mapId: null,
-        mapIds: [],
-        map_id: null,
-        properties: {
-          ...baseEditedFeature.properties,
-          mapId: null,
-          mapIds: [],
-          map_id: null,
-          mapTitle: null,
-        },
-      },
-    ];
-  }
-
   if (!selectedMapIds || selectedMapIds.length === 0) {
     return [baseEditedFeature];
   }

@@ -169,9 +169,7 @@ import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { parseIsoDateUtc, toIsoDateUtc } from "../utils/dateUtils";
 import type { DayTick, SliderPeriod, TimelineElementMarker } from "../typescript/map";
 
-export type TimelineMarkerItem = TimelineElementMarker & {
-  isCustom?: boolean;
-};
+export type TimelineMarkerItem = TimelineElementMarker;
 
 const props = defineProps<{
   year: number;
