@@ -42,11 +42,7 @@
           type="button"
           class="px-2.5 py-1 text-base-content hover:bg-base-300 active:bg-base-300/80 disabled:opacity-30 disabled:pointer-events-none border-r border-base-300 transition-colors flex items-center justify-center"
           :disabled="!hasPrevMilestone"
-          :title="
-            prevMilestone
-              ? `Précédent : ${prevMilestone.label} (${prevMilestone.year})`
-              : 'Aucun jalon précédent'
-          "
+          :title="hasPrevMilestone ? 'Précédent' : 'Aucun jalon précédent'"
           aria-label="Jalon précédent"
           data-testid="prev-map-button"
           @click="emit('prev-milestone')"
@@ -57,11 +53,7 @@
           type="button"
           class="px-2.5 py-1 text-base-content hover:bg-base-300 active:bg-base-300/80 disabled:opacity-30 disabled:pointer-events-none transition-colors flex items-center justify-center"
           :disabled="!hasNextMilestone"
-          :title="
-            nextMilestone
-              ? `Suivant : ${nextMilestone.label} (${nextMilestone.year})`
-              : 'Aucun jalon suivant'
-          "
+          :title="hasNextMilestone ? 'Suivant' : 'Aucun jalon suivant'"
           aria-label="Jalon suivant"
           data-testid="next-map-button"
           @click="emit('next-milestone')"

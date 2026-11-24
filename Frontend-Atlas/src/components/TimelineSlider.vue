@@ -11,12 +11,8 @@
             <span class="inline-block w-8 h-2 rounded-full bg-gradient-to-r from-sky-500 via-emerald-500 to-amber-500 shadow-xs"></span>
             <span>Cartes</span>
           </span>
-          <span v-if="groupedElementMarkers.length > 0" class="inline-flex items-center gap-1.5">
-            <span class="inline-block w-2.5 h-2.5 rounded-full bg-info"></span>
-            <span>Éléments datés (sans carte associée)</span>
-          </span>
 
-          <!-- 3 Date filter buttons placed to the right of Custom dates -->
+          <!-- 3 Date filter buttons -->
           <div class="inline-flex items-center gap-2 ml-2 pl-2 border-l border-base-300 relative z-[7000] pointer-events-auto">
             <span class="text-xs font-semibold text-base-content/80 select-none">
               Filtrer par date :
@@ -83,147 +79,6 @@
                     ? `${period.startDate} - ${period.endDate}`
                     : `${period.startYear} - ${period.endYear}`
                 }}
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <!-- Element markers row - Year mode -->
-        <div
-          v-if="!isZoomMode && groupedElementMarkers.length > 0"
-          class="element-markers-row"
-          data-testid="timeline-element-markers-row"
-        >
-          <div
-            v-for="marker in groupedElementMarkers"
-            :key="`element-marker-${marker.year}-${marker.items.length}`"
-            role="button"
-            tabindex="0"
-            class="element-marker-pin"
-            :class="{
-              'element-marker-active': marker.items.some((i: TimelineMarkerItem) => i.year === internalYear) || marker.year === internalYear,
-              'element-marker-selected': isMarkerSelected(marker),
-              'element-marker-is-range': marker.isRange,
-            }"
-            :style="marker.style"
-            :data-tip="marker.tooltip"
-            :aria-label="marker.tooltip"
-            data-testid="timeline-element-marker"
-            @click="onMarkerClick(marker)"
-            @dblclick.stop="onMarkerDblClick(marker)"
-            @mouseenter="onMarkerMouseEnter(marker.year)"
-            @mouseleave="onMarkerMouseLeave"
-            @keydown.enter="onMarkerClick(marker)"
-            @keydown.space.prevent="onMarkerClick(marker)"
-          >
-            <span
-              class="element-marker-badge"
-              :class="{
-                'element-marker-badge-range': marker.isRange,
-                'element-marker-badge-single': marker.items.length === 1,
-                'element-marker-badge-multiple': marker.items.length > 1,
-                'element-marker-badge-selected': isMarkerSelected(marker),
-              }"
-            >
-              <span
-                v-if="marker.hasCustomItem"
-                class="w-1.5 h-1.5 rounded-full bg-info shrink-0"
-                title="Éléments datés (sans carte associée)"
-              >
-                *
-              </span>
-              <span class="element-marker-count">{{ marker.items.length }}</span>
-              <span class="sr-only">{{ marker.label }}</span>
-            </span>
-
-            <!-- Standardized popover card (separated by map) -->
-            <div
-              v-if="hoveredMarkerYear === marker.year"
-              class="element-marker-popover absolute bottom-full mb-2 bg-base-100 text-base-content shadow-xl rounded-xl border border-gray-300 p-3 z-[6000] w-72 sm:w-80 pointer-events-auto text-left"
-              :style="getPopoverStyle(marker.year)"
-              @mouseenter="onMarkerMouseEnter(marker.year)"
-              @mouseleave="onMarkerMouseLeave"
-              @click.stop
-            >
-              <div class="flex items-center justify-between gap-2 pb-2 border-b border-gray-200">
-                <div class="flex items-center gap-1.5 text-sm font-semibold text-base-content truncate">
-                  <span>
-                    {{ marker.items.length }} {{ marker.items.length > 1 ? "éléments datés" : "élément daté" }}
-                  </span>
-                </div>
-                <span class="text-xs font-mono text-base-content opacity-60 shrink-0">
-                  {{ marker.year }}{{ marker.isRange && marker.maxEndYear ? `–${marker.maxEndYear}` : "" }}
-                </span>
-              </div>
-
-              <div class="flex flex-col gap-2 mt-2 max-h-64 overflow-y-auto overflow-x-hidden p-1 -m-1">
-                <div
-                  v-for="mapGroup in (marker.mapGroups || getItemsByMap(marker.items))"
-                  :key="mapGroup.mapId || 'general'"
-                  class="flex flex-col"
-                >
-                  <div class="flex items-center justify-between py-1 text-[11px] font-semibold uppercase tracking-wide text-base-content opacity-50 px-1">
-                    <span class="truncate">{{ mapGroup.mapTitle }}</span>
-                    <span class="font-mono">{{ mapGroup.items.length }}</span>
-                  </div>
-
-                  <div class="flex flex-col gap-1">
-                    <div
-                      v-for="item in mapGroup.items"
-                      :key="item.id"
-                      role="button"
-                      tabindex="0"
-                      class="flex items-center justify-between gap-2 py-2 px-2 rounded-lg hover:bg-gray-100 text-left transition-colors group w-full cursor-pointer select-none"
-                      :class="[
-                        isItemSelected(item.id)
-                          ? 'app-feature-selected border-2 border-primary-600 bg-primary-50/90 font-semibold shadow-sm'
-                          : 'border border-transparent'
-                      ]"
-                      @click.stop="onPopoverItemClick(item, marker.year, $event)"
-                      @dblclick.stop="onPopoverItemEdit(item, marker.year)"
-                      @keydown.enter.stop="onPopoverItemEdit(item, marker.year)"
-                    >
-                      <div class="flex items-center gap-1.5 min-w-0 flex-1">
-                        <span
-                          v-if="isItemNameMissing(item)"
-                          class="text-error font-bold text-xs leading-none shrink-0"
-                          title="Nom manquant"
-                        >
-                          !
-                        </span>
-                        <span
-                          class="text-xs font-medium truncate"
-                          :class="isItemNameMissing(item) ? 'text-error font-medium' : 'text-base-content group-hover:text-primary'"
-                        >
-                          {{ isItemNameMissing(item) ? "Nom manquant" : toNaturalCase(item.name) }}
-                        </span>
-                      </div>
-                      <div class="flex items-center gap-1.5 shrink-0 text-[11px] text-base-content opacity-60">
-                        <span
-                          v-if="formatItemDate(item)"
-                          class="badge badge-ghost badge-xs font-normal opacity-80 shrink-0"
-                        >
-                          {{ formatItemDate(item) }}
-                        </span>
-                        <span>{{ formatElementType(item.type) }}</span>
-                        <button
-                          type="button"
-                          class="p-0.5 hover:text-primary rounded transition-colors"
-                          title="Modifier l'élément"
-                          @click.stop="onPopoverItemEdit(item, marker.year)"
-                        >
-                          <PencilSquareIcon class="w-3.5 h-3.5 opacity-60 group-hover:opacity-100 group-hover:text-primary hover:text-primary" />
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              <div class="mt-2 pt-1.5 border-t border-gray-200 text-center">
-                <span class="text-[11px] text-base-content opacity-50">
-                  Double-cliquer pour modifier
-                </span>
               </div>
             </div>
           </div>
@@ -311,27 +166,12 @@
 
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
-import { PencilSquareIcon } from "@heroicons/vue/24/outline";
 import { parseIsoDateUtc, toIsoDateUtc } from "../utils/dateUtils";
-import { applySelectionModifier } from "../utils/selectionUtils";
 import type { DayTick, SliderPeriod, TimelineElementMarker } from "../typescript/map";
 
 export type TimelineMarkerItem = TimelineElementMarker & {
   isCustom?: boolean;
 };
-
-export interface GroupedElementMarker {
-  year: number;
-  endYear?: number | null;
-  items: TimelineMarkerItem[];
-  mapGroups?: MarkerMapGroup[];
-  hasCustomItem: boolean;
-  label: string;
-  tooltip: string;
-  style: Record<string, string>;
-  isRange: boolean;
-  maxEndYear?: number | null;
-}
 
 const props = defineProps<{
   year: number;
@@ -381,171 +221,6 @@ const currentMode = computed<"specific" | "cumulative" | "global">(() => {
   return "specific";
 });
 
-const hoveredMarkerYear = ref<number | null>(null);
-let popoverTimeout: ReturnType<typeof setTimeout> | null = null;
-
-function isCustomItem(item: TimelineMarkerItem): boolean {
-  return item.isCustom !== false;
-}
-
-function isItemNameMissing(item: TimelineMarkerItem): boolean {
-  if (item.isNameMissing) return true;
-  if (!item.name || !item.name.trim()) return true;
-  const lower = item.name.trim().toLowerCase();
-  return lower === "nom manquant" || lower === "élément" || lower === "element";
-}
-
-function onMarkerMouseEnter(year: number) {
-  if (popoverTimeout) clearTimeout(popoverTimeout);
-  hoveredMarkerYear.value = year;
-}
-
-function onMarkerMouseLeave() {
-  popoverTimeout = setTimeout(() => {
-    hoveredMarkerYear.value = null;
-  }, 180);
-}
-
-function isItemSelected(id?: string | number | null): boolean {
-  if (id == null) return false;
-  const strId = String(id);
-  if (props.selectedFeatureId && String(props.selectedFeatureId) === strId) return true;
-  if (props.multiSelectedFeatureIds?.some((i: string) => String(i) === strId)) return true;
-  return false;
-}
-
-function isMarkerSelected(marker: { items: Array<{ id?: string | number | null }> }): boolean {
-  return marker.items.some((i: { id?: string | number | null }) => isItemSelected(i.id));
-}
-
-function onPopoverItemClick(item: TimelineMarkerItem, year: number, event?: MouseEvent) {
-  selectYear(year);
-  const isCtrl = Boolean(event?.ctrlKey || event?.metaKey);
-  if (isCtrl) {
-    const result = applySelectionModifier(item.id, true, false, {
-      selectedId: props.selectedFeatureId,
-      multiSelectedIds: props.multiSelectedFeatureIds,
-    });
-    emit("select-elements", result.multiSelectedIds);
-    return;
-  }
-  emit("select-element", item.id);
-}
-
-function onPopoverItemEdit(item: TimelineMarkerItem, year: number) {
-  selectYear(year);
-  emit("edit-element", item.id);
-  hoveredMarkerYear.value = null;
-}
-
-function toNaturalCase(str: string): string {
-  if (!str) return "";
-  const letters = str.replace(/[^a-zA-ZÀ-ÿ]/g, "");
-  if (letters.length > 0 && letters === letters.toUpperCase()) {
-    return str
-      .toLowerCase()
-      .split(/([\s\-_',]+)/)
-      .map((part) =>
-        part.length > 0 ? part.charAt(0).toUpperCase() + part.slice(1) : part,
-      )
-      .join("");
-  }
-  return str;
-}
-
-const ELEMENT_TYPE_TRANSLATIONS: Record<string, string> = {
-  label: "Texte",
-  text: "Texte",
-  texte: "Texte",
-  point: "Point",
-  zone: "Zone",
-  shape: "Forme",
-  forme: "Forme",
-  image: "Image",
-  polyline: "Tracé",
-  drawing: "Dessin",
-  dessin: "Dessin",
-  arrow: "Flèche",
-  fleche: "Flèche",
-};
-
-function formatElementType(type?: string | null): string {
-  if (!type) return "Texte";
-  const normalized = type.trim().toLowerCase();
-  return (
-    ELEMENT_TYPE_TRANSLATIONS[normalized] ||
-    type.charAt(0).toUpperCase() + type.slice(1)
-  );
-}
-
-function formatItemDate(item: TimelineMarkerItem): string {
-  const start = item.startYear ?? item.year;
-  const end = item.endYear;
-  if (start != null && end != null && end !== start) {
-    return `${start} - ${end}`;
-  }
-  if (start != null) {
-    return `${start}`;
-  }
-  if (end != null) {
-    return `${end}`;
-  }
-  return "";
-}
-
-interface MarkerMapGroup {
-  mapId: string | null;
-  mapTitle: string;
-  items: TimelineMarkerItem[];
-}
-
-function getItemsByMap(items: TimelineMarkerItem[]): MarkerMapGroup[] {
-  const groups = new Map<string, MarkerMapGroup>();
-  for (const item of items) {
-    const isCustom =
-      item.isCustom === true ||
-      item.startYear != null ||
-      item.endYear != null;
-    const effectiveMapId: string | null = isCustom ? null : ((item.mapId as string | null | undefined) ?? null);
-    const key = effectiveMapId ? String(effectiveMapId) : "general";
-    const title = effectiveMapId
-      ? (item.mapTitle || `Carte ${effectiveMapId}`)
-      : "Éléments généraux";
-    if (!groups.has(key)) {
-      groups.set(key, { mapId: effectiveMapId, mapTitle: title, items: [] });
-    }
-    groups.get(key)!.items.push(item);
-  }
-  return Array.from(groups.values());
-}
-
-function getPopoverStyle(year: number): Record<string, string> {
-  const percent = positionForYear(year);
-  if (percent < 18) {
-    return { left: "0%", transform: "translateX(0)" };
-  }
-  if (percent > 82) {
-    return { right: "0%", left: "auto", transform: "translateX(0)" };
-  }
-  return { left: "50%", transform: "translateX(-50%)" };
-}
-
-function onMarkerClick(marker: GroupedElementMarker) {
-  selectYear(marker.year);
-  if (marker.items.length === 1) {
-    emit("select-element", marker.items[0].id);
-  } else {
-    hoveredMarkerYear.value = marker.year;
-  }
-}
-
-function onMarkerDblClick(marker: GroupedElementMarker) {
-  selectYear(marker.year);
-  if (marker.items.length > 0) {
-    emit("edit-element", marker.items[0].id);
-  }
-}
-
 const internalYear = ref(props.year || props.min);
 const hoveredPeriodId = ref<string | null>(null);
 const dayZoomOffset = ref(0);
@@ -579,132 +254,6 @@ const sliderTrackStyle = computed<Record<string, string>>(() => {
   };
 });
 
-const validElementMarkers = computed(() =>
-  (props.elementMarkers ?? []).filter(
-    (m: TimelineMarkerItem) => Number.isFinite(m.year),
-  ),
-);
-
-
-const PIN_COLLISION_THRESHOLD_PX = 26;
-
-const groupedElementMarkers = computed<GroupedElementMarker[]>(() => {
-  if (isZoomMode.value || validElementMarkers.value.length === 0) {
-    return [];
-  }
-
-  // 1. Regroupe d'abord les elements par annee exacte
-  const yearMap = new Map<number, TimelineMarkerItem[]>();
-  for (const m of validElementMarkers.value) {
-    if (m.year >= props.min && m.year <= props.max) {
-      if (!yearMap.has(m.year)) yearMap.set(m.year, []);
-      yearMap.get(m.year)!.push(m);
-    }
-  }
-
-  const sortedYears = Array.from(yearMap.keys()).sort((a, b) => a - b);
-  if (sortedYears.length === 0) return [];
-
-  // 2. Group by proximity only in case of visual collision (< PIN_COLLISION_THRESHOLD_PX)
-  const thresholdPercent = (PIN_COLLISION_THRESHOLD_PX / axisWidthPx.value) * 100;
-
-  interface ClusterData {
-    minYear: number;
-    maxYear: number;
-    years: number[];
-    items: TimelineMarkerItem[];
-  }
-
-  const clusters: ClusterData[] = [];
-
-  for (const year of sortedYears) {
-    const items = yearMap.get(year)!;
-    const percent = positionForYear(year);
-
-    if (clusters.length === 0) {
-      clusters.push({
-        minYear: year,
-        maxYear: year,
-        years: [year],
-        items: [...items],
-      });
-      continue;
-    }
-
-    const lastCluster = clusters[clusters.length - 1];
-    const lastClusterPercent = positionForYear(lastCluster.minYear);
-
-    // In case of collision with previous group: merge into cluster
-    if (percent - lastClusterPercent < thresholdPercent) {
-      lastCluster.maxYear = Math.max(lastCluster.maxYear, year);
-      lastCluster.years.push(year);
-      lastCluster.items.push(...items);
-    } else {
-      clusters.push({
-        minYear: year,
-        maxYear: year,
-        years: [year],
-        items: [...items],
-      });
-    }
-  }
-
-  // 3. Construit les marqueurs finaux
-  const groups: GroupedElementMarker[] = [];
-  for (const cluster of clusters) {
-    const { minYear, maxYear, items, years } = cluster;
-    const representativeYear = years.includes(internalYear.value)
-      ? internalYear.value
-      : minYear;
-    const percent = positionForYear(representativeYear);
-
-    const hasCustomItem = items.some((item) => isCustomItem(item));
-    const spansMultipleYears = minYear !== maxYear;
-    const hasItemRange = items.some(
-      (item) => item.endYear != null && item.endYear > item.year,
-    );
-    const isRange = spansMultipleYears || hasItemRange;
-
-    const maxEndYear = Math.max(
-      maxYear,
-      ...items
-        .map((item) => item.endYear ?? item.year)
-        .filter((y): y is number => y != null && Number.isFinite(y)),
-    );
-
-    const periodStr = isRange
-      ? ` (${minYear}${maxEndYear > minYear ? ` - ${maxEndYear}` : ""})`
-      : ` (${minYear})`;
-
-    let tooltip: string;
-    if (items.length === 1) {
-      tooltip = `${items[0].name}${periodStr} - ${formatElementType(items[0].type)}`;
-    } else {
-      const names = items
-        .map((i) => i.name)
-        .slice(0, 3)
-        .join(", ");
-      const extra = items.length > 3 ? ` et ${items.length - 3} autre(s)` : "";
-      tooltip = `${items.length} éléments${periodStr} : ${names}${extra}`;
-    }
-
-    groups.push({
-      year: representativeYear,
-      endYear: maxEndYear,
-      items,
-      mapGroups: getItemsByMap(items),
-      hasCustomItem,
-      label: items.length === 1 ? items[0].name : `${items.length} éléments`,
-      tooltip,
-      style: markerStyleFromPercent(percent),
-      isRange,
-      maxEndYear: isRange ? maxEndYear : null,
-    });
-  }
-
-  return groups.sort((a, b) => a.year - b.year);
-});
-
 const markerYears = computed(() => {
   const values = (props.markerYears ?? []).filter(
     (v: number) => Number.isFinite(v) && v >= props.min && v <= props.max,
@@ -712,26 +261,11 @@ const markerYears = computed(() => {
   const periodYears = (props.mapPeriods ?? [])
     .flatMap((p: SliderPeriod) => [p.startYear, p.endYear])
     .filter((v: number) => Number.isFinite(v) && v >= props.min && v <= props.max);
-  const elementYears = validElementMarkers.value
-    .map((m: TimelineMarkerItem) => m.year)
-    .filter((v: number) => Number.isFinite(v) && v >= props.min && v <= props.max);
-  const merged = [...values, ...periodYears, ...elementYears, props.min, props.max];
+  const merged = [...values, ...periodYears, props.min, props.max];
   return [...new Set(merged)].sort((a, b) => a - b);
 });
 
-const displayedTickMarks = computed(() => {
-  const minTickGapPercent = (3 / axisWidthPx.value) * 100;
-  const filtered: number[] = [];
-  let lastPos = -Infinity;
-  for (const year of markerYears.value) {
-    const pos = positionForYear(year);
-    if (pos - lastPos >= minTickGapPercent) {
-      filtered.push(year);
-      lastPos = pos;
-    }
-  }
-  return filtered;
-});
+const displayedTickMarks = computed(() => markerYears.value);
 
 const YEAR_LABEL_MIN_GAP_PX = 38;
 const YEAR_LABEL_MAX_LANES = 4;
@@ -932,20 +466,10 @@ const positionedPeriods = computed(() => {
     (a, b) => a.startYear - b.startYear || a.endYear - b.endYear,
   );
 
-  const rowEndYears: number[] = [];
-
-  return sorted.map((period) => {
-    let row = rowEndYears.findIndex((endYear) => period.startYear > endYear);
-
-    if (row === -1) {
-      row = rowEndYears.length;
-      rowEndYears.push(period.endYear);
-    } else {
-      rowEndYears[row] = Math.max(rowEndYears[row], period.endYear);
-    }
-
-    return { ...period, row };
-  });
+  return sorted.map((period, index) => ({
+    ...period,
+    row: index,
+  }));
 });
 
 const displayedPeriods = computed(() => {

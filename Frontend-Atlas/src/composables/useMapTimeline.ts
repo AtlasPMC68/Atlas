@@ -289,7 +289,6 @@ export function useMapTimeline({
       markers.add(p.startYear);
       markers.add(p.endYear);
     });
-    customFeatureYears.value.forEach((y: number) => markers.add(y));
     return [...markers].sort((a: number, b: number) => a - b);
   });
 

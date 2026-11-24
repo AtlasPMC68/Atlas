@@ -659,9 +659,10 @@
             </div>
             <span
               v-if="hasCustomDate"
-              class="text-xs text-red-700 bg-white border border-red-500 rounded px-2 py-1 mt-1"
+              class="text-xs text-orange-700 bg-white border border-orange-500 rounded px-2 py-1 mt-1"
             >
-              Période personnalisée active : aucune carte ne peut être associée. Effacez les dates pour sélectionner une carte.
+              Période personnalisée active : l'élément sera classé comme « élément général » (sans carte) 
+              et visible uniquement pendant la période définie.
             </span>
             <span v-else class="field-hint">
               Si aucune carte n'est sélectionnée, l'élément reste dans « Éléments généraux ».
@@ -676,14 +677,6 @@
               <label class="section-title">
                 Période personnalisée
               </label>
-              <div
-                class="tooltip tooltip-light tooltip-bottom md:tooltip-left cursor-pointer"
-                data-tip="Définit une période d'apparition propre à cet élément sur la ligne du temps (élément général sans carte associée)."
-              >
-                <div class="w-4 h-4 rounded-full bg-base-300 text-base-content opacity-80 flex items-center justify-center text-[10px] font-bold hover:bg-primary hover:text-primary-content transition-colors">
-                  !
-                </div>
-              </div>
             </div>
             <div class="grid grid-cols-2 gap-3">
               <div>
