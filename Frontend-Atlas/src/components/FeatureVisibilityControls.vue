@@ -1,6 +1,6 @@
 <template>
-  <div class="flex h-full min-h-0 flex-col" data-testid="feature-visibility-controls">
-    <div class="tabs tabs-boxed bg-base-200 gap-2 p-1.5">
+  <div class="flex h-full min-h-0 flex-col overflow-auto" data-testid="feature-visibility-controls">
+    <div class="tabs tabs-boxed bg-base-200 gap-2 p-1.5 overflow-x-auto flex-nowrap shrink-0">
       <button
         v-for="group in featureGroups"
         :key="group.type"
@@ -8,7 +8,7 @@
         role="tab"
         :aria-selected="activeGroup?.type === group.type"
         :data-testid="`feature-tab-${group.type}`"
-        class="tab flex-1 p-0"
+        class="tab flex-1 p-0 min-w-8"
         :title="`${group.label}`"
         @click="activeGroupType = group.type"
       >
@@ -20,9 +20,9 @@
     </div>
 
     <!-- Element list with visibility controls -->
-    <div class="px-1 flex flex-1 flex-col min-h-0">
+    <div class="px-1 flex flex-1 flex-col min-h-0 min-w-0">
       <div
-        class="card flex flex-1 flex-col gap-4 min-h-0 overflow-y-auto scroll-stable"
+        class="card flex flex-1 flex-col gap-4 min-h-0 overflow-auto scroll-stable"
       >
         <div class="flex items-center justify-between">
           <label
@@ -277,483 +277,25 @@
   </div>
 
   <!-- Standardized element edit modal -->
-  <dialog ref="editFeatureDialogRef" class="modal" v-if="featureToEdit">
-    <div
-      class="modal-box w-11/12 flex flex-col gap-5 max-h-[90vh] overflow-y-auto"
-      :class="editModalBoxClass"
-    >
-      <h3 class="text-lg font-bold truncate">
-        Modification {{ editModalTypeLabel }}
-        <span :class="isEditNameMissing ? 'text-error font-medium' : ''">
-          {{ editModalNameText }}
-        </span>
-      </h3>
-
-      <fieldset class="grid grid-cols-1 lg:grid-cols-2 gap-x-6 gap-y-5 items-start">
-        <!-- Section 1 (Top Left): Informations générales -->
-        <div class="flex flex-col gap-2 min-w-0 order-1 lg:col-start-1 lg:row-start-1">
-          <div class="flex items-center justify-between min-h-[1.75rem]">
-            <span class="section-title">
-              Informations générales
-            </span>
-          </div>
-
-          <div
-            class="grid grid-cols-1 gap-3 items-start w-full"
-            :class="isTextElement ? 'sm:grid-cols-2' : 'grid-cols-1'"
-          >
-            <div class="flex flex-col gap-1.5 min-w-0">
-              <label class="field-label leading-5" for="edit-feature-name">
-                Nom de l'élément
-              </label>
-
-              <template v-if="isTextElement">
-                <textarea
-                  id="edit-feature-name"
-                  ref="labelTextareaRef"
-                  v-model="editDraft.name"
-                  rows="2"
-                  class="textarea textarea-bordered w-full min-h-[60px] bg-base-100 text-sm leading-snug resize-y"
-                  :class="isEditNameMissing ? 'border-error ring-1 ring-error' : 'border-gray-400'"
-                  placeholder="Nom de l'élément"
-                  required
-                  @input="onNameInput"
-                ></textarea>
-                <span class="field-hint">
-                  Vous pouvez le mettre sur plusieurs lignes en appuyant sur Entrée.
-                </span>
-              </template>
-
-              <input
-                v-else
-                id="edit-feature-name"
-                v-model="editDraft.name"
-                type="text"
-                class="input input-bordered w-full h-[50px] text-sm"
-                :class="isEditNameMissing ? 'border-error ring-1 ring-error' : 'border-gray-400'"
-                placeholder="Nom de l'élément"
-                required
-                @input="onNameInput"
-              />
-            </div>
-
-            <div v-if="isTextElement" class="flex flex-col gap-1.5 min-w-0">
-              <span class="field-label leading-5">
-                Aperçu
-              </span>
-              <div class="preview-frame p-2 min-h-[60px] flex items-center">
-                <div
-                  class="preview-box px-3 py-1.5 min-h-[42px] w-full"
-                  :style="editTextStyle"
-                >
-                  <span
-                    v-if="isEditingPoint"
-                    class="inline-block h-3 w-3 rounded-full shrink-0 border border-base-content"
-                    :style="{
-                      backgroundColor: pointPreviewFillColor,
-                      borderColor: pointPreviewStrokeColor || undefined,
-                    }"
-                  ></span>
-                  <span class="whitespace-pre-line break-words">
-                    {{ editDraft.labelText || editDraft.name || "Exemple de texte" }}
-                  </span>
-                </div>
-              </div>
-              <span
-                v-if="isPreviewClamped"
-                class="text-xs text-red-700 bg-white border border-red-500 rounded px-2 py-1"
-                data-testid="preview-limit-notice"
-              >
-                L'aperçu est plafonné pour tenir dans la fenêtre.
-              </span>
-            </div>
-          </div>
-        </div>
-
-        <!-- Section 2 (Top Right, spans 2 rows when no bottom-right section): Cartes associées -->
-        <div
-          v-if="props.mapPeriods && props.mapPeriods.length > 0"
-          class="flex flex-col gap-2 min-w-0 order-3 lg:col-start-2 lg:row-start-1"
-          :class="hasBottomRightSection ? '' : 'lg:row-span-2'"
-          data-testid="map-assignment-section"
-        >
-          <div class="flex items-center justify-between gap-2 min-h-[1.75rem]">
-            <label class="section-title">
-              Cartes associées
-            </label>
-            <button
-              type="button"
-              class="btn btn-ghost btn-xs text-primary font-semibold hover:bg-primary/10 shrink-0"
-              @click="toggleSelectAllMaps"
-            >
-              {{ areAllMapsSelected ? "Tout désélectionner" : "Tout sélectionner" }}
-            </button>
-          </div>
-
-          <div class="flex flex-col gap-1.5 min-w-0">
-            <span class="field-label leading-5">
-              Sélection des cartes
-            </span>
-            <div
-              class="flex flex-col gap-1 overflow-y-auto border border-gray-400 rounded-lg p-2 bg-base-100"
-              :class="hasBottomRightSection ? 'max-h-36 sm:max-h-40' : 'max-h-72 sm:max-h-80'"
-            >
-              <label
-                v-for="period in props.mapPeriods"
-                :key="period.id"
-                class="flex items-center gap-2 rounded px-1.5 py-0.5 cursor-pointer hover:bg-base-200/50"
-              >
-                <input
-                  type="checkbox"
-                  :value="period.id"
-                  v-model="editDraft.selectedMapIds"
-                  class="checkbox checkbox-xs checkbox-primary shrink-0"
-                  :data-testid="`map-checkbox-${period.id}`"
-                />
-                <span class="text-sm truncate">{{ period.title }}</span>
-              </label>
-            </div>
-            <div
-              v-if="editDraft.selectedMapIds && editDraft.selectedMapIds.length > 1"
-              class="alert alert-info py-1.5 px-2.5 text-xs rounded-lg flex items-center gap-2"
-            >
-              <InformationCircleIcon class="w-4 h-4 shrink-0 text-info" />
-              <span>Cet élément est partagé sur {{ editDraft.selectedMapIds.length }} cartes. Toute modification sera synchronisée sur l'ensemble de ces cartes.</span>
-            </div>
-            <span class="field-hint">
-              Si aucune carte n'est sélectionnée, l'élément reste dans « Éléments généraux ».
-            </span>
-          </div>
-        </div>
-
-        <!-- Section 3 (Bottom Left): Réglages du texte -->
-        <div
-          v-if="isTextElement"
-          class="editor-section flex flex-col gap-3 pt-4 order-2 lg:col-start-1 lg:row-start-2"
-        >
-          <div class="flex items-center justify-between gap-2 min-h-[1.75rem]">
-            <span class="section-title">
-              Réglages du texte
-            </span>
-          </div>
-
-          <div class="flex flex-col gap-1.5">
-            <label class="field-label leading-5">Type de mot</label>
-            <div class="flex flex-row items-center gap-2.5 w-full">
-              <select
-                v-model="editDraft.labelStyleSelection"
-                data-testid="word-type-select"
-                class="select select-bordered flex-1 min-w-0 h-[50px] text-sm"
-                :style="selectedWordTypeSelectStyle"
-                @change="onLabelStyleSelectionChange"
-              >
-                <option
-                  v-for="style in availableCustomLabelStyles"
-                  :key="style.id"
-                  :value="`custom:${style.id}`"
-                  :style="getCustomStyleObject(style)"
-                  class="text-sm"
-                >
-                  {{ getCustomStyleOptionLabel(style) }}
-                </option>
-                <option
-                  v-for="(_, typeKey) in WORD_TYPE_STYLES"
-                  :key="typeKey"
-                  :value="typeKey"
-                  :style="getWordTypeOptionStyle(typeKey)"
-                  class="text-sm"
-                >
-                  {{ getWordTypeOptionLabel(typeKey) }}
-                </option>
-              </select>
-              <button
-                type="button"
-                class="modal-secondary-btn h-[50px]"
-                data-testid="manage-custom-label-styles"
-                @click="labelStyleManagerRef?.open()"
-              >
-                Personnaliser
-              </button>
-            </div>
-          </div>
-
-          <div
-            v-if="!editDraft.customLabelStyleId"
-            class="flex flex-col gap-1.5 w-full"
-          >
-            <div class="grid grid-cols-1 sm:grid-cols-2 gap-2.5 w-full">
-              <div class="setting-card h-[50px]">
-                <label class="setting-card-label" for="edit-feature-text-color">
-                  Couleur texte
-                </label>
-                <input
-                  id="edit-feature-text-color"
-                  v-model="editDraft.textColorHex"
-                  data-testid="text-color-input"
-                  type="color"
-                  class="setting-color-input"
-                />
-              </div>
-
-              <div
-                class="setting-card h-[50px]"
-                :class="{ 'border-error': isTextSizeOverMax }"
-              >
-                <label class="setting-card-label" for="edit-feature-text-size">
-                  Taille (px)
-                </label>
-                <input
-                  id="edit-feature-text-size"
-                  v-model.number="editDraft.textSizePx"
-                  data-testid="text-size-input"
-                  type="number"
-                  :min="MIN_TEXT_SIZE_PX"
-                  :max="MAX_TEXT_SIZE_PX"
-                  step="1"
-                  class="setting-number-input"
-                  @change="onTextSizeChange"
-                />
-              </div>
-            </div>
-
-            <span
-              v-if="isTextSizeOverMax"
-              class="text-xs text-red-700 bg-white border border-red-500 rounded px-2 py-1"
-              data-testid="text-size-max-warning"
-            >
-              La taille maximale autorisée est de {{ MAX_TEXT_SIZE_PX }} px (la valeur a été plafonnée).
-            </span>
-          </div>
-        </div>
-
-        <!-- Section 4 (Bottom Right for Text+Point, Bottom Left for Shape): Réglages géométriques unifiés -->
-        <div
-          v-if="hasGeometryControls"
-          class="editor-section flex flex-col gap-3 pt-4"
-          :class="isTextElement ? 'order-4 lg:col-start-2 lg:row-start-2' : 'order-2 lg:col-start-1 lg:row-start-2'"
-        >
-          <div class="flex items-center justify-between gap-2 min-h-[1.75rem]">
-            <span class="section-title">
-              {{ geometrySectionTitle }}
-            </span>
-            <span class="field-hint">
-              {{ geometrySectionHint }}
-            </span>
-          </div>
-
-          <div class="flex flex-col gap-1.5">
-            <span class="field-label leading-5">Couleurs et aperçu</span>
-            <div class="grid grid-cols-1 sm:grid-cols-3 gap-2.5 w-full">
-              <div class="setting-card h-[50px]">
-                <label class="setting-card-label" for="edit-feature-fill-color">
-                  Fond
-                </label>
-                <input
-                  id="edit-feature-fill-color"
-                  v-model="editDraft.colorHex"
-                  data-testid="color-input"
-                  type="color"
-                  class="setting-color-input"
-                />
-              </div>
-
-              <div class="setting-card h-[50px]">
-                <label class="setting-card-label" for="edit-feature-stroke-color">
-                  Contour
-                </label>
-                <input
-                  id="edit-feature-stroke-color"
-                  v-model="editDraft.strokeColorHex"
-                  data-testid="point-stroke-color-input"
-                  type="color"
-                  class="setting-color-input"
-                />
-              </div>
-
-              <div
-                class="setting-card h-[50px] flex items-center justify-between gap-2 px-3"
-                data-testid="point-preview-container"
-              >
-                <span class="setting-card-label">
-                  Aperçu
-                </span>
-                <div class="flex items-center justify-center shrink-0">
-                  <svg width="32" height="32" viewBox="0 0 40 40" class="overflow-visible">
-                    <circle
-                      v-if="isEditingPoint"
-                      cx="20"
-                      cy="20"
-                      r="14"
-                      :fill="pointPreviewFillColor"
-                      :fill-opacity="pointPreviewFillOpacity"
-                      :stroke="pointPreviewStrokeColor"
-                      :stroke-width="pointPreviewStrokeWidth"
-                      :stroke-opacity="pointPreviewStrokeOpacity"
-                    />
-                    <rect
-                      v-else
-                      x="3"
-                      y="5"
-                      width="34"
-                      height="30"
-                      rx="5"
-                      :fill="pointPreviewFillColor"
-                      :fill-opacity="pointPreviewFillOpacity"
-                      :stroke="pointPreviewStrokeColor"
-                      :stroke-width="pointPreviewStrokeWidth"
-                      :stroke-opacity="pointPreviewStrokeOpacity"
-                    />
-                  </svg>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <div class="grid grid-cols-1 sm:grid-cols-3 gap-2.5 w-full">
-            <div class="setting-card h-[50px] px-2.5 gap-1.5">
-              <label
-                class="setting-card-label text-xs xl:text-sm font-medium whitespace-nowrap"
-                for="edit-fill-opacity"
-                title="Opacité du fond (0 à 1)"
-              >
-                Opacité fond
-              </label>
-              <input
-                id="edit-fill-opacity"
-                v-model.number="editDraft.fillOpacity"
-                data-testid="fill-opacity-input"
-                type="number"
-                step="0.1"
-                min="0"
-                max="1"
-                placeholder="0–1"
-                class="setting-number-input w-12 sm:w-14"
-                @change="editDraft.fillOpacity = normalizeOpacity(editDraft.fillOpacity)"
-              />
-            </div>
-
-            <div class="setting-card h-[50px] px-2.5 gap-1.5">
-              <label
-                class="setting-card-label text-xs xl:text-sm font-medium whitespace-nowrap"
-                for="edit-stroke-opacity"
-                title="Opacité du contour (0 à 1)"
-              >
-                Opacité contour
-              </label>
-              <input
-                id="edit-stroke-opacity"
-                v-model.number="editDraft.strokeOpacity"
-                data-testid="stroke-opacity-input"
-                type="number"
-                step="0.1"
-                min="0"
-                max="1"
-                placeholder="0–1"
-                class="setting-number-input w-12 sm:w-14"
-                @change="editDraft.strokeOpacity = normalizeOpacity(editDraft.strokeOpacity)"
-              />
-            </div>
-
-            <div class="setting-card h-[50px] px-2.5 gap-1.5">
-              <label
-                class="setting-card-label text-xs xl:text-sm font-medium whitespace-nowrap"
-                for="edit-stroke-width"
-                title="Épaisseur du contour en pixels"
-              >
-                Épaisseur contour
-              </label>
-              <input
-                id="edit-stroke-width"
-                v-model.number="editDraft.strokeWidth"
-                data-testid="stroke-width-input"
-                type="number"
-                min="0"
-                :max="MAX_STROKE_WIDTH_PX"
-                class="setting-number-input w-12 sm:w-14"
-                @change="editDraft.strokeWidth = normalizeStrokeWidth(editDraft.strokeWidth)"
-              />
-            </div>
-          </div>
-        </div>
-      </fieldset>
-
-      <div class="modal-action mt-0 pt-3 border-t border-base-200 flex items-center justify-end gap-2">
-        <button
-          class="modal-secondary-btn w-32"
-          :disabled="isEditing"
-          @click="editFeatureDialogRef?.close()"
-        >
-          Annuler
-        </button>
-        <button
-          class="btn btn-primary rounded-lg w-32"
-          :disabled="isEditing"
-          @click="onEditFeature"
-        >
-          <span
-            v-if="isEditing"
-            class="loading loading-spinner loading-xs"
-          ></span>
-          <span v-else class="text-white">Modifier</span>
-        </button>
-      </div>
-    </div>
-    <form method="dialog" class="modal-backdrop">
-      <button :disabled="isEditing">close</button>
-    </form>
-  </dialog>
-
-  <CustomLabelStyleManager
-    ref="labelStyleManagerRef"
-    :styles="availableCustomLabelStyles"
-    @save="onSaveCustomLabelStyles"
+  <EditFeatureDialog
+    ref="editFeatureDialogRef"
+    :map-periods="props.mapPeriods"
+    :custom-label-styles="props.customLabelStyles"
+    @update-feature="(payload, callbacks) => emit('update-feature', payload, callbacks)"
+    @save-custom-label-styles="(styles) => emit('save-label-styles', styles)"
   />
 
   <!-- Delete map confirmation dialog -->
-  <dialog ref="deleteMapDialogRef" class="modal">
-    <div class="modal-box relative">
-      <button
-        type="button"
-        class="btn btn-sm btn-circle btn-ghost absolute right-4 top-4 z-10"
-        :disabled="isDeletingMap"
-        @click="deleteMapDialogRef?.close()"
-      >
-        ✕
-      </button>
-
-      <h3 class="text-xl font-bold pr-10">Supprimer la carte</h3>
-      <p class="py-4">
-        Êtes-vous sûr de vouloir supprimer la carte
-        <span class="font-semibold">{{ mapToDeleteTitle }}</span> ainsi que tous ses éléments ?
-        Cette action est irréversible.
-      </p>
-      <div class="modal-action mt-6 flex justify-end gap-2">
-        <button
-          type="button"
-          class="modal-secondary-btn w-32"
-          :disabled="isDeletingMap"
-          @click="deleteMapDialogRef?.close()"
-        >
-          Annuler
-        </button>
-        <button
-          type="button"
-          class="btn btn-error rounded-lg w-32 text-white"
-          :disabled="isDeletingMap"
-          @click="onDeleteMap"
-        >
-          <span
-            v-if="isDeletingMap"
-            class="loading loading-spinner loading-xs"
-          ></span>
-          <span v-else>Supprimer</span>
-        </button>
-      </div>
-    </div>
-    <form method="dialog" class="modal-backdrop">
-      <button :disabled="isDeletingMap">close</button>
-    </form>
-  </dialog>
+  <ConfirmDialog
+    v-if="isDeleteMapModalOpen"
+    title="Supprimer la carte"
+    :message="`Êtes-vous sûr de vouloir supprimer la carte ${mapToDeleteTitle} ainsi que tous ses éléments ? Cette action est irréversible.`"
+    confirm-label="Supprimer"
+    cancel-label="Annuler"
+    danger
+    @confirm="onDeleteMap"
+    @cancel="isDeleteMapModalOpen = false"
+  />
 
   <!-- Delete feature confirmation dialog -->
   <DeleteFeatureDialog
@@ -819,12 +361,11 @@
 
 <script setup lang="ts">
 import { computed, nextTick, ref, watch } from "vue";
-import type { Component, CSSProperties } from "vue";
+import type { Component } from "vue";
 import {
   ChatBubbleLeftEllipsisIcon,
   ChevronDownIcon,
   DocumentCheckIcon,
-  InformationCircleIcon,
   MapIcon,
   PencilSquareIcon,
   PhotoIcon,
@@ -837,40 +378,11 @@ import {
   type FeatureVisibilityGroupType,
 } from "../typescript/feature";
 import type { MapPeriod } from "../typescript/map";
-import type { CustomLabelStyle, LabelStyle } from "../utils/labelPresentation";
-import {
-  MAX_TEXT_SIZE_PX,
-  MIN_TEXT_SIZE_PX,
-  normalizeTextSizePx,
-  MAX_PREVIEW_FONT_SIZE_PX,
-  getLabelStylePreviewCss,
-  getWordTypeOptionLabel,
-  getWordTypeOptionStyle,
-  getCustomStyleObject,
-  getCustomStyleOptionLabel,
-  hasCustomStylePoint,
-} from "../utils/labelPresentation";
-import CustomLabelStyleManager from "./CustomLabelStyleManager.vue";
+import type { CustomLabelStyle } from "../utils/labelPresentation";
+import EditFeatureDialog from "./EditFeatureDialog.vue";
+import ConfirmDialog from "./ConfirmDialog.vue";
 import DeleteFeatureDialog from "./DeleteFeatureDialog.vue";
-import { getFeatureMapId, getFeatureMapIds, getMapElementType } from "../utils/featureHelpers";
-import {
-  WORD_TYPE_STYLES,
-  WORD_TYPE_TAXONOMY,
-  isTextFeature,
-  formatWordText,
-} from "../utils/wordStyles";
-import {
-  prepareFeatureForEdit,
-  coerceEditedFeature,
-  createFeaturesForSelectedMaps,
-  getWordTypePreviewStyle,
-  getDefaultTextSizePx,
-  normalizeOpacity,
-  normalizeStrokeWidth,
-  MAX_STROKE_WIDTH_PX,
-  type FeatureEditSubmitPayload,
-} from "../utils/featureTextEditing";
-import { rgbToHex } from "../utils/utils";
+import { getFeatureMapId, getFeatureMapIds } from "../utils/featureHelpers";
 import {
   groupFeaturesByType,
   groupFeaturesByMap,
@@ -878,9 +390,9 @@ import {
 } from "../utils/featureGrouping";
 import { isUnrecognizedTextFeature } from "../utils/textValidation";
 import { FolderArrowDownIcon, PlusIcon, DocumentDuplicateIcon } from "@heroicons/vue/24/solid";
-import { showAlert } from "../composables/useAlert";
 import { createFeatureDoubleClickHandler } from "../utils/featureInteraction";
 import { applySelectionModifier } from "../utils/selectionUtils";
+import { createActionCallbacks } from "../utils/actionCallbacks";
 
 const props = defineProps<{
   features: Feature[];
@@ -894,13 +406,31 @@ const props = defineProps<{
   selectedMapId?: string | null;
 }>();
 
-const editFeatureDialogRef = ref<HTMLDialogElement | undefined>(undefined);
-const labelTextareaRef = ref<HTMLTextAreaElement | null>(null);
-const featureToEdit = ref<Feature | undefined>(undefined);
-const editDraft = ref<FeatureEditSubmitPayload>({
-  name: "",
-  wordType: "city",
-});
+const emit = defineEmits([
+  "toggle-feature",
+  "open-add-image-feature-dialog",
+  "save-map",
+  "delete-feature",
+  "delete-map",
+  "add-map",
+  "duplicate-map",
+  "update-feature",
+  "validate-texts",
+  "select-feature",
+  "select-features",
+  "select-map",
+  "edit-map",
+  "save-label-styles",
+]);
+
+const editFeatureDialogRef = ref<InstanceType<typeof EditFeatureDialog> | null>(null);
+const isDeleteMapModalOpen = ref(false);
+const mapToDeleteId = ref<string | null>(null);
+const mapToDeleteTitle = ref<string>("");
+const isDeletingMap = ref(false);
+const isDeletingFeature = ref(false);
+const selectMapValidationDialogRef = ref<HTMLDialogElement | undefined>(undefined);
+const activeGroupType = ref<FeatureVisibilityGroupType | undefined>(undefined);
 
 function isFeatureNameMissing(feature: Feature): boolean {
   const name = feature.properties?.name?.trim().toLowerCase();
@@ -921,355 +451,7 @@ function onToggleFeatureCheckbox(featureId: string, event: Event) {
   emit("toggle-feature", featureId, target.checked);
 }
 
-function resizeLabelTextarea() {
-  const el = labelTextareaRef.value;
-  if (!el) return;
-  el.style.height = "auto";
-  el.style.height = `${el.scrollHeight}px`;
-}
 
-const areAllMapsSelected = computed(() => {
-  if (!props.mapPeriods || props.mapPeriods.length === 0) return false;
-  const selected = editDraft.value.selectedMapIds ?? [];
-  return props.mapPeriods.every((p: MapPeriod) => selected.includes(p.id));
-});
-
-function toggleSelectAllMaps() {
-  if (!props.mapPeriods) return;
-  if (areAllMapsSelected.value) {
-    editDraft.value.selectedMapIds = [];
-  } else {
-    editDraft.value.selectedMapIds = props.mapPeriods.map((p: MapPeriod) => p.id);
-  }
-}
-
-const isTextElement = computed(() => isTextFeature(featureToEdit.value));
-
-const activeCustomLabelStyle = computed<CustomLabelStyle | undefined>(() => {
-  const selection = editDraft.value.labelStyleSelection ?? "";
-  if (selection.startsWith("custom:")) {
-    const customId = selection.slice("custom:".length);
-    return (
-      availableCustomLabelStyles.value.find(
-        (item: CustomLabelStyle) => item.id === customId,
-      ) ?? editDraft.value.customLabelStyle ?? undefined
-    );
-  }
-  if (!selection && editDraft.value.customLabelStyleId) {
-    return (
-      availableCustomLabelStyles.value.find(
-        (item: CustomLabelStyle) => item.id === editDraft.value.customLabelStyleId,
-      ) ?? editDraft.value.customLabelStyle ?? undefined
-    );
-  }
-  return undefined;
-});
-
-const isEditingPoint = computed(() => {
-  if (!featureToEdit.value) return false;
-  if (isTextElement.value) {
-    if (activeCustomLabelStyle.value) {
-      return hasCustomStylePoint(activeCustomLabelStyle.value);
-    }
-    const entry = WORD_TYPE_TAXONOMY[editDraft.value.wordType as keyof typeof WORD_TYPE_TAXONOMY];
-    return (entry?.mapElementType ?? getMapElementType(featureToEdit.value)) === "point";
-  }
-  return getMapElementType(featureToEdit.value) === "point";
-});
-
-const isEditNameMissing = computed(() => {
-  return !editDraft.value.name?.trim();
-});
-
-const editModalNameText = computed(() => {
-  return editDraft.value.name?.trim() || "Élément sans nom";
-});
-
-const editModalTypeLabel = computed(() => {
-  if (isTextElement.value) return "du texte";
-  if (isEditingPoint.value) return "du point";
-  const elementType = featureToEdit.value
-    ? getMapElementType(featureToEdit.value)
-    : undefined;
-  if (elementType === "image") return "de l'image";
-  return "de la forme";
-});
-
-const editModalBoxClass = computed(() => {
-  if (!featureToEdit.value) return "max-w-3xl";
-  const elementType = getMapElementType(featureToEdit.value);
-  if (elementType === "image") return "max-w-xl";
-  return "max-w-6xl";
-});
-
-const isTextSizeOverMax = computed(() => {
-  const num = Number(editDraft.value.textSizePx);
-  return Number.isFinite(num) && num > MAX_TEXT_SIZE_PX;
-});
-
-const isPreviewClamped = computed(() => {
-  if (!isTextElement.value) return false;
-  const rawSize = Number(editDraft.value.textSizePx);
-  const textContent = editDraft.value.labelText || editDraft.value.name || "";
-  return (
-    (Number.isFinite(rawSize) && rawSize > MAX_PREVIEW_FONT_SIZE_PX) ||
-    textContent.length > 24
-  );
-});
-
-function onTextSizeChange() {
-  editDraft.value.textSizePx =
-    normalizeTextSizePx(editDraft.value.textSizePx) ?? defaultTextSizePx.value;
-}
-
-const editTextStyle = computed<CSSProperties>(() => {
-  if (!isTextElement.value) return {};
-  const style = activeCustomLabelStyle.value;
-
-  if (style) {
-    return getLabelStylePreviewCss(style, { limitSize: true, maxPx: 18 });
-  }
-  const preview = getWordTypePreviewStyle(
-    editDraft.value.wordType,
-    editDraft.value.textColorHex ?? editDraft.value.colorHex,
-    normalizeTextSizePx(editDraft.value.textSizePx),
-  );
-  return {
-    ...preview,
-    fontWeight: "bold",
-    fontSize: `${Math.min(parseInt(preview.fontSize, 10) || 14, MAX_PREVIEW_FONT_SIZE_PX)}px`,
-  };
-});
-
-watch(
-  () => [editDraft.value.name, editDraft.value.labelText, editTextStyle.value],
-  async () => {
-    await nextTick();
-    resizeLabelTextarea();
-  },
-);
-
-const defaultTextSizePx = computed(() =>
-  getDefaultTextSizePx(editDraft.value.wordType),
-);
-
-const selectedWordTypeSelectStyle = computed<CSSProperties>(() => {
-  if (activeCustomLabelStyle.value) {
-    return getCustomStyleObject(activeCustomLabelStyle.value);
-  }
-  return getWordTypeOptionStyle(editDraft.value.wordType);
-});
-
-const hasGeometryControls = computed(() => {
-  if (!featureToEdit.value) return false;
-  if (activeCustomLabelStyle.value || editDraft.value.customLabelStyleId) return false;
-  return isEditingPoint.value || !isTextElement.value;
-});
-
-const hasBottomRightSection = computed(
-  () => hasGeometryControls.value && isTextElement.value,
-);
-
-const geometrySectionTitle = computed(() => {
-  return isEditingPoint.value ? "Réglages du point" : "Réglages de la forme";
-});
-
-const geometrySectionHint = computed(() => {
-  if (isEditingPoint.value && isTextElement.value) {
-    return "Symbole associé au texte";
-  }
-  return isEditingPoint.value
-    ? "Symbole sur la carte"
-    : "Zone, polygone ou ligne";
-});
-
-const pointPreviewFillColor = computed(() => {
-  if (activeCustomLabelStyle.value) {
-    return (
-      activeCustomLabelStyle.value.pointColor ||
-      activeCustomLabelStyle.value.color ||
-      "#000000"
-    );
-  }
-  return editDraft.value.colorHex || "#000000";
-});
-
-const pointPreviewFillOpacity = computed(() => {
-  if (activeCustomLabelStyle.value) {
-    return activeCustomLabelStyle.value.pointFillOpacity ?? 0.5;
-  }
-  return normalizeOpacity(editDraft.value.fillOpacity) ?? 0.5;
-});
-
-const pointPreviewStrokeColor = computed(() => {
-  if (activeCustomLabelStyle.value) {
-    return (
-      activeCustomLabelStyle.value.pointStrokeColor ||
-      activeCustomLabelStyle.value.pointColor ||
-      activeCustomLabelStyle.value.color ||
-      "#000000"
-    );
-  }
-  return editDraft.value.strokeColorHex || editDraft.value.colorHex || "#000000";
-});
-
-const pointPreviewStrokeOpacity = computed(() => {
-  if (activeCustomLabelStyle.value) {
-    return activeCustomLabelStyle.value.pointStrokeOpacity ?? 1;
-  }
-  return normalizeOpacity(editDraft.value.strokeOpacity) ?? 1;
-});
-
-const pointPreviewStrokeWidth = computed(() => {
-  if (activeCustomLabelStyle.value) {
-    return activeCustomLabelStyle.value.pointStrokeWidth ?? 1;
-  }
-  return normalizeStrokeWidth(editDraft.value.strokeWidth) ?? 1;
-});
-
-const deleteMapDialogRef = ref<HTMLDialogElement | undefined>(undefined);
-const mapToDeleteId = ref<string | null>(null);
-const mapToDeleteTitle = ref<string>("");
-const isDeletingMap = ref(false);
-
-const isDeletingFeature = ref(false);
-
-const selectMapValidationDialogRef = ref<HTMLDialogElement | undefined>(undefined);
-
-const activeGroupType = ref<FeatureVisibilityGroupType | undefined>(undefined);
-
-const isEditing = ref(false);
-
-const emit = defineEmits([
-  "toggle-feature",
-  "open-add-image-feature-dialog",
-  "save-map",
-  "delete-feature",
-  "delete-map",
-  "add-map",
-  "duplicate-map",
-  "update-feature",
-  "validate-texts",
-  "select-feature",
-  "select-features",
-  "select-map",
-  "edit-map",
-  "save-label-styles",
-]);
-
-const labelStyleManagerRef = ref<InstanceType<typeof CustomLabelStyleManager> | null>(null);
-
-const localCustomStyles = ref<CustomLabelStyle[]>([]);
-
-watch(
-  () => props.customLabelStyles,
-  (styles: CustomLabelStyle[] | undefined) => {
-    if (styles) {
-      localCustomStyles.value = [...styles];
-    }
-  },
-  { immediate: true },
-);
-
-const availableCustomLabelStyles = computed(() => {
-  return localCustomStyles.value.length > 0
-    ? localCustomStyles.value
-    : props.customLabelStyles ?? [];
-});
-
-function onSaveCustomLabelStyles(styles: CustomLabelStyle[]) {
-  const previousIds = new Set(localCustomStyles.value.map((s: LabelStyle) => s.id));
-  localCustomStyles.value = [...styles];
-
-  // If a new style was created and saved, automatically select it for the current element
-  const newlyCreatedStyle = styles.find((s: CustomLabelStyle) => !previousIds.has(s.id));
-  if (newlyCreatedStyle) {
-    editDraft.value.labelStyleSelection = `custom:${newlyCreatedStyle.id}`;
-    editDraft.value.customLabelStyleId = newlyCreatedStyle.id;
-    editDraft.value.customLabelStyle = newlyCreatedStyle;
-    editDraft.value.colorHex = newlyCreatedStyle.color;
-    const baseText = editDraft.value.labelText || editDraft.value.name || "";
-    editDraft.value.labelText =
-      newlyCreatedStyle.textTransform === "uppercase" ? baseText.toUpperCase() : baseText;
-  } else if (editDraft.value.customLabelStyleId) {
-    const updated = styles.find((s: CustomLabelStyle) => s.id === editDraft.value.customLabelStyleId);
-    if (updated) {
-      editDraft.value.customLabelStyle = updated;
-      editDraft.value.colorHex = updated.color;
-      if (updated.textTransform === "uppercase" && editDraft.value.labelText) {
-        editDraft.value.labelText = editDraft.value.labelText.toUpperCase();
-      }
-    }
-  }
-  emit("save-label-styles", styles);
-}
-
-function onNameInput() {
-  if (!isTextElement.value) return;
-  const baseText = editDraft.value.name || "";
-  if (editDraft.value.customLabelStyle) {
-    editDraft.value.labelText =
-      editDraft.value.customLabelStyle.textTransform === "uppercase"
-        ? baseText.toUpperCase()
-        : baseText;
-  } else {
-    editDraft.value.labelText = formatWordText(baseText, editDraft.value.wordType);
-  }
-}
-
-function onLabelStyleSelectionChange() {
-  const selection = editDraft.value.labelStyleSelection ?? "";
-  if (selection.startsWith("custom:")) {
-    const style = availableCustomLabelStyles.value.find(
-      (item: CustomLabelStyle) => item.id === selection.slice("custom:".length),
-    );
-    if (!style) return;
-    editDraft.value.customLabelStyleId = style.id;
-    editDraft.value.customLabelStyle = style;
-    editDraft.value.colorHex = style.pointColor || style.color || "#000000";
-    editDraft.value.textColorHex = style.color || "#000000";
-    const baseText = editDraft.value.labelText || editDraft.value.name || "";
-    editDraft.value.labelText =
-      style.textTransform === "uppercase" ? baseText.toUpperCase() : baseText;
-    return;
-  }
-
-  const hadCustomStyle = Boolean(
-    editDraft.value.customLabelStyleId ||
-    editDraft.value.customLabelStyle ||
-    featureToEdit.value?.properties?.customLabelStyleId,
-  );
-  editDraft.value.customLabelStyleId = undefined;
-  editDraft.value.customLabelStyle = undefined;
-  const wordType = selection;
-  if (Object.prototype.hasOwnProperty.call(WORD_TYPE_TAXONOMY, wordType)) {
-    editDraft.value.wordType = wordType as keyof typeof WORD_TYPE_TAXONOMY;
-  }
-
-  if (hadCustomStyle) {
-    editDraft.value.colorHex = "#000000";
-    editDraft.value.textColorHex = "#000000";
-  } else {
-    const originalColorHex = featureToEdit.value
-      ? rgbToHex(featureToEdit.value.properties.colorRgb)
-      : undefined;
-    const originalTextColorHex = featureToEdit.value
-      ? rgbToHex(featureToEdit.value.properties.textColorRgb)
-      : undefined;
-    editDraft.value.colorHex = editDraft.value.colorHex || originalColorHex || "#000000";
-    editDraft.value.textColorHex =
-      editDraft.value.textColorHex ||
-      originalTextColorHex ||
-      (featureToEdit.value && getMapElementType(featureToEdit.value) === "label"
-        ? editDraft.value.colorHex
-        : "#000000");
-  }
-
-  editDraft.value.textSizePx = defaultTextSizePx.value;
-
-  const baseText = editDraft.value.labelText || editDraft.value.name || "";
-  editDraft.value.labelText = formatWordText(baseText, editDraft.value.wordType);
-}
 
 watch(
   () => props.selectedFeatureId,
@@ -1422,25 +604,8 @@ function getGroupIcon(type: FeatureVisibilityGroupType): Component {
   return groupIcons[type];
 }
 
-async function showEditFeatureDialog(feature: Feature) {
-  const state = prepareFeatureForEdit(feature);
-  featureToEdit.value = state.feature;
-  editDraft.value = state.draft;
-  if (editDraft.value.customLabelStyleId) {
-    const matched = availableCustomLabelStyles.value.find(
-      (s: CustomLabelStyle) => s.id === editDraft.value.customLabelStyleId,
-    );
-    if (matched) {
-      editDraft.value.customLabelStyle = matched;
-      editDraft.value.colorHex = matched.pointColor || matched.color || editDraft.value.colorHex || "#000000";
-      editDraft.value.textColorHex = matched.color || editDraft.value.textColorHex || "#000000";
-    }
-  }
-
-  await nextTick();
-  editFeatureDialogRef.value?.showModal();
-  await nextTick();
-  resizeLabelTextarea();
+function showEditFeatureDialog(feature: Feature) {
+  editFeatureDialogRef.value?.open(feature);
 }
 
 const lastSelectedAnchorId = ref<string | null>(props.selectedFeatureId ?? null);
@@ -1504,46 +669,6 @@ const { handleClick: onFeatureItemClick, handleDblClick: onFeatureItemDblClick }
     getId: (feature: Feature) => feature.id,
   });
 
-async function onEditFeature() {
-  if (!featureToEdit.value) return;
-  isEditing.value = true;
-
-  // For a label without geometry controls, its text colour is its primary element colour.
-  const isLabel = getMapElementType(featureToEdit.value) === "label";
-  if ((isLabel || !hasGeometryControls.value) && editDraft.value.textColorHex) {
-    editDraft.value.colorHex = editDraft.value.textColorHex;
-  }
-
-  const currentCustomStyle = activeCustomLabelStyle.value ?? editDraft.value.customLabelStyle;
-  const updatedFeature = coerceEditedFeature(featureToEdit.value, {
-    ...editDraft.value,
-    customLabelStyle: currentCustomStyle,
-  });
-
-  const allUpdated = createFeaturesForSelectedMaps(
-    updatedFeature,
-    editDraft.value.selectedMapIds,
-  );
-
-  featureToEdit.value = updatedFeature;
-
-  emit(
-    "update-feature",
-    (allUpdated.length === 1 ? allUpdated[0] : allUpdated) as any,
-    {
-      onSuccess: () => {
-        showAlert("success", "Élément mis à jour !");
-      },
-      onError: (message: string) => {
-        showAlert("error", message);
-      },
-    },
-  );
-
-  isEditing.value = false;
-  editFeatureDialogRef.value?.close();
-}
-
 function toggleAll(visible: boolean) {
   props.features.forEach((feature: Feature) => {
     emit("toggle-feature", feature.id, visible);
@@ -1553,23 +678,24 @@ function toggleAll(visible: boolean) {
 function showDeleteMapDialog(mapId: string, mapTitle: string) {
   mapToDeleteId.value = mapId;
   mapToDeleteTitle.value = mapTitle;
-  deleteMapDialogRef.value?.showModal();
+  isDeleteMapModalOpen.value = true;
 }
 
 async function onDeleteMap() {
   if (!mapToDeleteId.value) return;
   isDeletingMap.value = true;
-  emit("delete-map", mapToDeleteId.value, {
-    onSuccess: () => {
-      showAlert("success", "Carte supprimée avec succès !");
-      isDeletingMap.value = false;
-      deleteMapDialogRef.value?.close();
-    },
-    onError: (message: string) => {
-      showAlert("error", message || "Erreur lors de la suppression de la carte.");
-      isDeletingMap.value = false;
-    },
-  });
+  emit(
+    "delete-map",
+    mapToDeleteId.value,
+    createActionCallbacks({
+      successMessage: "Carte supprimée avec succès !",
+      errorFallback: "Erreur lors de la suppression de la carte.",
+      loadingRef: isDeletingMap,
+      onSuccess: () => {
+        isDeleteMapModalOpen.value = false;
+      },
+    }),
+  );
 }
 
 const deleteFeatureDialogRef = ref<InstanceType<typeof DeleteFeatureDialog> | null>(null);
@@ -1593,22 +719,19 @@ function showDeleteFeatureDialog(featureOrFeatures: Feature | Feature[]) {
 async function onDeleteFeaturesConfirmed(idsToDelete: string[]) {
   if (idsToDelete.length === 0) return;
   isDeletingFeature.value = true;
-  emit("delete-feature", idsToDelete.length === 1 ? idsToDelete[0] : idsToDelete, {
-    onSuccess: () => {
-      showAlert(
-        "success",
+  emit(
+    "delete-feature",
+    idsToDelete.length === 1 ? idsToDelete[0] : idsToDelete,
+    createActionCallbacks({
+      successMessage: () =>
         idsToDelete.length > 1
           ? `${idsToDelete.length} éléments supprimés avec succès !`
           : "Élément supprimé avec succès !",
-      );
-      isDeletingFeature.value = false;
-      deleteFeatureDialogRef.value?.close();
-    },
-    onError: (message: string) => {
-      showAlert("error", message || "Erreur lors de la suppression de l'élément.");
-      isDeletingFeature.value = false;
-    },
-  });
+      errorFallback: "Erreur lors de la suppression de l'élément.",
+      loadingRef: isDeletingFeature,
+      dialogRef: deleteFeatureDialogRef,
+    }),
+  );
 }
 
 async function onRemoveFromMapsConfirmed(payload: { featureIds: string[]; mapIdsToRemove: string[] }) {
@@ -1646,22 +769,15 @@ async function onRemoveFromMapsConfirmed(payload: { featureIds: string[]; mapIds
   emit(
     "update-feature",
     (updatedList.length === 1 ? updatedList[0] : updatedList) as any,
-    {
-      onSuccess: () => {
-        showAlert(
-          "success",
-          updatedList.length > 1
-            ? `${updatedList.length} éléments retirés avec succès !`
-            : "Élément retiré de la carte avec succès !",
-        );
-        isDeletingFeature.value = false;
-        deleteFeatureDialogRef.value?.close();
-      },
-      onError: (message?: string) => {
-        showAlert("error", message || "Erreur lors du retrait de l'élément.");
-        isDeletingFeature.value = false;
-      },
-    },
+    createActionCallbacks({
+      successMessage: () =>
+        updatedList.length > 1
+          ? `${updatedList.length} éléments retirés avec succès !`
+          : "Élément retiré de la carte avec succès !",
+      errorFallback: "Erreur lors du retrait de l'élément.",
+      loadingRef: isDeletingFeature,
+      dialogRef: deleteFeatureDialogRef,
+    }),
   );
 }
 

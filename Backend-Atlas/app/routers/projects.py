@@ -16,7 +16,7 @@ from sqlalchemy.orm import Session, defer
 from app.database.session import get_async_session
 from app.models.features import Feature
 from app.models.map import Map
-from app.models.map_import import EXTRACTION_FAILED, MapImport
+from app.models.map_import import MapImport
 from app.models.project import Project
 from app.models.user import User
 from app.schemas.project import ProjectOut

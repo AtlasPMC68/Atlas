@@ -1,6 +1,6 @@
 <template>
   <dialog ref="dialogRef" class="modal">
-    <div class="modal-box w-11/12 max-w-5xl max-h-[90vh] md:h-[680px] flex flex-col gap-4 relative">
+    <div class="modal-box w-11/12 max-w-6xl max-h-[90vh] md:h-[680px] flex flex-col gap-4 relative">
       <button
         type="button"
         class="btn btn-sm btn-circle btn-ghost absolute right-4 top-4 z-10"
@@ -304,8 +304,8 @@
             </div>
 
             <div class="grid grid-cols-1 md:grid-cols-3 gap-2.5 w-full">
-              <div class="setting-card">
-                <label class="setting-card-label" for="custom-style-point-fill-opacity">
+              <div class="setting-card px-2 gap-1 min-w-0">
+                <label class="setting-card-label text-xs xl:text-sm font-medium whitespace-nowrap overflow-visible shrink-0" for="custom-style-point-fill-opacity">
                   Opacité fond
                 </label>
                 <input
@@ -316,13 +316,13 @@
                   min="0"
                   max="1"
                   placeholder="0–1"
-                  class="setting-number-input"
+                  class="setting-number-input !w-11 sm:!w-12 text-xs sm:text-sm px-0.5 shrink-0"
                   @change="syncLiveDraft"
                 />
               </div>
 
-              <div class="setting-card">
-                <label class="setting-card-label" for="custom-style-point-stroke-opacity">
+              <div class="setting-card px-2 gap-1 min-w-0">
+                <label class="setting-card-label text-xs xl:text-sm font-medium whitespace-nowrap overflow-visible shrink-0" for="custom-style-point-stroke-opacity">
                   Opacité contour
                 </label>
                 <input
@@ -333,13 +333,13 @@
                   min="0"
                   max="1"
                   placeholder="0–1"
-                  class="setting-number-input"
+                  class="setting-number-input !w-11 sm:!w-12 text-xs sm:text-sm px-0.5 shrink-0"
                   @change="syncLiveDraft"
                 />
               </div>
 
-              <div class="setting-card">
-                <label class="setting-card-label" for="custom-style-point-stroke-width">
+              <div class="setting-card px-2 gap-1 min-w-0">
+                <label class="setting-card-label text-xs xl:text-sm font-medium whitespace-nowrap overflow-visible shrink-0" for="custom-style-point-stroke-width">
                   Épaisseur contour
                 </label>
                 <input
@@ -348,7 +348,7 @@
                   type="number"
                   min="0"
                   max="12"
-                  class="setting-number-input"
+                  class="setting-number-input !w-11 sm:!w-12 text-xs sm:text-sm px-0.5 shrink-0"
                   @change="syncLiveDraft"
                 />
               </div>

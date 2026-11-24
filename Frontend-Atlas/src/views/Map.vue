@@ -5,7 +5,7 @@
     <div class="flex flex-1 min-h-0 overflow-hidden">
       <div
         v-show="isSidebarVisible"
-        class="h-full min-h-0 shrink-0 overflow-hidden bg-base-200 border-r border-base-300 py-3 px-1.5 flex flex-col"
+        class="h-full min-h-0 shrink-0 overflow-auto bg-base-200 border-r border-base-300 py-3 px-1.5 flex flex-col"
         :style="{ width: `${sidebarWidth}px` }"
       >
         <FeatureVisibilityControls
@@ -241,6 +241,7 @@ import {
   removeCustomLabelStyleFromFeature,
 } from "../utils/featureTextEditing";
 import { useMapTimeline } from "../composables/useMapTimeline";
+import { useResizablePanel } from "../composables/useResizablePanel";
 
 const route = useRoute();
 const router = useRouter();
@@ -412,19 +413,39 @@ const isFullscreen = ref(false);
 const isTimelineVisible = ref(true);
 const isLegendVisible = ref(true);
 
-// Panel resizing states (Point 7)
-const sidebarWidth = ref(350);
-let sidebarResizeStartX = 0;
-let sidebarResizeStartWidth = 0;
-let isResizingSidebar = false;
+// Panel resizing composables
+const {
+  size: sidebarWidth,
+  startResize: startSidebarResize,
+  resizeBy: resizeSidebarBy,
+  stopResize: stopSidebarResize,
+} = useResizablePanel({
+  dimension: "width",
+  initial: 350,
+  min: 240,
+  max: () => Math.min(600, Math.floor(window.innerWidth * 0.6)),
+  cursor: "col-resize",
+  onResize: () => leafletMap.value?.invalidateSize({ debounceMoveend: true }),
+  onResizeEnd: () => leafletMap.value?.invalidateSize(),
+});
 
-const timelineHeight = ref<number | null>(null);
-let timelineResizeStartY = 0;
-let timelineResizeStartHeight = 0;
-let isResizingTimeline = false;
-
-let previousBodyCursor = "";
-let previousBodyUserSelect = "";
+const {
+  size: timelineHeight,
+  startResize: startTimelineResize,
+  resizeBy: resizeTimelineBy,
+  stopResize: stopTimelineResize,
+} = useResizablePanel({
+  dimension: "height",
+  initial: null,
+  min: 110,
+  max: () => Math.min(450, Math.floor(window.innerHeight * 0.55)),
+  cursor: "row-resize",
+  direction: "reverse",
+  elementSelector: ".map-timeline-toolbar",
+  defaultFallback: 140,
+  onResize: () => leafletMap.value?.invalidateSize(),
+  onResizeEnd: () => leafletMap.value?.invalidateSize(),
+});
 
 function toggleSidebar() {
   isSidebarVisible.value = !isSidebarVisible.value;
@@ -461,83 +482,6 @@ function onFullscreenChange() {
   nextTick(() => {
     leafletMap.value?.invalidateSize();
   });
-}
-
-function resizeTimelineBy(delta: number) {
-  const el = document.querySelector(".map-timeline-toolbar") as HTMLElement | null;
-  const currentHeight = timelineHeight.value ?? el?.offsetHeight ?? 160;
-  const maxHeight = Math.min(450, Math.floor(window.innerHeight * 0.55));
-  timelineHeight.value = Math.max(
-    110,
-    Math.min(maxHeight, currentHeight + delta),
-  );
-  nextTick(() => leafletMap.value?.invalidateSize());
-}
-
-function onTimelineResizeMove(event: MouseEvent) {
-  const maxHeight = Math.min(450, Math.floor(window.innerHeight * 0.55));
-  const deltaY = timelineResizeStartY - event.clientY;
-  timelineHeight.value = Math.max(
-    110,
-    Math.min(maxHeight, timelineResizeStartHeight + deltaY),
-  );
-  leafletMap.value?.invalidateSize();
-}
-
-function stopTimelineResize() {
-  window.removeEventListener("mousemove", onTimelineResizeMove);
-  window.removeEventListener("mouseup", stopTimelineResize);
-  if (isResizingTimeline) {
-    document.body.style.cursor = previousBodyCursor;
-    document.body.style.userSelect = previousBodyUserSelect;
-    isResizingTimeline = false;
-    nextTick(() => leafletMap.value?.invalidateSize());
-  }
-}
-
-function startTimelineResize(event: MouseEvent) {
-  const el = document.querySelector(".map-timeline-toolbar") as HTMLElement | null;
-  timelineResizeStartY = event.clientY;
-  timelineResizeStartHeight = timelineHeight.value ?? el?.offsetHeight ?? 140;
-  timelineHeight.value = timelineResizeStartHeight;
-  previousBodyCursor = document.body.style.cursor;
-  previousBodyUserSelect = document.body.style.userSelect;
-  isResizingTimeline = true;
-  document.body.style.cursor = "row-resize";
-  document.body.style.userSelect = "none";
-  window.addEventListener("mousemove", onTimelineResizeMove);
-  window.addEventListener("mouseup", stopTimelineResize);
-}
-
-let sidebarResizeRaf: number | null = null;
-
-function requestMapInvalidateSize() {
-  if (sidebarResizeRaf !== null) return;
-  sidebarResizeRaf = window.requestAnimationFrame(() => {
-    sidebarResizeRaf = null;
-    leafletMap.value?.invalidateSize({ debounceMoveend: true });
-  });
-}
-
-function resizeSidebarBy(delta: number) {
-  const maxWidth = Math.min(600, Math.floor(window.innerWidth * 0.6));
-  sidebarWidth.value = Math.max(
-    240,
-    Math.min(maxWidth, sidebarWidth.value + delta),
-  );
-  nextTick(() => leafletMap.value?.invalidateSize());
-}
-
-function onSidebarResizeMove(event: MouseEvent) {
-  const maxWidth = Math.min(600, Math.floor(window.innerWidth * 0.6));
-  sidebarWidth.value = Math.max(
-    240,
-    Math.min(
-      maxWidth,
-      sidebarResizeStartWidth + event.clientX - sidebarResizeStartX,
-    ),
-  );
-  requestMapInvalidateSize();
 }
 
 function copySelectedFeature(): boolean {
@@ -624,33 +568,6 @@ function duplicateFeature(feature: Feature) {
 
 function onDirectDeleteFeature(feature: Feature) {
   featureVisibilityControlsRef.value?.showDeleteFeatureDialog(feature);
-}
-
-function stopSidebarResize() {
-  window.removeEventListener("mousemove", onSidebarResizeMove);
-  window.removeEventListener("mouseup", stopSidebarResize);
-  if (isResizingSidebar) {
-    document.body.style.cursor = previousBodyCursor;
-    document.body.style.userSelect = previousBodyUserSelect;
-    isResizingSidebar = false;
-    if (sidebarResizeRaf !== null) {
-      window.cancelAnimationFrame(sidebarResizeRaf);
-      sidebarResizeRaf = null;
-    }
-    leafletMap.value?.invalidateSize();
-  }
-}
-
-function startSidebarResize(event: MouseEvent) {
-  sidebarResizeStartX = event.clientX;
-  sidebarResizeStartWidth = sidebarWidth.value;
-  previousBodyCursor = document.body.style.cursor;
-  previousBodyUserSelect = document.body.style.userSelect;
-  isResizingSidebar = true;
-  document.body.style.cursor = "col-resize";
-  document.body.style.userSelect = "none";
-  window.addEventListener("mousemove", onSidebarResizeMove);
-  window.addEventListener("mouseup", stopSidebarResize);
 }
 
 const featureVisibility = ref<Map<string, boolean>>(new Map());
@@ -1175,11 +1092,12 @@ async function onDeleteMap(
     }
 
     await loadProjectMapsForTimeline();
+    await loadInitialFeatures();
 
     if (
-      timelineMarkerYears.value.length > 0 &&
-      timelineMarkerYears.value[0] != null &&
-      !timelineMarkerYears.value.includes(selectedYear.value)
+      timelineMarkerYears.value.length > 0
+      && timelineMarkerYears.value[0] != null
+      && !timelineMarkerYears.value.includes(selectedYear.value)
     ) {
       selectedYear.value = timelineMarkerYears.value[0];
     }
@@ -1354,10 +1272,6 @@ function selectMap(mapId: string) {
     mapPeriods.value.find((p: MapPeriod) => String(p.id) === String(mapId));
 
   if (!period) return;
-
-  if (timelineMode.value === "global") {
-    timelineMode.value = "specific";
-  }
 
   const targetYear = (period as any).startYear ?? toYear(period.startDate);
   const targetExactDate =
@@ -1984,6 +1898,9 @@ function onDocumentClick(e: MouseEvent) {
     if (selectedFeatureId.value) {
       selectedFeatureId.value = null;
     }
+    if (selectedMapId.value) {
+      selectedMapId.value = null;
+    }
     return;
   }
   if (
@@ -2007,6 +1924,9 @@ function onDocumentClick(e: MouseEvent) {
   if (selectedFeatureId.value || multiSelectedFeatureIds.value.length > 0) {
     selectedFeatureId.value = null;
     multiSelectedFeatureIds.value = [];
+  }
+  if (selectedMapId.value) {
+    selectedMapId.value = null;
   }
 }
 

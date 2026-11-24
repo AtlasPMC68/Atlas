@@ -27,7 +27,6 @@ from app.utils.legend import (
     legend_to_entry,
     parse_legend_bounds,
     parse_legend_entry,
-    point_in_any_bounds,
     polygon_center_in_ignored_areas,
 )
 

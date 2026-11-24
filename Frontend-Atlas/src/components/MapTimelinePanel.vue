@@ -15,12 +15,12 @@
 
   <!-- Timeline panel with hide toggle and duplication button (Points 5, 6, 7) -->
   <div
-    class="map-timeline-toolbar relative z-[2000] flex flex-col bg-base-100 border-t border-base-300 overflow-visible"
+    class="map-timeline-toolbar relative z-[2000] flex flex-col bg-base-100 border-t border-base-300 overflow-hidden"
     :style="isTimelineVisible && timelineHeight ? { height: `${timelineHeight}px` } : {}"
   >
     <!-- Top bar with Filter Modes and Map Duplication -->
     <div
-      class="map-timeline-topbar shrink-0 relative flex items-center justify-between px-3 py-1.5 border-b border-base-200 text-xs font-medium whitespace-nowrap bg-base-100 z-0"
+      class="map-timeline-topbar shrink-0 relative flex items-center justify-between px-3 py-1.5 border-b border-base-200 text-xs font-medium whitespace-nowrap bg-base-100 z-0 overflow-x-auto overflow-y-hidden"
     >
       <!-- Left section: Nom du projet -->
       <div class="flex items-center gap-2 min-w-0 pr-4">
@@ -90,7 +90,7 @@
     <!-- Middle scrollable area containing the timeline tracks, ticks, labels, and legend -->
     <div
       v-show="isTimelineVisible"
-      class="map-timeline-slider flex-1 min-h-0 w-full overflow-visible px-3 pt-3 pb-1 relative z-20"
+      class="map-timeline-slider flex-1 min-h-0 w-full overflow-auto px-3 pt-3 pb-1 relative z-20"
     >
       <TimelineSlider
         :year="year"

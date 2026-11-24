@@ -224,18 +224,14 @@ async def delete_map_in_db(
         if other_map_ids:
             try:
                 next_map_uuid = UUID(other_map_ids[0])
-                if feat_map_id_str == map_id_str:
+                if feat_map_id_str == map_id_str or feat_map_id_str is None:
                     setattr(feat, "map_id", next_map_uuid)
                 setattr(feat, "data", update_feature_map_ids(feat_data, other_map_ids))
                 flag_modified(feat, "data")
             except Exception:
-                if feat_map_id_str == map_id_str:
-                    await db.delete(feat)
-        elif feat_map_id_str == map_id_str:
-            await db.delete(feat)
+                await db.delete(feat)
         else:
-            setattr(feat, "data", update_feature_map_ids(feat_data, []))
-            flag_modified(feat, "data")
+            await db.delete(feat)
 
     await db.execute(delete(MapImport).where(MapImport.map_id == map_id))
     await db.execute(delete(Map).where(Map.id == map_id))
