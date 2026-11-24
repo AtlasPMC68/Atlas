@@ -157,7 +157,7 @@
                 >
                   <div class="flex items-center gap-1.5 flex-1 min-w-0 py-0 pl-0">
                     <span
-                      v-if="!feature.properties?.name?.trim()"
+                      v-if="isFeatureNameMissing(feature)"
                       class="text-error font-extrabold text-sm leading-none shrink-0"
                       title="Nom manquant"
                     >
@@ -167,25 +167,15 @@
                       type="checkbox"
                       :checked="featureVisibility.get(feature.id) !== false"
                       @click.stop
-                      @change="
-                        $emit(
-                          'toggle-feature',
-                          feature.id,
-                          ($event.target as HTMLInputElement).checked,
-                        )
-                      "
+                      @change="onToggleFeatureCheckbox(feature.id, $event)"
                       class="checkbox checkbox-xs checkbox-primary shrink-0"
                     />
                     <span
                       class="label-text text-sm truncate flex-1 min-w-0 select-none"
-                      :title="feature.properties?.name?.trim() || 'Nom manquant'"
+                      :class="{ 'text-error font-medium': isFeatureNameMissing(feature) }"
+                      :title="getFeatureDisplayName(feature)"
                     >
-                      <span
-                        class="truncate block"
-                        :class="!feature.properties?.name?.trim() ? 'text-error font-medium' : ''"
-                      >
-                        {{ feature.properties?.name?.trim() || "Nom manquant" }}
-                      </span>
+                      {{ getFeatureDisplayName(feature) }}
                     </span>
                     <span
                       v-if="feature.properties?.startYear != null || feature.properties?.endYear != null"
@@ -242,7 +232,7 @@
         <div class="flex flex-col gap-1.5">
           <button
             class="btn btn-primary btn-sm w-full font-bold"
-            @click="$emit('add-map')"
+            @click="emit('add-map')"
           >
             <PlusIcon class="w-5 h-5" />
             Ajouter une carte
@@ -251,7 +241,7 @@
             class="btn btn-outline btn-primary btn-sm w-full font-bold"
             data-testid="sidebar-duplicate-map-button"
             title="Dupliquer entièrement une carte"
-            @click="$emit('duplicate-map')"
+            @click="emit('duplicate-map')"
           >
             <DocumentDuplicateIcon class="w-4 h-4" />
             Dupliquer une carte
@@ -261,14 +251,14 @@
         <div class="flex gap-2 items-center">
           <button
             class="btn btn-outline btn-primary btn-sm flex-1 font-bold"
-            @click="$emit('open-add-image-feature-dialog')"
+            @click="emit('open-add-image-feature-dialog')"
           >
             <PlusIcon class="w-5 h-5" />
             Image
           </button>
           <button
             class="btn btn-outline btn-primary btn-sm flex-1 font-bold"
-            @click="$emit('save-map')"
+            @click="emit('save-map')"
           >
             <FolderArrowDownIcon class="w-5 h-5" />
             Enregistrer
@@ -869,8 +859,7 @@
 
 <script setup lang="ts">
 import { computed, nextTick, ref, watch } from "vue";
-import type { Component } from "vue";
-import type { CSSProperties } from "vue";
+import type { Component, CSSProperties } from "vue";
 import {
   ChatBubbleLeftEllipsisIcon,
   ChevronDownIcon,
@@ -932,9 +921,7 @@ import { isUnrecognizedTextFeature } from "../utils/textValidation";
 import { FolderArrowDownIcon, PlusIcon, DocumentDuplicateIcon } from "@heroicons/vue/24/solid";
 import { showAlert } from "../composables/useAlert";
 import { createFeatureDoubleClickHandler } from "../utils/featureInteraction";
-import {
-  applySelectionModifier,
-} from "../utils/selectionUtils";
+import { applySelectionModifier } from "../utils/selectionUtils";
 
 const props = defineProps<{
   features: Feature[];
@@ -956,6 +943,25 @@ const editDraft = ref<FeatureEditSubmitPayload>({
   wordType: "city",
 });
 
+function isFeatureNameMissing(feature: Feature): boolean {
+  const name = feature.properties?.name?.trim().toLowerCase();
+  return !name || name === "nom manquant" || name === "! nom manquant";
+}
+
+function getFeatureDisplayName(feature: Feature): string {
+  const name = feature.properties?.name?.trim();
+  if (!name || isFeatureNameMissing(feature)) {
+    return "Nom manquant";
+  }
+  return name;
+}
+
+function onToggleFeatureCheckbox(featureId: string, event: Event) {
+  const target = event.target as HTMLInputElement | null;
+  if (!target) return;
+  emit("toggle-feature", featureId, target.checked);
+}
+
 function resizeLabelTextarea() {
   const el = labelTextareaRef.value;
   if (!el) return;
@@ -966,7 +972,7 @@ function resizeLabelTextarea() {
 const areAllMapsSelected = computed(() => {
   if (!props.mapPeriods || props.mapPeriods.length === 0) return false;
   const selected = editDraft.value.selectedMapIds ?? [];
-  return props.mapPeriods.every((p: { id: any; }) => selected.includes(p.id));
+  return props.mapPeriods.every((p: MapPeriod) => selected.includes(p.id));
 });
 
 const hasCustomDate = computed(() => {
@@ -982,7 +988,7 @@ function toggleSelectAllMaps() {
   if (areAllMapsSelected.value) {
     editDraft.value.selectedMapIds = [];
   } else {
-    editDraft.value.selectedMapIds = props.mapPeriods.map((p: { id: any; }) => p.id);
+    editDraft.value.selectedMapIds = props.mapPeriods.map((p: MapPeriod) => p.id);
   }
 }
 
@@ -1231,7 +1237,7 @@ function onSaveCustomLabelStyles(styles: CustomLabelStyle[]) {
   localCustomStyles.value = [...styles];
 
   // If a new style was created and saved, automatically select it for the current element
-  const newlyCreatedStyle = styles.find((s) => !previousIds.has(s.id));
+  const newlyCreatedStyle = styles.find((s: CustomLabelStyle) => !previousIds.has(s.id));
   if (newlyCreatedStyle) {
     editDraft.value.labelStyleSelection = `custom:${newlyCreatedStyle.id}`;
     editDraft.value.customLabelStyleId = newlyCreatedStyle.id;
@@ -1241,7 +1247,7 @@ function onSaveCustomLabelStyles(styles: CustomLabelStyle[]) {
     editDraft.value.labelText =
       newlyCreatedStyle.textTransform === "uppercase" ? baseText.toUpperCase() : baseText;
   } else if (editDraft.value.customLabelStyleId) {
-    const updated = styles.find((s) => s.id === editDraft.value.customLabelStyleId);
+    const updated = styles.find((s: CustomLabelStyle) => s.id === editDraft.value.customLabelStyleId);
     if (updated) {
       editDraft.value.customLabelStyle = updated;
       editDraft.value.colorHex = updated.color;
@@ -1331,7 +1337,7 @@ watch(
     requestAnimationFrame(() => {
       const el = Array.from(
         document.querySelectorAll<HTMLElement>("[data-feature-item-id]"),
-      ).find((item) => String(item.dataset.featureItemId) === String(newId));
+      ).find((item: HTMLElement) => String(item.dataset.featureItemId) === String(newId));
       el?.scrollIntoView?.({ block: "center", behavior: "smooth" });
     });
   },
@@ -1476,7 +1482,7 @@ const lastSelectedAnchorId = ref<string | null>(props.selectedFeatureId ?? null)
 
 watch(
   () => props.selectedFeatureId,
-  (newId) => {
+  (newId: string | null | undefined) => {
     if (newId) lastSelectedAnchorId.value = String(newId);
   },
 );
@@ -1491,7 +1497,7 @@ function isFeatureSelected(id: string | number | undefined): boolean {
   if (props.selectedFeatureId && String(props.selectedFeatureId) === strId) return true;
   if (
     props.multiSelectedFeatureIds &&
-    props.multiSelectedFeatureIds.some((i) => String(i) === strId)
+    props.multiSelectedFeatureIds.some((i: string) => String(i) === strId)
   )
     return true;
   return false;
@@ -1639,7 +1645,7 @@ async function onRemoveFromMapsConfirmed(payload: { featureIds: string[]; mapIds
   if (featureIds.length === 0 || mapIdsToRemove.length === 0) return;
 
   const removeSet = new Set(mapIdsToRemove.map(String));
-  const feats = props.features.filter((f) => featureIds.includes(String(f.id)));
+  const feats = props.features.filter((f: Feature) => featureIds.includes(String(f.id)));
   if (feats.length === 0) return;
 
   isDeletingFeature.value = true;
@@ -1647,7 +1653,7 @@ async function onRemoveFromMapsConfirmed(payload: { featureIds: string[]; mapIds
 
   for (const feat of feats) {
     const existingIds = getFeatureMapIds(feat);
-    const nextMapIds = existingIds.filter((id) => !removeSet.has(String(id)));
+    const nextMapIds = existingIds.filter((id: string) => !removeSet.has(String(id)));
     const newMainMapId = nextMapIds.length > 0 ? nextMapIds[0] : null;
 
     const updated: Feature = {

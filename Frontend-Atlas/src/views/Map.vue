@@ -712,6 +712,31 @@ const {
   },
 });
 
+function onTimelineYearUpdate(year: number) {
+  selectedYear.value = year;
+  selectedMapId.value = null;
+}
+
+function onTimelineExactDateChange(date: string | null) {
+  selectedMapId.value = null;
+  onExactDateChange(date);
+}
+
+function onTimelineSelectDate() {
+  selectedMapId.value = null;
+  onTimelineDateSelect();
+}
+
+function onTimelinePrevMilestone() {
+  selectedMapId.value = null;
+  goToPrevMilestone();
+}
+
+function onTimelineNextMilestone() {
+  selectedMapId.value = null;
+  goToNextMilestone();
+}
+
 watch(
   [selectedYear, selectedExactDate, timelineMode],
   async () => {
@@ -800,6 +825,7 @@ function commitFeatureSnapshot(next: Feature[], label?: string) {
 }
 
 function resetMapSelection() {
+  selectedMapId.value = null;
   mapGeoJsonRef.value?.resetSelection();
 }
 
@@ -1111,6 +1137,9 @@ async function onDeleteMap(
     }
 
     const mapIdNorm = String(mapId).trim().toLowerCase();
+    if (selectedMapId.value && selectedMapId.value.trim().toLowerCase() === mapIdNorm) {
+      selectedMapId.value = null;
+    }
     mapPeriods.value = mapPeriods.value.filter(
       (p: MapPeriod) => String(p.id).trim().toLowerCase() !== mapIdNorm,
     );
