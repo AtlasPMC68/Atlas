@@ -657,13 +657,13 @@
                 <span class="text-sm truncate">{{ period.title }}</span>
               </label>
             </div>
-            <span
+            <div
               v-if="hasCustomDate"
-              class="text-xs text-orange-700 bg-white border border-orange-500 rounded px-2 py-1 mt-1"
+              class="alert alert-info py-1.5 px-2.5 text-xs rounded-lg flex items-center gap-2 mt-1"
             >
-              Période personnalisée active : l'élément sera classé comme « élément général » (sans carte) 
-              et visible uniquement pendant la période définie.
-            </span>
+              <InformationCircleIcon class="w-4 h-4 shrink-0 text-info" />
+              <span>Période personnalisée active : l'élément sera classé comme « élément général » (sans carte) et visible uniquement pendant la période définie.</span>
+            </div>
             <span v-else class="field-hint">
               Si aucune carte n'est sélectionnée, l'élément reste dans « Éléments généraux ».
             </span>

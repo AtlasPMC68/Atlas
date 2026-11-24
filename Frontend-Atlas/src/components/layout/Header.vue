@@ -60,10 +60,11 @@
             <button
               type="button"
               @click="logout"
-              class="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg shadow-sm hover:bg-gray-50 hover:text-gray-900 transition-colors"
-              title="Se déconnecter"
+              class="text-gray-700 hover:text-red-600 p-1.5 rounded-lg hover:bg-gray-100 transition-colors flex items-center"
+              title="Déconnexion"
+              aria-label="Déconnexion"
             >
-              Déconnexion
+              <ArrowRightOnRectangleIcon class="h-7 w-7" />
             </button>
           </template>
 
@@ -93,7 +94,11 @@
 
 <script setup lang="ts">
 import { onMounted } from "vue";
-import { MapIcon, UserCircleIcon } from "@heroicons/vue/24/outline";
+import {
+  MapIcon,
+  UserCircleIcon,
+  ArrowRightOnRectangleIcon,
+} from "@heroicons/vue/24/outline";
 import keycloak from "../../keycloak";
 import { useCurrentUser } from "../../composables/useCurrentUser";
 
