@@ -14,13 +14,13 @@
         </button>
       </div>
 
-      <!-- Main 2x2 grid: Row 1 (List | Text settings), Row 2 (Preview | Point settings) -->
+      <!-- Two columns: list + preview | text settings + point settings -->
       <form
-        class="grid grid-cols-1 md:grid-cols-[1fr_1.45fr] md:grid-rows-[auto_minmax(0,1fr)] flex-1 min-h-0 py-4 gap-y-3 overflow-y-auto md:overflow-hidden"
+        class="grid grid-cols-1 md:grid-cols-[1fr_1.45fr] flex-1 min-h-0 py-4 gap-y-3 overflow-y-auto md:overflow-hidden"
         @submit.prevent="submitDraft"
       >
-        <!-- Row 1, Col 1: Styles list -->
-        <div class="flex flex-col gap-3 min-w-0 pb-4 md:pr-6 md:min-h-0">
+        <!-- Left: style list and preview -->
+        <div class="flex flex-col gap-3 min-w-0 min-h-0 md:pr-6">
           <div class="flex items-center justify-between gap-2 min-h-[2rem] shrink-0">
             <h4 class="section-title">Styles personnalisés</h4>
             <button
@@ -93,10 +93,34 @@
               Aucun style personnalisé.
             </p>
           </div>
+
+          <div class="flex flex-col gap-2.5 shrink-0 pt-3 border-t border-gray-200">
+            <div class="flex items-center justify-between min-h-[1.75rem]">
+              <h4 class="section-title">Aperçu</h4>
+            </div>
+            <div v-if="isTextStyleActive" class="preview-frame min-h-[108px] flex items-center p-3">
+              <div
+                class="preview-box overflow-hidden max-w-full px-3.5 py-2 w-full flex items-center gap-2"
+                :style="{ ...previewStyle(currentLiveStyle, true, 44), lineHeight: '1.15' }"
+              >
+                <PointSwatch
+                  v-if="draft.hasPoint"
+                  :fill="draft.pointColor || '#000000'"
+                  :fill-opacity="draft.pointFillOpacity"
+                  :stroke="draft.pointStrokeColor || '#000000'"
+                  :stroke-width="Math.min(pointPreviewStrokeWidth, 2)"
+                  :stroke-opacity="draft.pointStrokeOpacity"
+                />
+                <span class="truncate min-w-0 max-w-full">
+                  {{ draft.name.trim() || "Exemple de texte" }}
+                </span>
+              </div>
+            </div>
+          </div>
         </div>
 
-        <!-- Row 1, Col 2: Text style settings -->
-        <div class="flex flex-col gap-3 min-w-0 pb-3 md:border-l md:border-gray-200 md:pl-6">
+        <!-- Right: typography then point settings, stacked with no empty gap -->
+        <div class="flex flex-col gap-3 min-w-0 min-h-0 md:border-l md:border-gray-200 md:pl-6">
           <div class="flex items-center justify-between gap-2 min-h-[2rem] shrink-0">
             <h4 class="section-title">
               {{ editingId ? "Modifier un style" : "Créer un style" }}
@@ -213,35 +237,8 @@
               </div>
             </div>
           </div>
-        </div>
 
-        <!-- Row 2, Col 1: Preview (horizontally aligned with Point settings) -->
-        <div class="flex flex-col gap-2.5 min-w-0 min-h-0 pt-3 border-t border-gray-200 md:pr-6">
-          <div class="flex items-center justify-between min-h-[1.75rem]">
-            <h4 class="section-title">Aperçu</h4>
-          </div>
-          <div v-if="isTextStyleActive" class="preview-frame flex-1 min-h-[108px] flex items-center p-3">
-            <div
-              class="preview-box overflow-hidden max-w-full px-3.5 py-2 w-full flex items-center gap-2"
-              :style="{ ...previewStyle(currentLiveStyle, true, 44), lineHeight: '1.15' }"
-            >
-              <PointSwatch
-                v-if="draft.hasPoint"
-                :fill="draft.pointColor || '#000000'"
-                :fill-opacity="draft.pointFillOpacity"
-                :stroke="draft.pointStrokeColor || '#000000'"
-                :stroke-width="Math.min(pointPreviewStrokeWidth, 2)"
-                :stroke-opacity="draft.pointStrokeOpacity"
-              />
-              <span class="truncate min-w-0 max-w-full">
-                {{ draft.name.trim() || "Exemple de texte" }}
-              </span>
-            </div>
-          </div>
-        </div>
-
-        <!-- Row 2, Col 2: Point settings (horizontally aligned with Preview) -->
-        <div class="flex flex-col gap-2.5 min-w-0 min-h-0 pt-3 border-t border-gray-200 md:border-l md:pl-6">
+          <div class="flex flex-col gap-2.5 min-h-0 flex-1 pt-3 border-t border-gray-200">
           <div class="flex items-center justify-between gap-2 min-h-[1.75rem]">
             <span class="section-title">Réglages du point</span>
             <span class="field-hint">Symbole associé au texte</span>
@@ -402,6 +399,7 @@
               L'épaisseur maximale autorisée est de {{ MAX_POINT_STROKE_WIDTH_PX }} px (la valeur a été plafonnée).
             </span>
           </div>
+        </div>
         </div>
       </form>
 
