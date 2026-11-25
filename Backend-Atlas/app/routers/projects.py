@@ -16,7 +16,7 @@ from sqlalchemy.orm import Session, defer
 from app.database.session import get_async_session
 from app.models.features import Feature
 from app.models.map import Map
-from app.models.map_import import MapImport
+from app.models.map_import import EXTRACTION_FAILED, MapImport
 from app.models.project import Project
 from app.models.user import User
 from app.schemas.project import ProjectOut
@@ -731,18 +731,32 @@ async def get_project_maps(
     )
     maps = maps_result.scalars().all()
 
-    return [
-        {
-            "id": str(map_obj.id),
-            "title": map_obj.title,
-            "start_date": map_obj.start_date.isoformat()
-            if map_obj.start_date
-            else None,
-            "end_date": map_obj.end_date.isoformat() if map_obj.end_date else None,
-            "exact_date": bool(map_obj.exact_date),
-        }
-        for map_obj in maps
+    failed_result = await session.execute(
+        select(Map.id, Map.title)
+        .join(MapImport, MapImport.map_id == Map.id)
+        .where(Map.project_id == project_uuid)
+        .where(MapImport.extraction_state == EXTRACTION_FAILED)
+    )
+    failed_imports = [
+        {"map_id": str(row[0]), "title": row[1] or ""}
+        for row in failed_result.all()
     ]
+
+    return {
+        "maps": [
+            {
+                "id": str(map_obj.id),
+                "title": map_obj.title,
+                "start_date": map_obj.start_date.isoformat()
+                if map_obj.start_date
+                else None,
+                "end_date": map_obj.end_date.isoformat() if map_obj.end_date else None,
+                "exact_date": bool(map_obj.exact_date),
+            }
+            for map_obj in maps
+        ],
+        "failed_imports": failed_imports,
+    }
 
 
 @router.get("/map-project/{map_id}")

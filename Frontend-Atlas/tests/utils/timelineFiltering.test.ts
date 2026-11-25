@@ -51,7 +51,7 @@ function isFeatureVisibleAtYear(
     periodByMapId.get(featureMapId) ??
     periodByMapId.get(String(featureMapId).trim().toLowerCase());
   if (!period || period.startYear == null || period.endYear == null) {
-    return true;
+    return false;
   }
   if (mode === "cumulative") {
     return period.startYear <= selectedYear;

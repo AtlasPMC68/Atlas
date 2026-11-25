@@ -394,6 +394,7 @@ def test_project_timeline_excludes_maps_with_an_unfinished_import():
             side_effect=[
                 SimpleNamespace(scalar_one_or_none=lambda: project_id),
                 SimpleNamespace(scalars=lambda: SimpleNamespace(all=lambda: [])),
+                SimpleNamespace(all=lambda: []),
     ]
         )
     )
@@ -408,7 +409,8 @@ def test_project_timeline_excludes_maps_with_an_unfinished_import():
 
     map_query = session.execute.await_args_list[1].args[0]
     query_sql = str(map_query).lower()
-    assert response == []
+    assert response["maps"] == []
+    assert response["failed_imports"] == []
     assert "map_imports" in query_sql
     assert "not in" in query_sql
 
@@ -1110,6 +1112,7 @@ def test_delete_map_removes_map_id_from_shared_features_even_if_primary_map_id_d
         execute=AsyncMock(side_effect=[
             SimpleNamespace(scalar_one_or_none=lambda: Project(id=project_id, user_id=user_id)),
             SimpleNamespace(scalar_one_or_none=lambda: Map(id=map_2_id, project_id=project_id)),
+            SimpleNamespace(scalars=lambda: SimpleNamespace(all=lambda: [map_1_id])),
             SimpleNamespace(scalars=lambda: SimpleNamespace(all=lambda: [shared_feature])),
             None,
             None,
@@ -1152,6 +1155,7 @@ def test_delete_map_does_not_delete_feature_owned_by_another_map_when_map_ids_in
         execute=AsyncMock(side_effect=[
             SimpleNamespace(scalar_one_or_none=lambda: Project(id=project_id, user_id=user_id)),
             SimpleNamespace(scalar_one_or_none=lambda: Map(id=map_2_id, project_id=project_id)),
+            SimpleNamespace(scalars=lambda: SimpleNamespace(all=lambda: [map_1_id])),
             SimpleNamespace(scalars=lambda: SimpleNamespace(all=lambda: [shared_feature])),
             None,
             None,
@@ -1166,6 +1170,44 @@ def test_delete_map_does_not_delete_feature_owned_by_another_map_when_map_ids_in
     assert str(map_2_id) not in shared_feature.data["properties"]["mapIds"]
 
 
+def test_delete_map_deletes_feature_only_on_that_map():
+    from app.services.maps import delete_map_in_db
+    from app.models.project import Project
+
+    project_id = uuid4()
+    map_id = uuid4()
+    user_id = uuid4()
+    only_on_map = Feature(
+        id=uuid4(),
+        project_id=project_id,
+        map_id=map_id,
+        data={
+            "properties": {
+                "name": "Ville",
+                "mapId": str(map_id),
+                "mapIds": [str(map_id)],
+            },
+        },
+    )
+    deleted_objs = []
+    session = SimpleNamespace(
+        execute=AsyncMock(side_effect=[
+            SimpleNamespace(scalar_one_or_none=lambda: Project(id=project_id, user_id=user_id)),
+            SimpleNamespace(scalar_one_or_none=lambda: Map(id=map_id, project_id=project_id)),
+            SimpleNamespace(scalars=lambda: SimpleNamespace(all=lambda: [])),
+            SimpleNamespace(scalars=lambda: SimpleNamespace(all=lambda: [only_on_map])),
+            None,
+            None,
+        ]),
+        delete=AsyncMock(side_effect=lambda obj: deleted_objs.append(obj)),
+        commit=AsyncMock(),
+    )
+
+    success = asyncio.run(delete_map_in_db(session, project_id, map_id, user_id))
+    assert success is True
+    assert only_on_map in deleted_objs
+
+
 def test_get_project_maps_excludes_extraction_failed():
     import app.routers.projects as projects_router
     from app.models.project import Project
@@ -1177,13 +1219,15 @@ def test_get_project_maps_excludes_extraction_failed():
         execute=AsyncMock(side_effect=[
             SimpleNamespace(scalar_one_or_none=lambda: Project(id=project_id, user_id=user_id)),
             SimpleNamespace(scalars=lambda: SimpleNamespace(all=lambda: [])),
+            SimpleNamespace(all=lambda: []),
         ])
     )
 
-    maps = asyncio.run(projects_router.get_project_maps(str(project_id), str(user_id), session))
-    assert maps == []
+    payload = asyncio.run(projects_router.get_project_maps(str(project_id), str(user_id), session))
+    assert payload["maps"] == []
+    assert payload["failed_imports"] == []
     calls = session.execute.call_args_list
-    assert len(calls) == 2
+    assert len(calls) == 3
     query = calls[1][0][0]
     compiled = str(query)
     assert "map_imports" in compiled

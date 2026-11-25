@@ -197,6 +197,10 @@ async def delete_map_in_db(
     map_id_str = str(map_id)
     map_id_json = sa_cast(f'["{map_id_str}"]', JSONB)
     feature_data = type_coerce(Feature.data, JSONB)
+    remaining_maps = await db.execute(
+        select(Map.id).where(Map.project_id == project_id, Map.id != map_id)
+    )
+    remaining_ids = {str(mid) for mid in remaining_maps.scalars().all()}
     features_result = await db.execute(
         select(Feature).where(
             Feature.project_id == project_id,
@@ -212,32 +216,21 @@ async def delete_map_in_db(
         feat_map_id = cast(UUID | None, feat.map_id)
         feat_map_id_str = str(feat_map_id) if feat_map_id is not None else None
         feat_data = cast(dict[str, Any] | None, feat.data)
-        all_map_ids = extract_feature_map_ids(feat_data)
+        linked_ids = set(extract_feature_map_ids(feat_data))
+        if feat_map_id_str:
+            linked_ids.add(feat_map_id_str)
 
-        if feat_map_id_str != map_id_str and map_id_str not in all_map_ids:
+        if map_id_str not in linked_ids:
             continue
 
-        other_map_ids = [m for m in all_map_ids if m != map_id_str]
+        other_map_ids = [m for m in linked_ids if m != map_id_str and m in remaining_ids]
 
         if other_map_ids:
-            try:
-                next_map_uuid = UUID(other_map_ids[0])
-                if feat_map_id_str == map_id_str or feat_map_id_str is None:
-                    setattr(feat, "map_id", next_map_uuid)
-                setattr(feat, "data", update_feature_map_ids(feat_data, other_map_ids))
-                flag_modified(feat, "data")
-            except ValueError:
-                logger.warning(
-                    "Invalid mapIds while deleting map %s from feature %s",
-                    map_id,
-                    getattr(feat, "id", None),
-                    exc_info=True,
-                )
-                if feat_map_id_str == map_id_str:
-                    await db.delete(feat)
-                else:
-                    setattr(feat, "data", update_feature_map_ids(feat_data, other_map_ids))
-                    flag_modified(feat, "data")
+            next_map_uuid = UUID(other_map_ids[0])
+            if feat_map_id_str == map_id_str or feat_map_id_str is None:
+                setattr(feat, "map_id", next_map_uuid)
+            setattr(feat, "data", update_feature_map_ids(feat_data, other_map_ids))
+            flag_modified(feat, "data")
         else:
             await db.delete(feat)
 

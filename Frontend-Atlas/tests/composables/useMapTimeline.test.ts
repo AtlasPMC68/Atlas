@@ -281,6 +281,32 @@ describe("useMapTimeline - revealFeatureOnTimeline", () => {
       expect(selectedExactDate.value).toBe("1850-05-01");
     });
 
+    it("does not treat mapTitle as a map link", () => {
+      const byTitle = makeFeature("f-title-only", null);
+      byTitle.properties.mapTitle = "Carte 1800";
+
+      const { isFeatureVisibleOnTimeline } = setupTimeline(
+        [period1800, period1900],
+        [byTitle],
+        1900,
+        "specific",
+      );
+
+      expect(isFeatureVisibleOnTimeline(byTitle)).toBe(true);
+    });
+
+    it("hides a feature whose mapId matches no timeline map", () => {
+      const dangling = makeFeature("f-dangling", "map-deleted");
+      const { isFeatureVisibleOnTimeline } = setupTimeline(
+        [period1800, period1900],
+        [dangling],
+        1850,
+        "specific",
+      );
+
+      expect(isFeatureVisibleOnTimeline(dangling)).toBe(false);
+    });
+
     it("never moves the timeline for general features with no mapId", () => {
       const fGeneral = makeFeature("f-gen", null);
       const { selectedYear, isFeatureVisibleOnTimeline, revealFeatureOnTimeline } =

@@ -151,21 +151,12 @@ export function useMapTimeline({
     for (const f of features.value) {
       const mid = getFeatureMapId(f);
       if (mid) mapIdsWithFeatures.add(mid.toLowerCase());
-      const mapTitle =
-        ("mapTitle" in f ? (f as { mapTitle?: string }).mapTitle : undefined) ||
-        f.properties?.mapTitle;
-      if (mapTitle) mapIdsWithFeatures.add(String(mapTitle).trim().toLowerCase());
     }
 
     const periods: SliderPeriod[] = [];
     for (const p of mapPeriods.value) {
       const pIdNorm = String(p.id).trim().toLowerCase();
-      const pTitleNorm = p.title ? p.title.trim().toLowerCase() : "";
-      if (
-        mapIdsWithFeatures.size > 0 &&
-        !mapIdsWithFeatures.has(pIdNorm) &&
-        (!pTitleNorm || !mapIdsWithFeatures.has(pTitleNorm))
-      ) {
+      if (mapIdsWithFeatures.size > 0 && !mapIdsWithFeatures.has(pIdNorm)) {
         continue;
       }
       const startYear = toYear(p.startDate);
@@ -350,28 +341,11 @@ export function useMapTimeline({
     { immediate: true },
   );
 
-  function getFeatureMapKeys(feature: Feature): {
-    keys: string[];
-    hasExplicitIds: boolean;
-  } {
-    const featureMapIds = getFeatureMapIds(feature);
-    if (featureMapIds.length > 0) {
-      return { keys: featureMapIds, hasExplicitIds: true };
-    }
-    const featureMapTitle =
-      ("mapTitle" in feature
-        ? (feature as { mapTitle?: string }).mapTitle
-        : undefined) || feature.properties?.mapTitle;
-    return {
-      keys: featureMapTitle ? [String(featureMapTitle)] : [],
-      hasExplicitIds: false,
-    };
+  function getFeatureMapKeys(feature: Feature): { keys: string[] } {
+    return { keys: getFeatureMapIds(feature) };
   }
 
-  function resolvePeriodForKey(
-    effectiveMapKey: string,
-    allowTitleFallback: boolean,
-  ): SliderPeriod | undefined {
+  function resolvePeriodForKey(effectiveMapKey: string): SliderPeriod | undefined {
     const normalizedMapId = String(effectiveMapKey).trim().toLowerCase();
     return (
       periodByMapId.value.get(effectiveMapKey) ??
@@ -379,13 +353,7 @@ export function useMapTimeline({
       enrichedPeriods.value.find(
         (p: SliderPeriod) =>
           String(p.id).trim().toLowerCase() === normalizedMapId,
-      ) ??
-      (allowTitleFallback
-        ? enrichedPeriods.value.find(
-            (p: SliderPeriod) =>
-              p.title?.trim().toLowerCase() === normalizedMapId,
-          )
-        : undefined)
+      )
     );
   }
 
@@ -424,12 +392,12 @@ export function useMapTimeline({
   function isFeatureVisibleOnTimeline(feature: Feature): boolean {
     if (timelineMode.value === "global") return true;
 
-    const { keys, hasExplicitIds } = getFeatureMapKeys(feature);
+    const { keys } = getFeatureMapKeys(feature);
     if (keys.length === 0) return true;
 
     return keys.some((effectiveMapKey: string) => {
-      const period = resolvePeriodForKey(effectiveMapKey, !hasExplicitIds);
-      if (!period) return true;
+      const period = resolvePeriodForKey(effectiveMapKey);
+      if (!period) return false;
       return isPeriodVisibleAtCurrentDate(period);
     });
   }
@@ -442,11 +410,11 @@ export function useMapTimeline({
     if (timelineMode.value === "global") return false;
     if (isFeatureVisibleOnTimeline(feature)) return false;
 
-    const { keys, hasExplicitIds } = getFeatureMapKeys(feature);
+    const { keys } = getFeatureMapKeys(feature);
     if (keys.length === 0) return false;
 
     const candidatePeriods = keys
-      .map((key) => resolvePeriodForKey(key, !hasExplicitIds))
+      .map((key) => resolvePeriodForKey(key))
       .filter((period): period is SliderPeriod => period != null);
 
     if (candidatePeriods.length === 0) return false;

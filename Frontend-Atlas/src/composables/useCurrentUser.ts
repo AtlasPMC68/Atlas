@@ -31,7 +31,6 @@ export function useCurrentUser() {
         if (res.status === 401) {
           currentUser.value = null;
           error.value = "Session expirée. Veuillez vous reconnecter.";
-          await keycloak.login({ redirectUri: window.location.href });
           return null;
         }
         throw new Error(`Error fetching user: ${res.status}`);

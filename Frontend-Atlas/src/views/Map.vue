@@ -842,15 +842,41 @@ async function loadProjectMapsForTimeline() {
     const res = await apiFetch(`/projects/${projectId.value}/maps`);
     if (!res.ok) throw new Error("Failed to fetch project maps for timeline");
 
-    const rows = snakeToCamel(
-      (await res.json()) as Array<{
-        id: string;
-        title: string;
-        startDate?: string | null;
-        endDate?: string | null;
-        exactDate?: boolean;
-      }>,
-    );
+    const payload = snakeToCamel(await res.json()) as
+      | Array<{
+          id: string;
+          title: string;
+          startDate?: string | null;
+          endDate?: string | null;
+          exactDate?: boolean;
+        }>
+      | {
+          maps?: Array<{
+            id: string;
+            title: string;
+            startDate?: string | null;
+            endDate?: string | null;
+            exactDate?: boolean;
+          }>;
+          failedImports?: Array<{ mapId?: string; title?: string }>;
+        };
+
+    const rows = Array.isArray(payload) ? payload : (payload.maps ?? []);
+    const failedImports = Array.isArray(payload)
+      ? []
+      : (payload.failedImports ?? []);
+    if (failedImports.length > 0) {
+      const titles = failedImports
+        .map((row) => row.title?.trim())
+        .filter((title): title is string => Boolean(title));
+      const list = titles.length > 0 ? titles.join(", ") : "une carte";
+      showAlert(
+        "error",
+        failedImports.length === 1
+          ? `L'import de « ${list} » a échoué. La carte n'apparaît pas sur la timeline.`
+          : `Des imports ont échoué (${list}). Ces cartes n'apparaissent pas sur la timeline.`,
+      );
+    }
 
     mapPeriods.value = rows.map(
       (
@@ -1005,32 +1031,42 @@ async function onDeleteMap(
     mapPeriods.value = mapPeriods.value.filter(
       (p: MapPeriod) => String(p.id).trim().toLowerCase() !== mapIdNorm,
     );
+    const knownMapIds = new Set(
+      mapPeriods.value.map((p: MapPeriod) => String(p.id).trim().toLowerCase()),
+    );
 
     const nextFeatures: Feature[] = [];
     for (const feature of features.value) {
       const existingMapIds = getFeatureMapIds(feature);
-      if (existingMapIds.some((id: string) => id.trim().toLowerCase() === mapIdNorm)) {
-        const remainingMapIds = existingMapIds.filter(
-          (id: string) => id.trim().toLowerCase() !== mapIdNorm,
-        );
-        if (remainingMapIds.length > 0) {
-          const newPrimaryMapId = remainingMapIds[0];
-          nextFeatures.push({
-            ...feature,
-            mapId: newPrimaryMapId,
-            mapIds: remainingMapIds,
-            map_id: newPrimaryMapId,
-            properties: {
-              ...feature.properties,
-              mapId: newPrimaryMapId,
-              mapIds: remainingMapIds,
-              map_id: newPrimaryMapId,
-            },
-          });
-        }
-      } else {
+      if (existingMapIds.length === 0) {
         nextFeatures.push(feature);
+        continue;
       }
+      const remainingMapIds = existingMapIds.filter(
+        (id: string) =>
+          id.trim().toLowerCase() !== mapIdNorm &&
+          knownMapIds.has(id.trim().toLowerCase()),
+      );
+      if (remainingMapIds.length === 0) {
+        continue;
+      }
+      if (remainingMapIds.length === existingMapIds.length) {
+        nextFeatures.push(feature);
+        continue;
+      }
+      const newPrimaryMapId = remainingMapIds[0];
+      nextFeatures.push({
+        ...feature,
+        mapId: newPrimaryMapId,
+        mapIds: remainingMapIds,
+        map_id: newPrimaryMapId,
+        properties: {
+          ...feature.properties,
+          mapId: newPrimaryMapId,
+          mapIds: remainingMapIds,
+          map_id: newPrimaryMapId,
+        },
+      });
     }
 
     if (
