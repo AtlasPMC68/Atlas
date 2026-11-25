@@ -1,5 +1,18 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import L from "leaflet";
+
+if (typeof PointerEvent === "undefined") {
+  class PointerEventPolyfill extends MouseEvent {
+    constructor(type: string, init?: MouseEventInit) {
+      super(type, init);
+    }
+  }
+  Object.defineProperty(globalThis, "PointerEvent", {
+    value: PointerEventPolyfill,
+    writable: true,
+    configurable: true,
+  });
+}
 import "@geoman-io/leaflet-geoman-free";
 import { anchorMarkerLimitToCursor } from "../../src/utils/geomanMarkerLimit";
 

@@ -39,64 +39,64 @@ function makeFeature(
   };
 }
 
+const period1800: MapPeriod = {
+  id: "map-1800",
+  title: "Carte 1800",
+  startDate: "1800-01-01",
+  endDate: "1850-12-31",
+  exactDate: false,
+  color: "#0ea5e9",
+};
+
+const period1850: MapPeriod = {
+  id: "map-1850",
+  title: "Carte 1850",
+  startDate: "1850-01-01",
+  endDate: "1900-12-31",
+  exactDate: false,
+  color: "#10b981",
+};
+
+const period1875Mid: MapPeriod = {
+  id: "map-1875",
+  title: "Carte 1875",
+  startDate: "1875-01-01",
+  endDate: "1885-12-31",
+  exactDate: false,
+  color: "#8b5cf6",
+};
+
+const period1900: MapPeriod = {
+  id: "map-1900",
+  title: "Carte 1900",
+  startDate: "1900-01-01",
+  endDate: "1925-12-31",
+  exactDate: false,
+  color: "#f59e0b",
+};
+
+const period1900Jan: MapPeriod = {
+  id: "map-1900-jan",
+  title: "Carte Janvier 1900",
+  startDate: "1900-01-15",
+  endDate: "1900-01-15",
+  exactDate: true,
+  color: "#ef4444",
+};
+
+const period1900Jun: MapPeriod = {
+  id: "map-1900-jun",
+  title: "Carte Juin 1900",
+  startDate: "1900-06-20",
+  endDate: "1900-06-20",
+  exactDate: true,
+  color: "#14b8a6",
+};
+
 describe("useMapTimeline - revealFeatureOnTimeline", () => {
   beforeEach(() => {
     localStorage.clear();
   });
-
-  const period1800: MapPeriod = {
-    id: "map-1800",
-    title: "Carte 1800",
-    startDate: "1800-01-01",
-    endDate: "1850-12-31",
-    exactDate: false,
-    color: "#0ea5e9",
-  };
-
-  const period1850: MapPeriod = {
-    id: "map-1850",
-    title: "Carte 1850",
-    startDate: "1850-01-01",
-    endDate: "1900-12-31",
-    exactDate: false,
-    color: "#10b981",
-  };
-
-  const period1875Mid: MapPeriod = {
-    id: "map-1875",
-    title: "Carte 1875",
-    startDate: "1875-01-01",
-    endDate: "1885-12-31",
-    exactDate: false,
-    color: "#8b5cf6",
-  };
-
-  const period1900: MapPeriod = {
-    id: "map-1900",
-    title: "Carte 1900",
-    startDate: "1900-01-01",
-    endDate: "1925-12-31",
-    exactDate: false,
-    color: "#f59e0b",
-  };
-
-  const period1900Jan: MapPeriod = {
-    id: "map-1900-jan",
-    title: "Carte Janvier 1900",
-    startDate: "1900-01-15",
-    endDate: "1900-01-15",
-    exactDate: true,
-    color: "#ef4444",
-  };
-
-  const period1900Jun: MapPeriod = {
-    id: "map-1900-jun",
-    title: "Carte Juin 1900",
-    startDate: "1900-06-20",
-    endDate: "1900-06-20",
-    exactDate: true,
-    color: "#14b8a6",
-  };
 
   function setupTimeline(
     periods: MapPeriod[],
