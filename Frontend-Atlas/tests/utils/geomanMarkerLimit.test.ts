@@ -1,5 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import L from "leaflet";
+import "@geoman-io/leaflet-geoman-free";
+import { anchorMarkerLimitToCursor } from "../../src/utils/geomanMarkerLimit";
 
 if (typeof PointerEvent === "undefined") {
   class PointerEventPolyfill extends MouseEvent {
@@ -13,8 +15,6 @@ if (typeof PointerEvent === "undefined") {
     configurable: true,
   });
 }
-import "@geoman-io/leaflet-geoman-free";
-import { anchorMarkerLimitToCursor } from "../../src/utils/geomanMarkerLimit";
 
 type PmLayer = L.Polygon & {
   pm: {

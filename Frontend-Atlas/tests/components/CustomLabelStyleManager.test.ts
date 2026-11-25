@@ -92,5 +92,7 @@ describe("CustomLabelStyleManager", () => {
     await nextTick();
 
     expect(wrapper.find('[data-testid="custom-style-point-settings"]').exists()).toBe(true);
+    expect(wrapper.text()).toContain("Mise en forme");
+    expect(wrapper.text()).toContain("Réglages du point");
   });
 });

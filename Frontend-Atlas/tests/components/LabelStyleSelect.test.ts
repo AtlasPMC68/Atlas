@@ -31,4 +31,20 @@ describe("LabelStyleSelect", () => {
     expect(wrapper.find("svg").attributes("width")).toBe("12");
     expect(wrapper.text()).toContain("Fort");
   });
+
+  it("opens the list upward when dropUp is set", async () => {
+    const wrapper = mount(LabelStyleSelect, {
+      props: {
+        modelValue: "custom:fort",
+        customStyles: [pointStyle],
+        dropUp: true,
+      },
+    });
+
+    await wrapper.find("button").trigger("click");
+    const list = wrapper.find('[role="listbox"]');
+    expect(list.exists()).toBe(true);
+    expect(list.classes()).toContain("bottom-full");
+    expect(list.classes()).not.toContain("top-full");
+  });
 });
