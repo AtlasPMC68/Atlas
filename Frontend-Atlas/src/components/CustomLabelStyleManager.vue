@@ -16,7 +16,7 @@
 
       <!-- Main 2x2 grid: Row 1 (List | Text settings), Row 2 (Preview | Point settings) -->
       <form
-        class="grid grid-cols-1 md:grid-cols-[1fr_1.45fr] md:grid-rows-[minmax(0,1fr)_auto] flex-1 min-h-0 py-4 gap-y-3 overflow-y-auto md:overflow-hidden"
+        class="grid grid-cols-1 md:grid-cols-[1fr_1.45fr] md:grid-rows-[auto_minmax(0,1fr)] flex-1 min-h-0 py-4 gap-y-3 overflow-y-auto md:overflow-hidden"
         @submit.prevent="submitDraft"
       >
         <!-- Row 1, Col 1: Styles list -->
@@ -96,7 +96,7 @@
         </div>
 
         <!-- Row 1, Col 2: Text style settings -->
-        <div class="flex flex-col gap-3 min-w-0 pb-4 md:border-l md:border-gray-200 md:pl-6 md:min-h-0">
+        <div class="flex flex-col gap-3 min-w-0 pb-3 md:border-l md:border-gray-200 md:pl-6">
           <div class="flex items-center justify-between gap-2 min-h-[2rem] shrink-0">
             <h4 class="section-title">
               {{ editingId ? "Modifier un style" : "Créer un style" }}
@@ -114,7 +114,7 @@
             </button>
           </div>
 
-          <div class="flex flex-col gap-3 flex-1 min-h-0 overflow-y-auto pr-1">
+          <div class="flex flex-col gap-3 pr-1">
             <div class="flex flex-col gap-1">
               <label class="field-label" for="custom-style-name-input">
                 Nom du style
@@ -216,7 +216,7 @@
         </div>
 
         <!-- Row 2, Col 1: Preview (horizontally aligned with Point settings) -->
-        <div class="flex flex-col gap-2.5 min-w-0 pt-3 border-t border-gray-200 md:pr-6">
+        <div class="flex flex-col gap-2.5 min-w-0 min-h-0 pt-3 border-t border-gray-200 md:pr-6">
           <div class="flex items-center justify-between min-h-[1.75rem]">
             <h4 class="section-title">Aperçu</h4>
           </div>
@@ -241,7 +241,7 @@
         </div>
 
         <!-- Row 2, Col 2: Point settings (horizontally aligned with Preview) -->
-        <div class="flex flex-col gap-2.5 min-w-0 pt-3 border-t border-gray-200 md:border-l md:pl-6">
+        <div class="flex flex-col gap-2.5 min-w-0 min-h-0 pt-3 border-t border-gray-200 md:border-l md:pl-6">
           <div class="flex items-center justify-between gap-2 min-h-[1.75rem]">
             <span class="section-title">Réglages du point</span>
             <span class="field-hint">Symbole associé au texte</span>
