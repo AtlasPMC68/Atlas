@@ -17,6 +17,18 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v7
 
+      # Shell scripts committed from Windows lose the executable bit (core.fileMode=false),
+      # and the server then refuses to run them (e.g. ci-deploy.sh via authorized_keys).
+      - name: Check shell scripts are executable
+        run: |
+          bad=$(git ls-files -s -- '*.sh' | awk '$1 != "100755" {print $4}')
+          if [ -n "$bad" ]; then
+            echo "::error::Not executable in git (expected mode 100755):"
+            echo "$bad"
+            echo "Fix with: git update-index --chmod=+x <file>"
+            exit 1
+          fi
+
       - name: Create .env files
         run: |
           if [ -n "${{ secrets.ENV_DEV }}" ]; then

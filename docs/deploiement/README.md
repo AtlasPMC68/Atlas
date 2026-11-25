@@ -380,7 +380,8 @@ git pull
 
 | Problème | Cause et solution |
 |---|---|
-| `./deploy.sh: Permission denied` | Le fichier n'est pas exécutable. Lancez `chmod +x deploy.sh rollback.sh`. |
+| `./deploy.sh: Permission denied` | Le fichier n'est pas exécutable. Lancez `chmod +x deploy.sh rollback.sh`. Si ça revient après un `git pull`, le script a été commité sans le bit exécutable (voir la note ci-dessous). |
+| Le job `deploy` échoue avec `Permission denied` | `scripts/ci-deploy.sh` a été commité sans le bit exécutable (voir la note ci-dessous). |
 | `permission denied while trying to connect to the Docker daemon` | La session SSH date d'avant `usermod`. Déconnectez-vous et reconnectez-vous. |
 | Le site ne répond pas du tout (délai dépassé) | Les ports 80 et 443 ne sont pas ouverts dans la Security List Oracle ([partie 3](#3-ouvrir-les-ports-80-et-443-dans-oracle)). |
 | Le navigateur affiche une erreur de certificat | Caddy n'a pas obtenu le certificat. Vérifiez les ports 80/443 et que `ACME_EMAIL` dans le `.env` est une vraie adresse, puis `docker compose logs caddy`. |
@@ -389,6 +390,14 @@ git pull
 | `403` sur `/auth/admin` | Votre IP n'est pas dans `ADMIN_ALLOWED_IPS` ([partie 7](#votre-ip-a-changé-403-sur-la-console-admin)). |
 | `service "migrate" didn't complete successfully` | Une migration SQL a échoué et a été annulée. Lisez `docker compose logs migrate`, corrigez le fichier, redéployez. |
 | Disque plein | Supprimez les anciennes images : `docker image prune -a`. N'ajoutez jamais `--volumes`. |
+
+> [!IMPORTANT]
+> **Scripts `.sh` ajoutés depuis Windows.** Windows ne connaît pas le bit exécutable, et Git y est configuré pour l'ignorer (`core.fileMode=false`). Un nouveau script est donc commité en `100644` au lieu de `100755`, et le serveur refuse de le lancer. Le CI vérifie ce point et échoue si un `.sh` n'est pas exécutable. Pour vérifier et corriger (`chmod` ne suffit pas sous Windows) :
+>
+> ```bash
+> git ls-files -s '*.sh'                      # chaque ligne doit commencer par 100755
+> git update-index --chmod=+x <script>.sh     # puis commitez le changement
+> ```
 
 ## 10. Base de données
 
