@@ -1770,6 +1770,11 @@ onMounted(() => {
 });
 
 onBeforeUnmount(() => {
+  if (featurePropRenderHoldTimer) {
+    clearTimeout(featurePropRenderHoldTimer);
+    featurePropRenderHoldTimer = null;
+  }
+  featurePropRenderHolds = 0;
   containerResizeObserver?.disconnect();
   containerResizeObserver = null;
   if (viewReadyFallback) clearTimeout(viewReadyFallback);
