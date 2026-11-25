@@ -36,9 +36,16 @@ export function useMapTimeline({
   const timelineMode = ref<TimelineFilterMode>("specific");
   let isRestoringPosition = false;
 
-  function restoreTimelinePosition(id?: string) {
+  function beginTimelineRestore() {
+    isRestoringPosition = true;
+  }
+
+  async function restoreTimelinePosition(id?: string) {
     const targetId = id ?? projectId?.value;
-    if (!targetId || typeof window === "undefined") return;
+    if (!targetId || typeof window === "undefined") {
+      isRestoringPosition = false;
+      return;
+    }
     isRestoringPosition = true;
     try {
       const storedYear = localStorage.getItem(`atlas_timeline_year_${targetId}`);
@@ -58,6 +65,7 @@ export function useMapTimeline({
       timelineMode.value = isValidTimelineMode(storedMode)
         ? storedMode
         : "specific";
+      await nextTick();
     } catch {
       // Ignore storage errors in restricted contexts
     } finally {
@@ -470,6 +478,7 @@ export function useMapTimeline({
     isFeatureVisibleOnTimeline,
     revealFeatureOnTimeline,
     onExactDateChange,
+    beginTimelineRestore,
     restoreTimelinePosition,
   };
 }

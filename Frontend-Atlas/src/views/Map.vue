@@ -570,6 +570,7 @@ const {
   filteredFeatures,
   revealFeatureOnTimeline,
   onExactDateChange,
+  beginTimelineRestore,
   restoreTimelinePosition,
 } = useMapTimeline({
   features,
@@ -1895,13 +1896,15 @@ function onDocumentClick(e: MouseEvent) {
 }
 
 onMounted(async () => {
+  beginTimelineRestore();
   await fetchCurrentUser();
   await resolveRouteContext();
-  restoreTimelinePosition(projectId.value);
   await loadProjectMapsForTimeline();
   await loadCustomLabelStyles();
   await loadCurrentMapInfo();
   await loadInitialFeatures();
+  await nextTick();
+  await restoreTimelinePosition(projectId.value);
   await frameOpenedProject();
 
   if (projectId.value) {
@@ -1937,12 +1940,14 @@ onMounted(async () => {
 });
 
 watch([projectRouteId], async () => {
+  beginTimelineRestore();
   selectedYear.value = -1;
   selectedExactDate.value = null;
   await resolveRouteContext();
-  restoreTimelinePosition(projectId.value);
   await loadProjectMapsForTimeline();
   await loadInitialFeatures();
+  await nextTick();
+  await restoreTimelinePosition(projectId.value);
   await frameVisibleFeatures();
 });
 

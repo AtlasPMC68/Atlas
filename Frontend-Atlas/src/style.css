@@ -479,7 +479,7 @@
 
 .period-tracks:has(.period-track:hover),
 .period-tracks:hover {
-  z-index: 20;
+  z-index: 50;
 }
 
 .period-track {
@@ -490,12 +490,12 @@
 }
 
 .period-track:hover {
-  z-index: 20;
+  z-index: 50;
 }
 
 .period-track .period-track-popover {
   pointer-events: none !important;
-  z-index: 6000;
+  z-index: 100;
 }
 
 /* Unified selected feature style across the application (sidebar list, popover, map) */

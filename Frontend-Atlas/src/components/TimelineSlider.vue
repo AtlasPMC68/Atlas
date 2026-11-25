@@ -13,11 +13,11 @@
           </span>
 
           <!-- 3 Date filter buttons -->
-          <div class="inline-flex items-center gap-2 ml-2 pl-2 border-l border-base-300 relative z-[7000] pointer-events-auto">
+          <div class="inline-flex items-center gap-2 ml-2 pl-2 border-l border-base-300 relative z-0 pointer-events-auto">
             <span class="text-xs font-semibold text-base-content/80 select-none">
               Filtrer par date :
             </span>
-            <div class="join border border-base-300 rounded-lg overflow-visible bg-base-100 shadow-xs relative z-[7000]">
+            <div class="join border border-base-300 rounded-lg overflow-visible bg-base-100 shadow-xs">
               <button
                 type="button"
                 class="join-item btn btn-xs px-2.5 font-medium transition-colors rounded-none rounded-l-lg border-0"
@@ -53,7 +53,11 @@
         </div>
 
         <!-- Period tracks - update based on view mode -->
-        <div class="period-tracks" :style="periodTracksStyle">
+        <div
+          class="period-tracks"
+          :class="hoveredPeriodId ? '!z-50' : ''"
+          :style="periodTracksStyle"
+        >
           <div
             v-for="period in displayedPeriods"
             :key="period.id"
@@ -70,7 +74,7 @@
           >
             <div
               v-if="hoveredPeriodId === period.id"
-              class="period-track-popover absolute bottom-full mb-1.5 left-1/2 -translate-x-1/2 pointer-events-none rounded-xl border border-gray-300 bg-base-100 px-3 py-1.5 text-xs text-base-content shadow-lg whitespace-nowrap z-[6000]"
+              class="period-track-popover absolute bottom-full mb-1.5 left-1/2 -translate-x-1/2 pointer-events-none rounded-xl border border-gray-300 bg-base-100 px-3 py-1.5 text-xs text-base-content shadow-lg whitespace-nowrap !z-50"
             >
               <div class="font-semibold text-center">{{ period.title }}</div>
               <div class="text-base-content opacity-70 text-center">

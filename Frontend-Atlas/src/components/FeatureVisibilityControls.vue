@@ -325,7 +325,7 @@
         Choisir la carte
       </h3>
       <p class="text-sm text-base-content opacity-70 mt-1 mb-4">
-        Sélectionnez la carte dont vous souhaitez examiner et valider les textes rejetés :
+        Sélectionnez la carte dont vous souhaitez examiner et valider les textes rejetés 
       </p>
       <div class="flex flex-col gap-2.5 max-h-80 overflow-y-auto pr-1">
         <button
