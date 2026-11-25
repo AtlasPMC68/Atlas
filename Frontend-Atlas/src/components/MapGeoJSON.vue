@@ -453,6 +453,7 @@ const featureLayerManager = {
     if (!layer || !map) return;
 
     if (visible) {
+      if (map.hasLayer(layer)) return;
       const pm = (map as MapWithPm).pm;
       const anyModeActive =
         pm?.globalEditModeEnabled?.() ||
@@ -2074,11 +2075,22 @@ watch(
       }
     });
     if (selectedFeatureId.value && newVisibility.get(selectedFeatureId.value) !== false) {
-      nextTick(() => {
-        if (selectedFeatureId.value) {
+      const pm = (map as MapWithPm | null)?.pm;
+      const isEditingOrRotating =
+        pm?.globalEditModeEnabled?.() || pm?.globalRotateModeEnabled?.();
+      if (!isEditingOrRotating) {
+        nextTick(() => {
+          if (!selectedFeatureId.value) return;
+          const currentPm = (map as MapWithPm | null)?.pm;
+          if (
+            currentPm?.globalEditModeEnabled?.() ||
+            currentPm?.globalRotateModeEnabled?.()
+          ) {
+            return;
+          }
           applySelectionEffects(selectedFeatureId.value);
-        }
-      });
+        });
+      }
     }
   },
   { deep: true, immediate: true },
