@@ -1,4 +1,4 @@
-import { ref, nextTick } from "vue";
+import { ref, nextTick, onScopeDispose } from "vue";
 import type { Ref } from "vue";
 
 export interface ResizablePanelOptions {
@@ -15,7 +15,7 @@ export interface ResizablePanelOptions {
 }
 
 export function useResizablePanel(options: ResizablePanelOptions) {
-  const size: Ref<any> = ref(options.initial);
+  const size: Ref<number | null> = ref(options.initial);
   let isResizing = false;
   let startPos = 0;
   let startSize = 0;
@@ -40,7 +40,7 @@ export function useResizablePanel(options: ResizablePanelOptions) {
     nextTick(() => options.onResize?.());
   }
 
-  function onMouseMove(event: MouseEvent) {
+  function onPointerMove(event: PointerEvent) {
     const currentPos = options.dimension === "width" ? event.clientX : event.clientY;
     const delta = options.direction === "reverse" ? startPos - currentPos : currentPos - startPos;
     size.value = Math.max(options.min, Math.min(getMax(), startSize + delta));
@@ -54,8 +54,8 @@ export function useResizablePanel(options: ResizablePanelOptions) {
   }
 
   function stopResize() {
-    window.removeEventListener("mousemove", onMouseMove);
-    window.removeEventListener("mouseup", stopResize);
+    window.removeEventListener("pointermove", onPointerMove);
+    window.removeEventListener("pointerup", stopResize);
     if (isResizing) {
       document.body.style.cursor = prevCursor;
       document.body.style.userSelect = prevUserSelect;
@@ -68,7 +68,7 @@ export function useResizablePanel(options: ResizablePanelOptions) {
     }
   }
 
-  function startResize(event: MouseEvent) {
+  function startResize(event: MouseEvent | PointerEvent) {
     const el = options.elementSelector
       ? (document.querySelector(options.elementSelector) as HTMLElement | null)
       : null;
@@ -84,9 +84,11 @@ export function useResizablePanel(options: ResizablePanelOptions) {
     isResizing = true;
     document.body.style.cursor = options.cursor;
     document.body.style.userSelect = "none";
-    window.addEventListener("mousemove", onMouseMove);
-    window.addEventListener("mouseup", stopResize);
+    window.addEventListener("pointermove", onPointerMove);
+    window.addEventListener("pointerup", stopResize);
   }
+
+  onScopeDispose(stopResize);
 
   return {
     size,

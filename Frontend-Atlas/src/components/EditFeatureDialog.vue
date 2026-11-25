@@ -407,7 +407,7 @@
               class="text-xs text-red-700 bg-white border border-red-500 rounded px-2 py-1"
               data-testid="point-stroke-width-max-warning"
             >
-              L'épaisseur maximale autorisée est de {{ maxStrokeWidth }} px (la valeur a été plafonnée).
+              L'épaisseur maximale autorisée est de {{ maxStrokeWidth }} px (la valeur sera plafonnée).
             </span>
           </div>
         </div>
@@ -423,7 +423,7 @@
         </button>
         <button
           class="btn btn-primary rounded-lg w-32"
-          :disabled="isEditing"
+          :disabled="isEditing || isEditNameMissing"
           @click="onEditFeature"
         >
           <span
@@ -477,6 +477,8 @@ import {
   getDefaultTextSizePx,
   normalizeOpacity,
   normalizeStrokeWidth,
+  parseClampedOpacityFromInput,
+  preventNumericShortcutKeys,
   DEFAULT_POINT_STROKE_OPACITY,
   MAX_STROKE_WIDTH_PX,
   MAX_POINT_STROKE_WIDTH_PX,
@@ -725,29 +727,19 @@ function onTextSizeChange() {
 }
 
 function onOpacityKeydown(event: KeyboardEvent) {
-  if (event.key === "-" || event.key === "+" || event.key === "e" || event.key === "E") {
-    event.preventDefault();
-  }
+  preventNumericShortcutKeys(event);
 }
 
 function onOpacityInput(field: "fillOpacity" | "strokeOpacity", event: Event) {
   const input = event.target as HTMLInputElement;
-  const raw = input.value;
-  if (raw === "" || raw === null) {
+  const parsed = parseClampedOpacityFromInput(input.value);
+  if (input.value === "" || input.value === null) {
     editDraft.value[field] = undefined;
     return;
   }
-  const clean = raw.replace(",", ".");
-  let num = parseFloat(clean);
-  if (isNaN(num)) return;
-  if (num > 1) {
-    num = 1;
-    input.value = "1";
-  } else if (num < 0) {
-    num = 0;
-    input.value = "0";
-  }
-  editDraft.value[field] = num;
+  if (parsed === undefined) return;
+  input.value = String(parsed);
+  editDraft.value[field] = parsed;
 }
 
 function onOpacityChange(field: "fillOpacity" | "strokeOpacity", event: Event) {
@@ -876,12 +868,15 @@ function close() {
 
 function onSaveCustomLabelStyles(styles: CustomLabelStyle[]) {
   emit("save-custom-label-styles", styles);
-  if (editDraft.value.customLabelStyleId) {
-    const updated = styles.find((s) => s.id === editDraft.value.customLabelStyleId);
-    if (updated) {
-      editDraft.value.customLabelStyle = updated;
-    }
-  }
+  const previousIds = new Set(availableCustomLabelStyles.value.map((s) => s.id));
+  const created = [...styles].reverse().find((s) => !previousIds.has(s.id));
+  const selectedId = created?.id ?? editDraft.value.customLabelStyleId;
+  if (!selectedId) return;
+  const updated = styles.find((s) => s.id === selectedId);
+  if (!updated) return;
+  editDraft.value.customLabelStyleId = updated.id;
+  editDraft.value.customLabelStyle = updated;
+  editDraft.value.labelStyleSelection = `custom:${updated.id}`;
 }
 
 async function onEditFeature() {
@@ -905,8 +900,6 @@ async function onEditFeature() {
     editDraft.value.selectedMapIds,
   );
 
-  featureToEdit.value = updatedFeature;
-
   emit(
     "update-feature",
     (allUpdated.length === 1 ? allUpdated[0] : allUpdated) as any,
@@ -915,6 +908,9 @@ async function onEditFeature() {
       errorFallback: "Erreur lors de la mise à jour de l'élément.",
       loadingRef: isEditing,
       dialogRef: editFeatureDialogRef,
+      onSuccess: () => {
+        featureToEdit.value = updatedFeature;
+      },
     }),
   );
 }

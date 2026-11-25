@@ -54,10 +54,8 @@ describe("mapFraming - applySmartFeatureFraming", () => {
     expect(fitBoundsSpy).not.toHaveBeenCalled();
   });
 
-  it("does NOT move or pan map when element partially intersects viewport", () => {
-    // Current bounds around [46.8, -71.2]
+  it("pans when the element intersects the viewport but is clipped", () => {
     const viewBounds = map.getBounds();
-    // Create a target that straddles the edge of the viewport
     const targetIntersecting = L.latLngBounds([
       [viewBounds.getNorth(), viewBounds.getWest()],
       [viewBounds.getNorth() + 1, viewBounds.getWest() - 1],
@@ -72,8 +70,8 @@ describe("mapFraming - applySmartFeatureFraming", () => {
       animate: true,
     });
 
-    expect(result).toBe("in-view");
-    expect(panToSpy).not.toHaveBeenCalled();
+    expect(result).toBe("panned");
+    expect(panToSpy).toHaveBeenCalled();
     expect(setViewSpy).not.toHaveBeenCalled();
     expect(fitBoundsSpy).not.toHaveBeenCalled();
   });

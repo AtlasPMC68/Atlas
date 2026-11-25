@@ -4,8 +4,8 @@
   >
     <div class="flex flex-1 min-h-0 overflow-hidden">
       <div
-        class="h-full min-h-0 shrink-0 overflow-hidden bg-white border-r border-base-300 flex flex-col"
-        :class="isSidebarVisible ? 'overflow-auto bg-base-200 py-3 px-1.5' : ''"
+        class="h-full min-h-0 shrink-0 overflow-hidden border-r border-base-300 flex flex-col"
+        :class="isSidebarVisible ? 'overflow-auto bg-base-200 py-3 px-1.5' : 'bg-white'"
         :style="{ width: isSidebarVisible ? `${sidebarWidth}px` : `${COLLAPSED_SIDEBAR_WIDTH}px` }"
         data-testid="sidebar-wrapper"
       >
@@ -45,7 +45,7 @@
         tabindex="0"
         class="w-1.5 shrink-0 cursor-col-resize bg-base-300/50 hover:bg-primary/50 focus:bg-primary/50 transition-colors"
         data-testid="sidebar-resize-handle"
-        @mousedown.prevent="startSidebarResize"
+        @pointerdown.prevent="startSidebarResize"
         @keydown.left.prevent="resizeSidebarBy(-16)"
         @keydown.right.prevent="resizeSidebarBy(16)"
       />
@@ -1236,6 +1236,9 @@ function selectMap(mapId: string) {
 
   selectedYear.value = targetYear;
   selectedExactDate.value = targetExactDate;
+  if (timelineMode.value === "global") {
+    timelineMode.value = "specific";
+  }
 
   if (period.title) {
     currentMapTitle.value = period.title;
@@ -1889,14 +1892,17 @@ function onDocumentClick(e: MouseEvent) {
 
 onMounted(async () => {
   beginTimelineRestore();
-  await fetchCurrentUser();
-  await resolveRouteContext();
-  await loadProjectMapsForTimeline();
-  await loadCustomLabelStyles();
-  await loadCurrentMapInfo();
-  await loadInitialFeatures();
-  await nextTick();
-  await restoreTimelinePosition(projectId.value);
+  try {
+    await fetchCurrentUser();
+    await resolveRouteContext();
+    await loadProjectMapsForTimeline();
+    await loadCustomLabelStyles();
+    await loadCurrentMapInfo();
+    await loadInitialFeatures();
+    await nextTick();
+  } finally {
+    await restoreTimelinePosition(projectId.value);
+  }
   await frameOpenedProject();
 
   if (projectId.value) {
@@ -1935,11 +1941,14 @@ watch([projectRouteId], async () => {
   beginTimelineRestore();
   selectedYear.value = -1;
   selectedExactDate.value = null;
-  await resolveRouteContext();
-  await loadProjectMapsForTimeline();
-  await loadInitialFeatures();
-  await nextTick();
-  await restoreTimelinePosition(projectId.value);
+  try {
+    await resolveRouteContext();
+    await loadProjectMapsForTimeline();
+    await loadInitialFeatures();
+    await nextTick();
+  } finally {
+    await restoreTimelinePosition(projectId.value);
+  }
   await frameVisibleFeatures();
 });
 

@@ -216,11 +216,11 @@ def merge_multiline_ocr_blocks(blocks: list[list]) -> list[list]:
                 max_x_gap = max(6.0, 0.45 * min_h)
                 too_far_vertically = (
                     b["min_y"] - a["max_y"] > max_v_gap
-                    and a["min_y"] - b["max_y"] > max_v_gap
+                    or a["min_y"] - b["max_y"] > max_v_gap
                 )
                 too_far_horizontally = (
                     b["min_x"] - a["max_x"] > max_x_gap
-                    and a["min_x"] - b["max_x"] > max_x_gap
+                    or a["min_x"] - b["max_x"] > max_x_gap
                 )
                 if too_far_vertically and too_far_horizontally:
                     continue
@@ -296,7 +296,7 @@ def merge_multiline_ocr_blocks(blocks: list[list]) -> list[list]:
                 "h": new_max_y - new_min_y,
                 "cx": (new_min_x + new_max_x) / 2.0,
                 "cy": (new_min_y + new_max_y) / 2.0,
-                "has_prefix": first.get("has_prefix") or _has_multiline_prefix(combined_text),
+                "has_prefix": _has_multiline_prefix(combined_text),
             }
             # Remove indices from highest to lowest to preserve positions
             del items[max(first_idx, second_idx)]

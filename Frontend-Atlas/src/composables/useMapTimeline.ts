@@ -6,6 +6,66 @@ import { getFeatureMapId, getFeatureMapIds } from "../utils/featureHelpers";
 
 export type TimelineFilterMode = "specific" | "cumulative" | "global";
 
+const LEGACY_GLOBAL_MODE_KEY = "atlas_timeline_filter_mode";
+
+function timelineStorageKey(projectId: string): string {
+  return `atlas_timeline_${projectId}`;
+}
+
+function readTimelineStorage(projectId: string): {
+  year?: number;
+  exactDate?: string | null;
+  mode?: TimelineFilterMode;
+} {
+  try {
+    const raw = localStorage.getItem(timelineStorageKey(projectId));
+    if (raw) {
+      const parsed = JSON.parse(raw) as {
+        year?: unknown;
+        exactDate?: unknown;
+        mode?: unknown;
+      };
+      return {
+        year: typeof parsed.year === "number" ? parsed.year : Number(parsed.year),
+        exactDate: typeof parsed.exactDate === "string" ? parsed.exactDate : null,
+        mode:
+          parsed.mode === "specific" ||
+          parsed.mode === "cumulative" ||
+          parsed.mode === "global"
+            ? parsed.mode
+            : undefined,
+      };
+    }
+    const yearRaw = localStorage.getItem(`atlas_timeline_year_${projectId}`);
+    const exactRaw = localStorage.getItem(`atlas_timeline_exact_date_${projectId}`);
+    const modeRaw =
+      localStorage.getItem(`atlas_timeline_filter_mode_${projectId}`) ??
+      localStorage.getItem(LEGACY_GLOBAL_MODE_KEY);
+    return {
+      year: yearRaw !== null ? Number(yearRaw) : undefined,
+      exactDate: exactRaw,
+      mode:
+        modeRaw === "specific" ||
+        modeRaw === "cumulative" ||
+        modeRaw === "global"
+          ? modeRaw
+          : undefined,
+    };
+  } catch {
+    return {};
+  }
+}
+
+function writeTimelineStorage(
+  projectId: string,
+  state: { year: number; exactDate: string | null; mode: TimelineFilterMode },
+) {
+  localStorage.setItem(timelineStorageKey(projectId), JSON.stringify(state));
+  localStorage.removeItem(`atlas_timeline_year_${projectId}`);
+  localStorage.removeItem(`atlas_timeline_exact_date_${projectId}`);
+  localStorage.removeItem(`atlas_timeline_filter_mode_${projectId}`);
+}
+
 export interface TimelineMilestone {
   year: number;
   label: string;
@@ -56,21 +116,13 @@ export function useMapTimeline({
     }
     isRestoringPosition.value = true;
     try {
-      const storedYear = localStorage.getItem(`atlas_timeline_year_${targetId}`);
-      const storedExactDate = localStorage.getItem(
-        `atlas_timeline_exact_date_${targetId}`,
-      );
-      if (storedYear !== null) {
-        const parsed = Number(storedYear);
-        if (Number.isFinite(parsed) && parsed >= 0) {
-          selectedYear.value = clampYearToTimelineRange(parsed);
-          selectedExactDate.value = storedExactDate || null;
-        }
+      const stored = readTimelineStorage(targetId);
+      if (stored.year !== undefined && Number.isFinite(stored.year) && stored.year >= 0) {
+        selectedYear.value = clampYearToTimelineRange(stored.year);
+        selectedExactDate.value = stored.exactDate || null;
       }
-      const storedMode = localStorage.getItem(
-        `atlas_timeline_filter_mode_${targetId}`,
-      );
-      timelineMode.value = isValidTimelineMode(storedMode)
+      const storedMode = stored.mode;
+      timelineMode.value = isValidTimelineMode(storedMode ?? null)
         ? storedMode
         : "specific";
       await nextTick();
@@ -81,35 +133,14 @@ export function useMapTimeline({
     }
   }
 
-  watch([selectedYear, selectedExactDate], ([year, exactDate]) => {
+  watch([selectedYear, selectedExactDate, timelineMode], ([year, exactDate, mode]) => {
     if (isRestoringPosition.value || !projectId?.value || year < 0) return;
     try {
-      localStorage.setItem(
-        `atlas_timeline_year_${projectId.value}`,
-        String(year),
-      );
-      if (exactDate) {
-        localStorage.setItem(
-          `atlas_timeline_exact_date_${projectId.value}`,
-          exactDate,
-        );
-      } else {
-        localStorage.removeItem(
-          `atlas_timeline_exact_date_${projectId.value}`,
-        );
-      }
-    } catch {
-      // Ignore storage errors in restricted contexts
-    }
-  });
-
-  watch(timelineMode, (mode: TimelineFilterMode) => {
-    if (isRestoringPosition.value || !projectId?.value) return;
-    try {
-      localStorage.setItem(
-        `atlas_timeline_filter_mode_${projectId.value}`,
+      writeTimelineStorage(projectId.value, {
+        year,
+        exactDate: exactDate ?? null,
         mode,
-      );
+      });
     } catch {
       // Ignore storage errors in restricted contexts
     }
@@ -420,7 +451,9 @@ export function useMapTimeline({
     if (candidatePeriods.length === 0) return false;
 
     const sortedCandidates = [...candidatePeriods].sort((a, b) => {
-      if (a.startYear !== b.startYear) return a.startYear - b.startYear;
+      const aYear = a.startYear ?? toYear(a.startDate) ?? 0;
+      const bYear = b.startYear ?? toYear(b.startDate) ?? 0;
+      if (aYear !== bYear) return aYear - bYear;
       return (a.startDate ?? "").localeCompare(b.startDate ?? "");
     });
 

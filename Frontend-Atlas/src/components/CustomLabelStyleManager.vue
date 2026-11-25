@@ -204,7 +204,7 @@
                 class="text-xs text-red-700 bg-white border border-red-500 rounded px-2 py-1 mt-1"
                 data-testid="max-size-warning"
               >
-                La taille maximale autorisée est de 96 px (l'aperçu est limité à 96 px).
+                La taille maximale autorisée est de 96 px (la valeur sera plafonnée).
               </span>
             </div>
 
@@ -407,7 +407,7 @@
               class="text-xs text-red-700 bg-white border border-red-500 rounded px-2 py-1"
               data-testid="custom-point-stroke-width-max-warning"
             >
-              L'épaisseur maximale autorisée est de {{ MAX_POINT_STROKE_WIDTH_PX }} px (la valeur a été plafonnée).
+              L'épaisseur maximale autorisée est de {{ MAX_POINT_STROKE_WIDTH_PX }} px (la valeur sera plafonnée).
             </span>
           </div>
         </div>
@@ -449,6 +449,8 @@ import PointSwatch from "./PointSwatch.vue";
 import {
   MAX_POINT_STROKE_WIDTH_PX,
   MAX_PREVIEW_POINT_STROKE_WIDTH_PX,
+  parseClampedOpacityFromInput,
+  preventNumericShortcutKeys,
 } from "../utils/featureTextEditing";
 import {
   TrashIcon,
@@ -539,30 +541,20 @@ function normalizeDraftSize() {
 }
 
 function onOpacityKeydown(event: KeyboardEvent) {
-  if (event.key === "-" || event.key === "+" || event.key === "e" || event.key === "E") {
-    event.preventDefault();
-  }
+  preventNumericShortcutKeys(event);
 }
 
 function onOpacityInput(field: "pointFillOpacity" | "pointStrokeOpacity", event: Event) {
   const input = event.target as HTMLInputElement;
-  const raw = input.value;
-  if (raw === "" || raw === null) {
+  if (input.value === "" || input.value === null) {
     draft.value[field] = 0;
     syncLiveDraft();
     return;
   }
-  const clean = raw.replace(",", ".");
-  let num = parseFloat(clean);
-  if (isNaN(num)) return;
-  if (num > 1) {
-    num = 1;
-    input.value = "1";
-  } else if (num < 0) {
-    num = 0;
-    input.value = "0";
-  }
-  draft.value[field] = num;
+  const parsed = parseClampedOpacityFromInput(input.value);
+  if (parsed === undefined) return;
+  input.value = String(parsed);
+  draft.value[field] = parsed;
   syncLiveDraft();
 }
 

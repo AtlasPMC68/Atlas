@@ -58,6 +58,19 @@ export function normalizeStrokeWidth(value: unknown): number | undefined {
   return Math.max(0, Math.min(MAX_STROKE_WIDTH_PX, width));
 }
 
+export function preventNumericShortcutKeys(event: KeyboardEvent): void {
+  if (event.key === "-" || event.key === "+" || event.key === "e" || event.key === "E") {
+    event.preventDefault();
+  }
+}
+
+export function parseClampedOpacityFromInput(raw: string): number | undefined {
+  if (raw === "" || raw === null) return undefined;
+  const num = parseFloat(raw.replace(",", "."));
+  if (Number.isNaN(num)) return undefined;
+  return Math.max(0, Math.min(1, num));
+}
+
 export function normalizePointStrokeWidth(value: unknown): number | undefined {
   if (value === null || value === undefined || value === "") return undefined;
   const width = Number(value);
@@ -384,7 +397,9 @@ export function coerceEditedFeature(
         : (normalizeOpacity(payload.strokeOpacity) ?? (isPoint ? 1 : undefined)),
       strokeWidth: isLabel
         ? undefined
-        : (normalizeStrokeWidth(payload.strokeWidth) ?? (isPoint ? 1 : undefined)),
+        : isPoint
+          ? (normalizePointStrokeWidth(payload.strokeWidth) ?? 1)
+          : (normalizeStrokeWidth(payload.strokeWidth) ?? undefined),
     },
   };
 }

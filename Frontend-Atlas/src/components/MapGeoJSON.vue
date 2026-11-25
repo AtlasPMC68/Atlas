@@ -130,12 +130,16 @@ let leavingModesForSelectionChange = false;
 // tells the props watcher to skip the re-render for that one echo update so we
 // don't destroy and re-create the layer the user is actively interacting with.
 let featurePropRenderHolds = 0;
+let featurePropRenderHoldTimer: ReturnType<typeof setTimeout> | null = null;
+const FEATURE_PROP_RENDER_HOLD_MS = 2500;
 
 function holdFeaturePropRenders() {
   featurePropRenderHolds += 1;
-  nextTick(() => {
-    featurePropRenderHolds = Math.max(0, featurePropRenderHolds - 1);
-  });
+  if (featurePropRenderHoldTimer) clearTimeout(featurePropRenderHoldTimer);
+  featurePropRenderHoldTimer = setTimeout(() => {
+    featurePropRenderHolds = 0;
+    featurePropRenderHoldTimer = null;
+  }, FEATURE_PROP_RENDER_HOLD_MS);
 }
 let blockNextMapClick = false;
 
@@ -480,6 +484,9 @@ const featureLayerManager = {
         pm?.globalEditModeEnabled?.() ||
         pm?.globalRotateModeEnabled?.();
 
+      // Geoman would otherwise grab the layer the moment it is added back
+      // while global edit/rotate is on. pmIgnore keeps that from stealing
+      // the vertices of the feature already being edited.
       const setIgnoreDeep = (l: L.Layer) => {
         (l.options as PmIgnoreOptions).pmIgnore = true;
         if (l instanceof L.LayerGroup) {
@@ -742,6 +749,9 @@ defineExpose({
   multiSelectedIds,
 });
 
+// During a Geoman cut, layers can be removed from the map then re-added.
+// Track which features were visible / updated so we don't treat a temporary
+// detach as "this shape left the map".
 let cuttingUpdatedIds: Set<string> | null = null;
 let cuttingVisibleIds: Set<string> | null = null;
 
@@ -1089,7 +1099,11 @@ function materializeTextLayer(feature: Feature): L.Layer | null {
   if (presentation.mapElementType === "point") {
     const fillColor = presentation.pointColor || "#000000";
     const strokeColor = presentation.pointStrokeColor || "#000000";
-    const swatch = STYLE_POINT_SWATCH_PX;
+    const strokeW = presentation.pointStrokeWidth ?? 1;
+    const swatch = Math.max(
+      STYLE_POINT_SWATCH_PX,
+      Math.ceil(STYLE_POINT_SWATCH_PX + strokeW),
+    );
     const anchorX = -Math.round(swatch / 2 + 2);
     const anchorY = Math.round(presentation.sizePx * 0.6 + 6);
 
@@ -1101,7 +1115,8 @@ function materializeTextLayer(feature: Feature): L.Layer | null {
           stroke: strokeColor,
           fillOpacity: presentation.pointFillOpacity ?? 1,
           strokeOpacity: presentation.pointStrokeOpacity ?? 1,
-          strokeWidth: presentation.pointStrokeWidth ?? 1,
+          strokeWidth: strokeW,
+          size: swatch,
         }),
         iconSize: [swatch, swatch],
         iconAnchor: [swatch / 2, swatch / 2],
@@ -1454,11 +1469,13 @@ onMounted(() => {
     5,
   );
   viewReadyFallback = setTimeout(revealMap, VIEW_READY_FALLBACK_MS);
+  // One canvas for all vector paths so pan/zoom does not create a DOM node per shape.
   vectorRenderer = L.canvas({ padding: 0.5 });
   (map.options as Record<string, unknown>).renderer = vectorRenderer;
 
   createCartoTileLayer({ noWrap: true }).addTo(map);
 
+  // Images sit above the basemap but below Geoman vertex handles.
   const imagePane = map.createPane('imagePane');
   imagePane.style.zIndex = '410';
 
@@ -1643,15 +1660,19 @@ onMounted(() => {
 
   map.on("pm:globaleditmodetoggled", restorePmIgnore);
   map.on("pm:globaleditmodetoggled", (e: { enabled?: boolean }) => {
+    const isEnabled = e.enabled;
+    // Vertex edit and the scale bounding-box must not overlap: the box
+    // handles sit above Geoman vertices and steal the drag.
+    if (isEnabled) {
+      shapeScaling.detach();
+    }
     if (!selectedFeatureId.value || leavingModesForSelectionChange) return;
     const selectedLayer = featureLayerManager.layers.get(selectedFeatureId.value);
     if (!selectedLayer || selectedLayer instanceof L.ImageOverlay) return;
-    const isEnabled = e.enabled;
     if (isEnabled) {
       disablePerFeatureDrag(selectedLayer);
       pixelSpaceDragCleanup?.();
       pixelSpaceDragCleanup = null;
-      shapeScaling.detach();
     } else {
       enablePerFeatureDrag(selectedLayer);
       if (map) pixelSpaceDragCleanup = enablePixelSpaceDrag(map, selectedLayer);
@@ -1796,6 +1817,8 @@ watch(
 
 watch(drawing.activeDrawingMode, (mode: string | null) => {
   if (!map) return;
+  // Drawing tools sit above the vector canvas; disable canvas hits so a click
+  // starts a new shape instead of selecting one underneath.
   map.getContainer().querySelectorAll<HTMLCanvasElement>('canvas').forEach((canvas: HTMLCanvasElement) => {
     canvas.style.pointerEvents = mode !== null ? 'none' : '';
   });
@@ -1806,6 +1829,11 @@ watch(
   (newFeatures: Feature[]) => {
     localFeaturesSnapshot.value = [...newFeatures];
     if (featurePropRenderHolds > 0) {
+      featurePropRenderHolds = Math.max(0, featurePropRenderHolds - 1);
+      if (featurePropRenderHolds === 0 && featurePropRenderHoldTimer) {
+        clearTimeout(featurePropRenderHoldTimer);
+        featurePropRenderHoldTimer = null;
+      }
       return;
     }
     if (!map) return;
@@ -1874,15 +1902,13 @@ function applySelectionEffects(id: string) {
     );
 
     let cityLatLng: L.LatLng | null = null;
-    let cityPointRadius = MAP_POINT_MARKER_RADIUS_PX;
     let cityLabel: L.Marker | null = null;
     forEachLeafLayer(layer, (leaf) => {
-      if (!(leaf instanceof L.Marker) || leaf instanceof L.CircleMarker) return;
+      if (!(leaf instanceof L.Marker)) return;
       const el = leaf.getElement();
       if (el?.classList.contains("map-point-marker")) {
         if (!cityLatLng) {
           cityLatLng = leaf.getLatLng();
-          cityPointRadius = MAP_POINT_MARKER_RADIUS_PX;
         }
         return;
       }
@@ -1891,7 +1917,7 @@ function applySelectionEffects(id: string) {
       }
     });
 
-    if (!cityLabel && layer instanceof L.Marker && !(layer instanceof L.CircleMarker)) {
+    if (!cityLabel && layer instanceof L.Marker) {
       cityLabel = layer;
     }
 
@@ -1920,7 +1946,7 @@ function applySelectionEffects(id: string) {
     nextTick(applyLabelClasses);
 
     if (cityLatLng && map) {
-      const ringSize = Math.round(cityPointRadius * 2 + 10);
+      const ringSize = Math.round(MAP_POINT_MARKER_RADIUS_PX * 2 + 10);
       selectedCityRing = L.marker(cityLatLng, {
         icon: L.divIcon({
           className: "city-selection-ring",
@@ -2140,8 +2166,8 @@ watch(
 
 .map-point-marker svg {
   display: block;
-  width: 12px;
-  height: 12px;
+  width: 100%;
+  height: 100%;
 }
 
 .city-label-text {

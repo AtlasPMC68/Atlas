@@ -393,21 +393,25 @@ _GENERIC_ADMIN_TERMS: Set[str] = {
 _IGNORABLE_TOKENS: Set[str] = _GENERIC_ADMIN_TERMS | set(_PREFIX_TYPE_MAP.keys())
 
 
+def _token_score(q_toks: List[str], c_toks: List[str]) -> float | None:
+    """Min bidirectional SequenceMatcher score, or None when either side is empty."""
+    if not q_toks or not c_toks:
+        return None
+    query_to_candidate = min(
+        max((difflib.SequenceMatcher(None, q, k).ratio() for k in c_toks), default=0.0)
+        for q in q_toks
+    )
+    candidate_to_query = min(
+        max((difflib.SequenceMatcher(None, k, q).ratio() for q in q_toks), default=0.0)
+        for k in c_toks
+    )
+    return min(query_to_candidate, candidate_to_query)
+
+
 def _tokens_compatible(q_toks: List[str], c_toks: List[str], cutoff: float) -> bool:
     """True when query and candidate tokens match in both directions above *cutoff*."""
-    if not q_toks or not c_toks:
-        return False
-    if not all(
-        max((difflib.SequenceMatcher(None, q, k).ratio() for k in c_toks), default=0.0) >= cutoff
-        for q in q_toks
-    ):
-        return False
-    if not all(
-        max((difflib.SequenceMatcher(None, k, q).ratio() for q in q_toks), default=0.0) >= cutoff
-        for k in c_toks
-    ):
-        return False
-    return True
+    score = _token_score(q_toks, c_toks)
+    return score is not None and score >= cutoff
 
 
 _REPEATED_PREFIX_SPLIT = re.compile(
@@ -613,25 +617,9 @@ def _find_single_nearby_candidate_place(
                     t for t in variant.split()
                     if len(t) >= 3 and t not in _IGNORABLE_TOKENS
                 ]
-                if not _tokens_compatible(query_tokens, var_tokens, min_similarity):
+                token_score = _token_score(query_tokens, var_tokens)
+                if token_score is None or token_score < min_similarity:
                     continue
-
-                token_score = min(
-                    min(
-                        max(
-                            (difflib.SequenceMatcher(None, q_tok, c_tok).ratio() for c_tok in var_tokens),
-                            default=0.0,
-                        )
-                        for q_tok in query_tokens
-                    ),
-                    min(
-                        max(
-                            (difflib.SequenceMatcher(None, c_tok, q_tok).ratio() for q_tok in query_tokens),
-                            default=0.0,
-                        )
-                        for c_tok in var_tokens
-                    ),
-                )
                 if token_score > best_token_score:
                     best_token_score = token_score
 

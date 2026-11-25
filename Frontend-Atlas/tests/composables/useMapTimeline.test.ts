@@ -317,9 +317,8 @@ describe("useMapTimeline - persist user position", () => {
     first.timelineMode.value = "cumulative";
     await nextTick();
 
-    expect(localStorage.getItem("atlas_timeline_year_proj-persist")).toBe("1875");
-    expect(localStorage.getItem("atlas_timeline_filter_mode_proj-persist")).toBe(
-      "cumulative",
+    expect(JSON.parse(localStorage.getItem("atlas_timeline_proj-persist") ?? "{}")).toEqual(
+      expect.objectContaining({ year: 1875, mode: "cumulative" }),
     );
 
     const second = useMapTimeline({
@@ -337,8 +336,10 @@ describe("useMapTimeline - persist user position", () => {
 
   it("does not overwrite the stored year while restoring", async () => {
     const projectId = ref("proj-persist");
-    localStorage.setItem("atlas_timeline_year_proj-persist", "1900");
-    localStorage.setItem("atlas_timeline_filter_mode_proj-persist", "specific");
+    localStorage.setItem(
+      "atlas_timeline_proj-persist",
+      JSON.stringify({ year: 1900, mode: "specific" }),
+    );
 
     const features = ref<Feature[]>([
       makeFeature("f-1850", "map-1850"),
@@ -356,7 +357,9 @@ describe("useMapTimeline - persist user position", () => {
     timeline.beginTimelineRestore();
     timeline.selectedYear.value = 1400;
     await nextTick();
-    expect(localStorage.getItem("atlas_timeline_year_proj-persist")).toBe("1900");
+    expect(JSON.parse(localStorage.getItem("atlas_timeline_proj-persist") ?? "{}").year).toBe(
+      1900,
+    );
 
     await timeline.restoreTimelinePosition();
     expect(timeline.selectedYear.value).toBe(1900);

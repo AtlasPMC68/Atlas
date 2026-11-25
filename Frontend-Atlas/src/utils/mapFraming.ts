@@ -26,13 +26,17 @@ export function applySmartFeatureFraming(
   const mapLevelZoom = options.mapLevelZoom ?? Math.min(currentZoom, 5);
   const animate = options.animate ?? false;
 
-  const isInsideFieldOfView =
-    currentViewBounds.contains(targetBounds.getCenter()) ||
-    currentViewBounds.intersects(targetBounds);
-
-  if (isInsideFieldOfView) {
-    // Feature is already visible in viewport - do not move or pan the map at all
+  const fullyInside = currentViewBounds.pad(-0.05).contains(targetBounds);
+  if (fullyInside) {
     return "in-view";
+  }
+
+  if (
+    currentViewBounds.contains(targetBounds.getCenter()) ||
+    currentViewBounds.intersects(targetBounds)
+  ) {
+    map.panTo(targetBounds.getCenter(), { animate });
+    return "panned";
   }
 
   // Feature is outside viewport:

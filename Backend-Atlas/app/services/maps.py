@@ -7,7 +7,9 @@ from datetime import date
 from typing import Any, cast
 from uuid import UUID, uuid4
 
-from sqlalchemy import String, cast as sa_cast, delete, or_, select
+from sqlalchemy import delete, or_, select
+from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy.sql.expression import cast as sa_cast
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm.attributes import flag_modified
 
@@ -246,7 +248,12 @@ async def delete_map_in_db(
             Feature.project_id == project_id,
             or_(
                 Feature.map_id == map_id,
-                sa_cast(Feature.data, String).contains(map_id_str),
+                sa_cast(Feature.data, JSONB)["properties"]["mapIds"].op("@>")(
+                    sa_cast(f'["{map_id_str}"]', JSONB)
+                ),
+                sa_cast(Feature.data, JSONB)["mapIds"].op("@>")(
+                    sa_cast(f'["{map_id_str}"]', JSONB)
+                ),
             ),
         )
     )
@@ -276,7 +283,11 @@ async def delete_map_in_db(
                     getattr(feat, "id", None),
                     exc_info=True,
                 )
-                await db.delete(feat)
+                if feat_map_id_str == map_id_str:
+                    await db.delete(feat)
+                else:
+                    setattr(feat, "data", update_feature_map_ids(feat_data, other_map_ids))
+                    flag_modified(feat, "data")
         else:
             await db.delete(feat)
 

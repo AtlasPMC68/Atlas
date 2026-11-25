@@ -65,11 +65,12 @@ export async function apiFetch(
           headers: retryHeaders,
         });
       }
+      console.warn("Session expired on 401 response; redirecting to login.");
+      await keycloak.login({ redirectUri: window.location.href });
     } catch {
-      // Refresh threw; treat as an expired session below.
+      console.warn("Session expired on 401 response; redirecting to login.");
+      await keycloak.login({ redirectUri: window.location.href });
     }
-    console.warn("Session expired on 401 response; redirecting to login.");
-    await keycloak.login({ redirectUri: window.location.href });
   }
 
   return response;

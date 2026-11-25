@@ -5,7 +5,10 @@ type EditLinePrototype = {
   applyLimitFilters: (args: LimitFilterArgs) => void;
   _map?: L.Map;
 };
-type MapWithCursor = L.Map & { _atlasCursorLatLng?: L.LatLng };
+type MapWithCursor = L.Map & {
+  _atlasCursorLatLng?: L.LatLng;
+  _atlasVertexDragging?: boolean;
+};
 
 let patched = false;
 
@@ -29,14 +32,21 @@ export function anchorMarkerLimitToCursor(map: L.Map): void {
   map.on("contextmenu", (e: L.LeafletMouseEvent) => {
     tracked._atlasCursorLatLng = e.latlng;
   });
-  // Leaflet mousemove does not fire while a vertex marker is dragged. The
-  // pointer still moves, so keep the limit-filter origin on the cursor.
-  const container = map.getContainer();
+  // Leaflet mousemove does not fire while a vertex marker is dragged, and
+  // pointer capture on that marker can skip the map container. Track the
+  // pointer on document (capture) and freeze the limit filter during drag.
   const onPointerMove = (e: PointerEvent) => setCursorFromEvent(map, e);
-  container.addEventListener("pointermove", onPointerMove);
+  document.addEventListener("pointermove", onPointerMove, true);
+  map.on("pm:markerdragstart", () => {
+    tracked._atlasVertexDragging = true;
+  });
+  map.on("pm:markerdragend", () => {
+    tracked._atlasVertexDragging = false;
+  });
 
   map.once("unload", () => {
-    container.removeEventListener("pointermove", onPointerMove);
+    document.removeEventListener("pointermove", onPointerMove, true);
+    tracked._atlasVertexDragging = false;
   });
 
   if (patched) return;
@@ -53,8 +63,9 @@ export function anchorMarkerLimitToCursor(map: L.Map): void {
     this: EditLinePrototype,
     args: LimitFilterArgs = {},
   ) {
-    if (args.latlng) return original.call(this, args);
     const m = this._map as MapWithCursor | undefined;
+    if (m?._atlasVertexDragging) return;
+    if (args.latlng) return original.call(this, args);
     const latlng = m?._atlasCursorLatLng ?? m?.getCenter();
     return original.call(this, latlng ? { latlng } : args);
   };

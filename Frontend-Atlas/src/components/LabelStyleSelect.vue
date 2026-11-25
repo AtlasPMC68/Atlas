@@ -1,5 +1,6 @@
 <template>
   <div
+    ref="rootRef"
     class="relative min-w-0 flex-1"
     :data-testid="testId"
     :data-selected-value="modelValue"
@@ -11,6 +12,7 @@
       :aria-expanded="open"
       aria-haspopup="listbox"
       @click="open = !open"
+      @keydown="onTriggerKeydown"
     >
       <PointSwatch v-if="selectedHasPoint" :fill="selectedPointColor" />
       <span
@@ -27,13 +29,17 @@
       role="listbox"
     >
       <li
-        v-for="option in options"
+        v-for="(option, index) in options"
         :key="option.value"
         role="option"
         class="flex cursor-pointer items-center gap-2 px-3 py-1.5 text-sm hover:bg-base-200"
+        :class="{ 'bg-base-200': index === highlightedIndex }"
         :aria-selected="modelValue === option.value"
         :data-value="option.value"
+        :tabindex="open ? 0 : -1"
         @click="choose(option.value)"
+        @keydown.enter.prevent="choose(option.value)"
+        @keydown.space.prevent="choose(option.value)"
       >
         <PointSwatch v-if="option.hasPoint" :fill="option.fill" />
         <span
@@ -92,6 +98,8 @@ const emit = defineEmits<{
 }>();
 
 const open = ref(false);
+const rootRef = ref<HTMLElement | null>(null);
+const highlightedIndex = ref(0);
 
 function taxonomyHasPoint(typeKey: string): boolean {
   return WORD_TYPE_TAXONOMY[typeKey as WordType]?.mapElementType === "point";
@@ -129,11 +137,43 @@ function choose(value: string) {
   void nextTick(() => emit("change"));
 }
 
+function onTriggerKeydown(event: KeyboardEvent) {
+  if (event.key === "Escape") {
+    open.value = false;
+    return;
+  }
+  if (event.key === "ArrowDown" || event.key === "Enter" || event.key === " ") {
+    event.preventDefault();
+    if (!open.value) {
+      open.value = true;
+      highlightedIndex.value = Math.max(
+        0,
+        options.value.findIndex((option) => option.value === props.modelValue),
+      );
+      return;
+    }
+    if (event.key === "ArrowDown") {
+      highlightedIndex.value = Math.min(
+        options.value.length - 1,
+        highlightedIndex.value + 1,
+      );
+      return;
+    }
+    if (event.key === "Enter" || event.key === " ") {
+      const option = options.value[highlightedIndex.value];
+      if (option) choose(option.value);
+    }
+  }
+  if (event.key === "ArrowUp" && open.value) {
+    event.preventDefault();
+    highlightedIndex.value = Math.max(0, highlightedIndex.value - 1);
+  }
+}
+
 function onWindowPointerDown(event: PointerEvent) {
-  const root = (event.target as HTMLElement | null)?.closest?.(
-    `[data-testid="${props.testId}"]`,
-  );
-  if (!root) open.value = false;
+  const target = event.target as Node | null;
+  if (target && rootRef.value?.contains(target)) return;
+  open.value = false;
 }
 
 onMounted(() => {

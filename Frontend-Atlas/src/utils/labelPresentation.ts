@@ -49,18 +49,24 @@ function svgAttr(value: string): string {
     .replace(/</g, "&lt;");
 }
 
+function svgNumber(value: unknown, fallback: number): number {
+  const n = Number(value);
+  return Number.isFinite(n) ? n : fallback;
+}
+
 export function mapPointSwatchSvg(options: {
   fill: string;
   stroke: string;
   fillOpacity?: number;
   strokeOpacity?: number;
   strokeWidth?: number;
+  size?: number;
 }): string {
-  const size = STYLE_POINT_SWATCH_PX;
-  const radius = size / 2 - 2;
-  const strokeWidth = Math.min(options.strokeWidth ?? 1, 2);
-  const fillOpacity = options.fillOpacity ?? 1;
-  const strokeOpacity = options.strokeOpacity ?? 1;
+  const size = Math.max(STYLE_POINT_SWATCH_PX, Math.round(options.size ?? STYLE_POINT_SWATCH_PX));
+  const strokeWidth = Math.min(Math.max(svgNumber(options.strokeWidth, 1), 0), size / 2);
+  const radius = Math.max(1, size / 2 - 2 - strokeWidth / 2);
+  const fillOpacity = Math.max(0, Math.min(1, svgNumber(options.fillOpacity, 1)));
+  const strokeOpacity = Math.max(0, Math.min(1, svgNumber(options.strokeOpacity, 1)));
   return (
     `<svg width="${size}" height="${size}" viewBox="0 0 ${size} ${size}" aria-hidden="true">` +
     `<circle cx="${size / 2}" cy="${size / 2}" r="${radius}"` +
@@ -401,6 +407,7 @@ export function getLabelPresentation(
     isUppercase: typo.isUppercase,
     isItalic: typo.isItalic,
     isBold: typo.isBold,
+    // Collision rank follows on-screen type size, not a separate style.priority.
     priority: typo.sizePx,
     minZoom:
       customStyle?.minZoom ??
@@ -445,7 +452,7 @@ function parseCustomStyle(value: unknown): {
   const textTransform = style.textTransform === "uppercase" ? "uppercase" : "none";
   const rawColor = typeof style.color === "string" ? style.color.trim() : "";
   const color = /^#[0-9a-f]{6}$/i.test(rawColor) ? rawColor : "#000000";
-  if (!Number.isFinite(sizePx)) {
+  if (!Number.isFinite(sizePx) || sizePx <= 0) {
     return null;
   }
   const isBold =

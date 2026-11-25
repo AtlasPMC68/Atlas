@@ -8,7 +8,7 @@
     tabindex="0"
     class="h-1.5 w-full shrink-0 cursor-row-resize bg-base-300/50 hover:bg-primary/50 focus:bg-primary/50 transition-colors z-[1002]"
     data-testid="timeline-resize-handle"
-    @mousedown.prevent="emit('start-resize', $event)"
+    @pointerdown.prevent="emit('start-resize', $event)"
     @keydown.up.prevent="emit('resize-by', 10)"
     @keydown.down.prevent="emit('resize-by', -10)"
   />
