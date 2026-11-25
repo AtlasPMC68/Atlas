@@ -70,18 +70,19 @@
                 >
                   <svg
                     v-if="isEditingPoint"
-                    class="shrink-0 overflow-visible"
-                    :style="{ width: '1em', height: '1em', flexShrink: 0 }"
-                    viewBox="0 0 1 1"
+                    class="shrink-0 overflow-hidden"
+                    :width="STYLE_POINT_SWATCH_PX"
+                    :height="STYLE_POINT_SWATCH_PX"
+                    :viewBox="`0 0 ${STYLE_POINT_SWATCH_PX} ${STYLE_POINT_SWATCH_PX}`"
                   >
                     <circle
-                      cx="0.5"
-                      cy="0.5"
-                      r="0.38"
+                      :cx="STYLE_POINT_SWATCH_PX / 2"
+                      :cy="STYLE_POINT_SWATCH_PX / 2"
+                      :r="STYLE_POINT_SWATCH_PX / 2 - 2"
                       :fill="pointPreviewFillColor"
                       :fill-opacity="pointPreviewFillOpacity"
                       :stroke="pointPreviewStrokeColor"
-                      :stroke-width="Math.min(pointPreviewStrokeWidth, 2) / 14"
+                      :stroke-width="Math.min(pointPreviewStrokeWidth, 2)"
                       :stroke-opacity="pointPreviewStrokeOpacity"
                     />
                   </svg>
@@ -171,32 +172,12 @@
           <div class="flex flex-col gap-1.5">
             <label class="field-label leading-5">Type de mot</label>
             <div class="flex flex-row items-center gap-2.5 w-full">
-              <select
+              <LabelStyleSelect
                 v-model="editDraft.labelStyleSelection"
-                data-testid="word-type-select"
-                class="select select-bordered flex-1 min-w-0 h-[50px] text-sm"
-                :style="selectedWordTypeSelectStyle"
+                :custom-styles="availableCustomLabelStyles"
+                test-id="word-type-select"
                 @change="onLabelStyleSelectionChange"
-              >
-                <option
-                  v-for="style in availableCustomLabelStyles"
-                  :key="style.id"
-                  :value="`custom:${style.id}`"
-                  :style="getCustomStyleObject(style)"
-                  class="text-sm"
-                >
-                  {{ getCustomStyleOptionLabel(style) }}
-                </option>
-                <option
-                  v-for="(_, typeKey) in WORD_TYPE_STYLES"
-                  :key="typeKey"
-                  :value="typeKey"
-                  :style="getWordTypeOptionStyle(typeKey)"
-                  class="text-sm"
-                >
-                  {{ getWordTypeOptionLabel(typeKey) }}
-                </option>
-              </select>
+              />
               <button
                 type="button"
                 class="modal-secondary-btn h-[50px]"
@@ -484,19 +465,16 @@ import type { CustomLabelStyle } from "../utils/labelPresentation";
 import {
   MAX_TEXT_SIZE_PX,
   MIN_TEXT_SIZE_PX,
+  STYLE_POINT_SWATCH_PX,
   normalizeTextSizePx,
   MAX_PREVIEW_FONT_SIZE_PX,
-  getWordTypeOptionLabel,
-  getWordTypeOptionStyle,
-  getCustomStyleObject,
-  getCustomStyleOptionLabel,
   hasCustomStylePoint,
   resolveLabelTypography,
 } from "../utils/labelPresentation";
 import CustomLabelStyleManager from "./CustomLabelStyleManager.vue";
+import LabelStyleSelect from "./LabelStyleSelect.vue";
 import { getMapElementType } from "../utils/featureHelpers";
 import {
-  WORD_TYPE_STYLES,
   WORD_TYPE_TAXONOMY,
   isTextFeature,
   formatWordText,
@@ -719,13 +697,6 @@ const pointPreviewStrokeWidth = computed(() => {
     return Math.min(raw, MAX_PREVIEW_POINT_STROKE_WIDTH_PX);
   }
   return raw;
-});
-
-const selectedWordTypeSelectStyle = computed<CSSProperties>(() => {
-  if (activeCustomLabelStyle.value) {
-    return getCustomStyleObject(activeCustomLabelStyle.value);
-  }
-  return getWordTypeOptionStyle(editDraft.value.wordType || "");
 });
 
 const areAllMapsSelected = computed(() => {

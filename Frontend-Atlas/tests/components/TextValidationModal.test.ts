@@ -239,8 +239,7 @@ describe("TextValidationModal", () => {
       (wrapper.find('input[type="text"]').element as HTMLInputElement).value,
     ).toBe("PROVINCE DE QUÉBEC");
     expect(
-      (wrapper.find('[data-testid="item-word-type-select"]').element as HTMLSelectElement)
-        .value,
+      wrapper.find('[data-testid="item-word-type-select"]').attributes("data-selected-value"),
     ).toBe("province");
   });
 
@@ -317,19 +316,19 @@ describe("TextValidationModal", () => {
       },
     ]);
 
-    const select = wrapper.find('select[data-testid="item-word-type-select"]');
+    const select = wrapper.find('[data-testid="item-word-type-select"]');
     expect(select.exists()).toBe(true);
+    expect(select.attributes("data-selected-value")).toBe("city");
 
-    // Initial value is city
-    expect((select.element as HTMLSelectElement).value).toBe("city");
-
-    // Change to province -> transform to uppercase
-    await select.setValue("province");
+    await select.find("button").trigger("click");
+    await select.find('[data-value="province"]').trigger("click");
+    await flushPromises();
     const textInput = wrapper.find('input[type="text"]');
     expect((textInput.element as HTMLInputElement).value).toBe("QUEBEC");
 
-    // Change back to city -> apply the canonical city capitalization.
-    await select.setValue("city");
+    await select.find("button").trigger("click");
+    await select.find('[data-value="city"]').trigger("click");
+    await flushPromises();
     expect((textInput.element as HTMLInputElement).value).toBe("Quebec");
   });
 
@@ -359,9 +358,10 @@ describe("TextValidationModal", () => {
       ],
     });
 
-    await wrapper
-      .find('[data-testid="item-word-type-select"]')
-      .setValue("custom:water-style");
+    const styleSelect = wrapper.find('[data-testid="item-word-type-select"]');
+    await styleSelect.find("button").trigger("click");
+    await styleSelect.find('[data-value="custom:water-style"]').trigger("click");
+    await flushPromises();
     await findButtonByText(
       wrapper,
       "Confirmer et afficher sur la carte",
@@ -385,20 +385,16 @@ describe("TextValidationModal", () => {
     ]);
 
     // When item is selected, word type selector is visible
-    expect(wrapper.find('select[data-testid="item-word-type-select"]').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="item-word-type-select"]').exists()).toBe(true);
 
-    // Uncheck item checkbox
     const itemCheckbox = wrapper.find('input[data-testid="item-checkbox"]');
     await itemCheckbox.setValue(false);
 
-    // Word type selector must now be hidden
-    expect(wrapper.find('select[data-testid="item-word-type-select"]').exists()).toBe(false);
+    expect(wrapper.find('[data-testid="item-word-type-select"]').exists()).toBe(false);
 
-    // Check item checkbox again
     await itemCheckbox.setValue(true);
 
-    // Word type selector is visible again
-    expect(wrapper.find('select[data-testid="item-word-type-select"]').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="item-word-type-select"]').exists()).toBe(true);
   });
 
   it("emits confirmed items with selected: false when deselecting all", async () => {

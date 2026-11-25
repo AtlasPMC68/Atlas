@@ -236,18 +236,20 @@
               :style="{ ...previewStyle(currentLiveStyle, true, 44), lineHeight: '1.15' }"
             >
               <svg
-                class="shrink-0 overflow-visible"
-                :style="{ width: '1em', height: '1em', flexShrink: 0 }"
-                viewBox="0 0 1 1"
+                v-if="draft.hasPoint"
+                class="shrink-0 overflow-hidden"
+                :width="STYLE_POINT_SWATCH_PX"
+                :height="STYLE_POINT_SWATCH_PX"
+                :viewBox="`0 0 ${STYLE_POINT_SWATCH_PX} ${STYLE_POINT_SWATCH_PX}`"
               >
                 <circle
-                  cx="0.5"
-                  cy="0.5"
-                  r="0.38"
+                  :cx="STYLE_POINT_SWATCH_PX / 2"
+                  :cy="STYLE_POINT_SWATCH_PX / 2"
+                  :r="STYLE_POINT_SWATCH_PX / 2 - 2"
                   :fill="draft.pointColor || '#000000'"
                   :fill-opacity="draft.pointFillOpacity"
                   :stroke="draft.pointStrokeColor || '#000000'"
-                  :stroke-width="Math.min(pointPreviewStrokeWidth, 2) / 14"
+                  :stroke-width="Math.min(pointPreviewStrokeWidth, 2)"
                   :stroke-opacity="draft.pointStrokeOpacity"
                 />
               </svg>
@@ -453,7 +455,7 @@ import type {
   CustomLabelStyle,
   NewCustomLabelStyle,
 } from "../utils/labelPresentation";
-import { getLabelStylePreviewCss } from "../utils/labelPresentation";
+import { getLabelStylePreviewCss, STYLE_POINT_SWATCH_PX } from "../utils/labelPresentation";
 import {
   MAX_POINT_STROKE_WIDTH_PX,
   MAX_PREVIEW_POINT_STROKE_WIDTH_PX,

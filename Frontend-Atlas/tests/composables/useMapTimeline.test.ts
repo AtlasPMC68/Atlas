@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from "vitest";
-import { ref } from "vue";
+import { nextTick, ref } from "vue";
 import { useMapTimeline } from "../../src/composables/useMapTimeline";
 import type { Feature } from "../../src/typescript/feature";
 import type { MapPeriod } from "../../src/typescript/map";
@@ -290,5 +290,75 @@ describe("useMapTimeline - revealFeatureOnTimeline", () => {
       expect(revealFeatureOnTimeline(fGeneral)).toBe(false);
       expect(selectedYear.value).toBe(1850);
     });
+  });
+});
+
+describe("useMapTimeline - persist user position", () => {
+  beforeEach(() => {
+    localStorage.clear();
+  });
+
+  it("saves year and mode, then restores them for the same project", async () => {
+    const projectId = ref("proj-persist");
+    const features = ref<Feature[]>([
+      makeFeature("f-1850", "map-1850"),
+      makeFeature("f-1900", "map-1900"),
+    ]);
+    const mapPeriods = ref<MapPeriod[]>([period1850, period1900]);
+    const currentMapTitle = ref<string | undefined>(undefined);
+
+    const first = useMapTimeline({
+      features,
+      mapPeriods,
+      currentMapTitle,
+      projectId,
+    });
+    first.selectedYear.value = 1875;
+    first.timelineMode.value = "cumulative";
+    await nextTick();
+
+    expect(localStorage.getItem("atlas_timeline_year_proj-persist")).toBe("1875");
+    expect(localStorage.getItem("atlas_timeline_filter_mode_proj-persist")).toBe(
+      "cumulative",
+    );
+
+    const second = useMapTimeline({
+      features,
+      mapPeriods,
+      currentMapTitle,
+      projectId,
+    });
+    second.beginTimelineRestore();
+    await second.restoreTimelinePosition();
+
+    expect(second.selectedYear.value).toBe(1875);
+    expect(second.timelineMode.value).toBe("cumulative");
+  });
+
+  it("does not overwrite the stored year while restoring", async () => {
+    const projectId = ref("proj-persist");
+    localStorage.setItem("atlas_timeline_year_proj-persist", "1900");
+    localStorage.setItem("atlas_timeline_filter_mode_proj-persist", "specific");
+
+    const features = ref<Feature[]>([
+      makeFeature("f-1850", "map-1850"),
+      makeFeature("f-1900", "map-1900"),
+    ]);
+    const mapPeriods = ref<MapPeriod[]>([period1850, period1900]);
+    const currentMapTitle = ref<string | undefined>(undefined);
+    const timeline = useMapTimeline({
+      features,
+      mapPeriods,
+      currentMapTitle,
+      projectId,
+    });
+
+    timeline.beginTimelineRestore();
+    timeline.selectedYear.value = 1400;
+    await nextTick();
+    expect(localStorage.getItem("atlas_timeline_year_proj-persist")).toBe("1900");
+
+    await timeline.restoreTimelinePosition();
+    expect(timeline.selectedYear.value).toBe(1900);
   });
 });

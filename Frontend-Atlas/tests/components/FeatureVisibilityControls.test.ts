@@ -1,8 +1,16 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { mount } from "@vue/test-utils";
+import { nextTick } from "vue";
+import { mount, type VueWrapper } from "@vue/test-utils";
 import FeatureVisibilityControls from "../../src/components/FeatureVisibilityControls.vue";
 import type { Feature } from "../../src/typescript/feature";
 import type { MapPeriod } from "../../src/typescript/map";
+
+async function chooseWordType(wrapper: VueWrapper, value: string) {
+  const root = wrapper.find('[data-testid="word-type-select"]');
+  await root.find("button").trigger("click");
+  await root.find(`[data-value="${value}"]`).trigger("click");
+  await nextTick();
+}
 
 // Mock alert
 vi.mock("../../src/composables/useAlert", () => ({
@@ -382,7 +390,7 @@ describe("FeatureVisibilityControls - Word Type Selection and Font Modification"
 
     const select = wrapper.find('[data-testid="word-type-select"]');
     expect(select.exists()).toBe(true);
-    expect((select.element as HTMLSelectElement).value).toBe("city");
+    expect(select.attributes("data-selected-value")).toBe("city");
     const notice = wrapper.find('[data-testid="word-style-scope-notice"]');
     expect(notice.exists()).toBe(true);
     expect(notice.text()).toContain("uniquement à ce mot");
@@ -414,12 +422,8 @@ describe("FeatureVisibilityControls - Word Type Selection and Font Modification"
 
     await (wrapper.vm as any).showEditFeatureDialog(textFeature);
 
-    const select = wrapper.find('[data-testid="word-type-select"]');
-    expect(select.exists()).toBe(true);
-
-    // Change type to province
-    await select.setValue("province");
-    await select.trigger("change");
+    expect(wrapper.find('[data-testid="word-type-select"]').exists()).toBe(true);
+    await chooseWordType(wrapper, "province");
 
     const modifyBtn = wrapper.findAll("button").find((b: any) => b.text().includes("Modifier"));
     expect(modifyBtn).toBeDefined();
@@ -453,12 +457,11 @@ describe("FeatureVisibilityControls - Word Type Selection and Font Modification"
     });
 
     await (wrapper.vm as any).showEditFeatureDialog(feature);
-    const select = wrapper.find('[data-testid="word-type-select"]');
     const textInput = wrapper.findAll("textarea").find((input: any) => input.element.value === "mCGuIlL");
     expect(textInput).toBeDefined();
 
-    await select.setValue("province");
-    await select.setValue("city");
+    await chooseWordType(wrapper, "province");
+    await chooseWordType(wrapper, "city");
 
     expect(textInput!.element.value).toBe("mCGuIlL");
   });
@@ -494,11 +497,8 @@ describe("FeatureVisibilityControls - Word Type Selection and Font Modification"
 
     const select = wrapper.find('[data-testid="word-type-select"]');
     expect(select.exists()).toBe(true);
-    expect((select.element as HTMLSelectElement).value).toBe("province");
-
-    // Change type to city
-    await select.setValue("city");
-    await select.trigger("change");
+    expect(select.attributes("data-selected-value")).toBe("province");
+    await chooseWordType(wrapper, "city");
 
     const modifyBtn = wrapper.findAll("button").find((b: any) => b.text().includes("Modifier"));
     await modifyBtn!.trigger("click");
@@ -540,12 +540,8 @@ describe("FeatureVisibilityControls - Word Type Selection and Font Modification"
 
     await (wrapper.vm as any).showEditFeatureDialog(saskatchewanFeature);
 
-    const select = wrapper.find('[data-testid="word-type-select"]');
-    expect(select.exists()).toBe(true);
-
-    // Switch from province to city
-    await select.setValue("city");
-    await select.trigger("change");
+    expect(wrapper.find('[data-testid="word-type-select"]').exists()).toBe(true);
+    await chooseWordType(wrapper, "city");
 
     const textInput = wrapper.findAll("textarea").find((i: any) => i.element.value === "SASKATCHEWAN");
     expect(textInput).toBeDefined();

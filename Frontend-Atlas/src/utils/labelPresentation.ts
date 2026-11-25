@@ -37,6 +37,9 @@ export type NewCustomLabelStyle = Omit<CustomLabelStyle, "id">;
 export const MAX_PREVIEW_FONT_SIZE_PX = 18;
 export const MIN_TEXT_SIZE_PX = 6;
 export const MAX_TEXT_SIZE_PX = 96;
+/** Map / preview city marker: not tied to the label font size. */
+export const MAP_POINT_MARKER_RADIUS_PX = 6;
+export const STYLE_POINT_SWATCH_PX = 12;
 
 /** A usable label size from user input or stored data, or undefined when there is none. */
 export function normalizeTextSizePx(value: unknown): number | undefined {
@@ -48,12 +51,9 @@ export function normalizeTextSizePx(value: unknown): number | undefined {
 
 export function getCustomStyleObject(style: CustomLabelStyle): CSSProperties {
   const isBold = style.fontWeight === "bold" || Boolean(style.bold);
-  const optionColor = hasCustomStylePoint(style)
-    ? style.pointColor || style.color || "#000000"
-    : style.color || "#000000";
 
   return {
-    color: optionColor,
+    color: style.color || "#000000",
     fontWeight: isBold ? "bold" : "normal",
     fontStyle: style.fontStyle || "normal",
     textTransform: style.textTransform || "none",

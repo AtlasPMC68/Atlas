@@ -563,6 +563,7 @@ const {
   onExactDateChange,
   beginTimelineRestore,
   restoreTimelinePosition,
+  isRestoringPosition,
 } = useMapTimeline({
   features,
   mapPeriods,
@@ -1943,6 +1944,7 @@ watch([projectRouteId], async () => {
 });
 
 watch([timelineMinYear, timelineMaxYear], () => {
+  if (isRestoringPosition.value || selectedYear.value < 0) return;
   if (selectedYear.value < timelineMinYear.value) {
     selectedYear.value = timelineMinYear.value;
   }
@@ -1950,26 +1952,6 @@ watch([timelineMinYear, timelineMaxYear], () => {
     selectedYear.value = timelineMaxYear.value;
   }
 });
-
-watch(
-  timelineMarkerYears,
-  (markers: number[]) => {
-    if (!markers.length) return;
-    if (!markers.includes(selectedYear.value)) {
-      // Find closest marker instead of resetting to markers[0]
-      let closest = markers[0];
-      let minDiff = Math.abs(selectedYear.value - closest);
-      for (let i = 1; i < markers.length; i++) {
-        const diff = Math.abs(selectedYear.value - markers[i]);
-        if (diff < minDiff) {
-          minDiff = diff;
-          closest = markers[i];
-        }
-      }
-      selectedYear.value = closest;
-    }
-  },
-);
 
 watch(
   () => route.params.mapId,

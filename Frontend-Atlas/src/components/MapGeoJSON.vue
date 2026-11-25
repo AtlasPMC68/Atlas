@@ -70,6 +70,7 @@ import { toArray, toImageSrc } from "../utils/utils";
 import { createCartoTileLayer } from "../utils/basemap";
 import {
   getLabelPresentation,
+  MAP_POINT_MARKER_RADIUS_PX,
   type LabelPresentationModel,
 } from "../utils/labelPresentation";
 import { updateMapLabelVisibility } from "../services/MapLabelVisibilityService";
@@ -127,6 +128,18 @@ let leavingModesForSelectionChange = false;
 // tells the props watcher to skip the re-render for that one echo update so we
 // don't destroy and re-create the layer the user is actively interacting with.
 let suppressNextPropsRender = false;
+let featurePropRenderHolds = 0;
+
+function holdFeaturePropRenders() {
+  suppressNextPropsRender = true;
+  featurePropRenderHolds += 1;
+  nextTick(() => {
+    featurePropRenderHolds = Math.max(0, featurePropRenderHolds - 1);
+    if (featurePropRenderHolds === 0) {
+      suppressNextPropsRender = false;
+    }
+  });
+}
 let blockNextMapClick = false;
 
 // ---- Right-click drag panning ----
@@ -363,6 +376,15 @@ const featureLayerManager = {
       // Don't steal clicks from active drawing tools
       if (drawing.activeDrawingMode.value !== null) return;
       if (pm?.globalRemovalModeEnabled?.()) return;
+      // A snapped vertex mouseup lands on the neighbour zone. That must not
+      // change the selection (it would leave edit mode and drop the handles).
+      if (
+        pm?.globalEditModeEnabled?.() &&
+        selectedFeatureId.value &&
+        id !== selectedFeatureId.value
+      ) {
+        return;
+      }
 
       const orig = e.originalEvent as any;
       if (orig) {
@@ -436,9 +458,11 @@ const featureLayerManager = {
 
     layer.on("click", clickHandler);
     layer.on("dblclick", dblClickHandler);
+    layer.on("pm:markerdragstart", startPostEditClickGuard);
     forEachLeafLayer(layer, (leaf) => {
       leaf.on("click", clickHandler);
       leaf.on("dblclick", dblClickHandler);
+      leaf.on("pm:markerdragstart", startPostEditClickGuard);
     });
 
     const isVisible = props.featureVisibility.get(id) ?? true;
@@ -509,7 +533,7 @@ function applyLayerUpdate(layer: L.Layer) {
 
     const next = upsertFeature(localFeaturesSnapshot.value, extracted);
     localFeaturesSnapshot.value = next;
-    suppressNextPropsRender = true;
+    holdFeaturePropRenders();
     emit("draw-update", next);
   } finally {
     runtimeLayer.__atlasApplyingSync = false;
@@ -761,7 +785,7 @@ const drawing = useMapDrawing(
       cuttingUpdatedIds?.add(String(payload.id));
       const next = upsertFeature(current, payload);
       localFeaturesSnapshot.value = next;
-      suppressNextPropsRender = true;
+      holdFeaturePropRenders();
       emit("draw-update", next);
       return;
     }
@@ -823,7 +847,7 @@ const imageOverlay = useImageOverlay({
   getMap: () => map,
   getLayerById: (id: string) => featureLayerManager.layers.get(id),
   localFeaturesSnapshot,
-  onBeforeEmit: () => { suppressNextPropsRender = true; },
+  onBeforeEmit: () => { holdFeaturePropRenders(); },
   onUpdate: (next: any) => emit('draw-update', next),
 });
 
@@ -833,7 +857,7 @@ const shapeScaling = useShapeScaling({
   localFeaturesSnapshot,
   getProjectId: () => props.projectId,
   getSelectedYear: () => props.selectedYear,
-  onBeforeEmit: () => { suppressNextPropsRender = true; },
+  onBeforeEmit: () => { holdFeaturePropRenders(); },
   onUpdate: (next: any) => emit('draw-update', next),
 });
 
@@ -1056,10 +1080,6 @@ function bindRotationHandle(label: L.Marker, feature: Feature, layerToUpdate: L.
   }
 }
 
-function getPointRadiusForTextSize(sizePx: number): number {
-  return Math.max(4, Math.min(32, Math.round(sizePx * 0.42)));
-}
-
 function materializeTextLayer(feature: Feature): L.Layer | null {
   if (!map || feature.geometry.type !== "Point") return null;
 
@@ -1073,7 +1093,7 @@ function materializeTextLayer(feature: Feature): L.Layer | null {
     const fillColor = presentation.pointColor || "#000000";
     const strokeColor = presentation.pointStrokeColor || "#000000";
     const strokeWidth = presentation.pointStrokeWidth ?? 1;
-    const pointRadius = getPointRadiusForTextSize(presentation.sizePx);
+    const pointRadius = MAP_POINT_MARKER_RADIUS_PX;
     const anchorX = -Math.round(pointRadius + strokeWidth / 2 + 2);
     const anchorY = Math.round(presentation.sizePx * 0.6 + 6);
 
@@ -1782,8 +1802,7 @@ watch(
   () => props.features,
   (newFeatures: Feature[]) => {
     localFeaturesSnapshot.value = [...newFeatures];
-    if (suppressNextPropsRender) {
-      suppressNextPropsRender = false;
+    if (suppressNextPropsRender || featurePropRenderHolds > 0) {
       return;
     }
     if (!map) return;
@@ -2049,7 +2068,7 @@ function updateMultiSelection(ids: string[]) {
 function handleMultiDragEnd() {
   const next = syncFeaturesFromMapLayers();
   localFeaturesSnapshot.value = next;
-  suppressNextPropsRender = true;
+  holdFeaturePropRenders();
   emit("draw-update", next);
 }
 

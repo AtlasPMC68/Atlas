@@ -450,6 +450,6 @@ describe("shared word styles and label presentation", () => {
       hasPoint: true,
       pointColor: "#dc2626",
     };
-    expect(getCustomStyleObject(customWithPoint).color).toBe("#dc2626");
+    expect(getCustomStyleObject(customWithPoint).color).toBe("#10b981");
   });
 });

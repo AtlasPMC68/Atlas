@@ -41,6 +41,35 @@ describe("anchorMarkerLimitToCursor", () => {
     container.remove();
   });
 
+  it("keeps the handles around the pointer when Leaflet mousemove does not fire", () => {
+    const layer = L.polygon(denseRing()).addTo(map) as PmLayer;
+    const start = L.latLng(22, -10);
+    map.fire("mousemove", { latlng: start });
+    layer.pm.enable({ limitMarkersToCount: 10 });
+
+    const end = L.latLng(22, 20);
+    const container = map.getContainer();
+    const point = map.latLngToContainerPoint(end);
+    const rect = container.getBoundingClientRect();
+    container.dispatchEvent(
+      new PointerEvent("pointermove", {
+        clientX: rect.left + point.x,
+        clientY: rect.top + point.y,
+        bubbles: true,
+      }),
+    );
+    (layer.pm as unknown as { applyLimitFilters: (args: object) => void }).applyLimitFilters(
+      {},
+    );
+
+    const shown = shownVertices(layer);
+    expect(shown.length).toBeGreaterThan(0);
+    for (const marker of shown) {
+      expect(marker.getLatLng().distanceTo(end)).toBeLessThan(1_000_000);
+    }
+    layer.pm.disable();
+  });
+
   it("keeps the handles around the cursor after a vertex is removed", () => {
     const layer = L.polygon(denseRing()).addTo(map) as PmLayer;
     // The western tip of the ring, where the user is working.

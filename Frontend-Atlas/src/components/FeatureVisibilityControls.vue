@@ -35,16 +35,6 @@
 
     <template v-else>
     <div class="flex items-center gap-1 shrink-0">
-      <button
-        type="button"
-        class="btn btn-ghost btn-sm btn-square shrink-0"
-        data-testid="toggle-sidebar-button"
-        title="Réduire le panneau"
-        aria-label="Réduire le panneau"
-        @click="emit('toggle-collapsed')"
-      >
-        <ChevronLeftIcon class="w-5 h-5" />
-      </button>
       <div class="tabs tabs-boxed bg-base-200 gap-2 p-1.5 overflow-x-auto flex-nowrap flex-1 min-w-0">
       <button
         v-for="group in featureGroups"
@@ -63,6 +53,16 @@
         />
       </button>
     </div>
+      <button
+        type="button"
+        class="btn btn-ghost btn-sm btn-square shrink-0"
+        data-testid="toggle-sidebar-button"
+        title="Réduire le panneau"
+        aria-label="Réduire le panneau"
+        @click="emit('toggle-collapsed')"
+      >
+        <ChevronLeftIcon class="w-5 h-5" />
+      </button>
     </div>
 
     <!-- Element list with visibility controls -->

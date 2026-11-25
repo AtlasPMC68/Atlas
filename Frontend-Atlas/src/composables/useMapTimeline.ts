@@ -34,19 +34,27 @@ export function useMapTimeline({
   const selectedYear = ref(-1);
   const selectedExactDate = ref<string | null>(null);
   const timelineMode = ref<TimelineFilterMode>("specific");
-  let isRestoringPosition = false;
+  const isRestoringPosition = ref(false);
 
   function beginTimelineRestore() {
-    isRestoringPosition = true;
+    isRestoringPosition.value = true;
+  }
+
+  function clampYearToTimelineRange(year: number): number {
+    const min = timelineMinYear.value;
+    const max = timelineMaxYear.value;
+    if (year < min) return min;
+    if (year > max) return max;
+    return year;
   }
 
   async function restoreTimelinePosition(id?: string) {
     const targetId = id ?? projectId?.value;
     if (!targetId || typeof window === "undefined") {
-      isRestoringPosition = false;
+      isRestoringPosition.value = false;
       return;
     }
-    isRestoringPosition = true;
+    isRestoringPosition.value = true;
     try {
       const storedYear = localStorage.getItem(`atlas_timeline_year_${targetId}`);
       const storedExactDate = localStorage.getItem(
@@ -55,7 +63,7 @@ export function useMapTimeline({
       if (storedYear !== null) {
         const parsed = Number(storedYear);
         if (Number.isFinite(parsed) && parsed >= 0) {
-          selectedYear.value = parsed;
+          selectedYear.value = clampYearToTimelineRange(parsed);
           selectedExactDate.value = storedExactDate || null;
         }
       }
@@ -69,12 +77,12 @@ export function useMapTimeline({
     } catch {
       // Ignore storage errors in restricted contexts
     } finally {
-      isRestoringPosition = false;
+      isRestoringPosition.value = false;
     }
   }
 
   watch([selectedYear, selectedExactDate], ([year, exactDate]) => {
-    if (isRestoringPosition || !projectId?.value || year < 0) return;
+    if (isRestoringPosition.value || !projectId?.value || year < 0) return;
     try {
       localStorage.setItem(
         `atlas_timeline_year_${projectId.value}`,
@@ -96,7 +104,7 @@ export function useMapTimeline({
   });
 
   watch(timelineMode, (mode: TimelineFilterMode) => {
-    if (isRestoringPosition || !projectId?.value) return;
+    if (isRestoringPosition.value || !projectId?.value) return;
     try {
       localStorage.setItem(
         `atlas_timeline_filter_mode_${projectId.value}`,
@@ -480,5 +488,6 @@ export function useMapTimeline({
     onExactDateChange,
     beginTimelineRestore,
     restoreTimelinePosition,
+    isRestoringPosition,
   };
 }

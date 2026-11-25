@@ -130,30 +130,13 @@
                 @click.stop
               >
                 <span class="text-xs text-base-content/70 shrink-0">Type de mot</span>
-                <select
+                <LabelStyleSelect
                   v-model="item.labelStyleSelection"
-                  class="select select-sm select-bordered flex-1 min-w-0"
-                  data-testid="item-word-type-select"
-                  :style="getItemWordTypeSelectStyle(item)"
+                  :custom-styles="availableCustomLabelStyles"
+                  compact
+                  test-id="item-word-type-select"
                   @change="onItemLabelStyleChange(item)"
-                >
-                  <option
-                    v-for="style in availableCustomLabelStyles"
-                    :key="style.id"
-                    :value="`custom:${style.id}`"
-                    :style="getCustomStyleObject(style)"
-                  >
-                    {{ getCustomStyleOptionLabel(style) }}
-                  </option>
-                  <option
-                    v-for="(_, typeKey) in WORD_TYPE_STYLES"
-                    :key="typeKey"
-                    :value="typeKey"
-                    :style="getWordTypeOptionStyle(typeKey)"
-                  >
-                    {{ getWordTypeOptionLabel(typeKey) }}
-                  </option>
-                </select>
+                />
                 <button
                   type="button"
                   class="btn btn-sm btn-outline shrink-0"
@@ -228,19 +211,15 @@ import type { CSSProperties } from "vue";
 import CustomLabelStyleManager from "../CustomLabelStyleManager.vue";
 import ValidationImageViewer from "./ValidationImageViewer.vue";
 import {
-  getCustomStyleObject,
   getEntryTypography,
-  getWordTypeOptionLabel,
-  getWordTypeOptionStyle,
-  getCustomStyleOptionLabel,
   type CustomLabelStyle,
 } from "../../utils/labelPresentation";
+import LabelStyleSelect from "../LabelStyleSelect.vue";
 import { TrashIcon } from "@heroicons/vue/24/outline";
 import GuideLink from "../GuideLink.vue";
 import { IMPORT_GUIDE_PAGES } from "../../utils/guides";
 import { toTextRegions, type TextValidationEntry } from "../../utils/textValidation";
 import {
-  WORD_TYPE_STYLES,
   formatWordText,
   normalizeWordType,
 } from "../../utils/wordStyles";
@@ -488,17 +467,6 @@ function itemRightInputStyle(item: TextValidationEntry): CSSProperties {
     textTransform: typo.textTransform,
     fontStyle: typo.fontStyle,
   };
-}
-
-function getItemWordTypeSelectStyle(item: TextValidationEntry): CSSProperties {
-  const selection = item.labelStyleSelection ?? "";
-  if (selection.startsWith("custom:")) {
-    const style = availableCustomLabelStyles.value?.find(
-      (candidate: CustomLabelStyle) => candidate.id === selection.slice("custom:".length),
-    ) ?? item.customLabelStyle;
-    if (style) return getCustomStyleObject(style);
-  }
-  return getWordTypeOptionStyle(item.wordType || "city");
 }
 
 function onTextInput(item: TextValidationEntry) {
