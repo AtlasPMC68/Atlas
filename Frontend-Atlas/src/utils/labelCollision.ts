@@ -46,8 +46,8 @@ function overlapsByThreshold(
       Math.min(rect.bottom, box.bottom) - Math.max(rect.top, box.top),
     );
     const overlapArea = width * height;
-    const smallestArea = Math.min(rect.width * rect.height, box.width * box.height);
-    if (smallestArea > 0 && overlapArea / smallestArea >= 0.7) return true;
+    const wordArea = rect.width * rect.height;
+    if (wordArea > 0 && overlapArea / wordArea >= 0.5) return true;
   }
   return false;
 }

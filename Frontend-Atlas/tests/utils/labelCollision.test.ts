@@ -106,6 +106,40 @@ describe("map label collision selection", () => {
     expect(largeLabelVisible).toEqual(new Set(["large"]));
   });
 
+  it("hides a word once half of its box overlaps a larger label", () => {
+    const large = label("large", 18, {
+      left: 0,
+      right: 40,
+      top: 0,
+      bottom: 20,
+      width: 40,
+      height: 20,
+    });
+    const halfCovered = label("half", 10, {
+      left: 20,
+      right: 60,
+      top: 0,
+      bottom: 20,
+      width: 40,
+      height: 20,
+    });
+    const lessThanHalf = label("kept", 10, {
+      left: 32,
+      right: 72,
+      top: 0,
+      bottom: 20,
+      width: 40,
+      height: 20,
+    });
+
+    expect(selectVisibleLabels([large, halfCovered], bounds, null)).toEqual(
+      new Set(["large"]),
+    );
+    expect(selectVisibleLabels([large, lessThanHalf], bounds, null)).toEqual(
+      new Set(["large", "kept"]),
+    );
+  });
+
   it("breaks size ties with a stable per-word order", () => {
     const visible = selectVisibleLabels(
       [label("beta", 12), label("alpha", 12)],
