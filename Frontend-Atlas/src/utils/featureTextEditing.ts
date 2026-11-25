@@ -35,6 +35,26 @@ export interface FeatureEditSubmitPayload {
   selectedMapIds?: string[];
 }
 
+function storedFillAndStroke(
+  fillHex: string,
+  isPoint: boolean,
+  strokeHex?: string,
+): {
+  color: string;
+  colorRgb: [number, number, number] | undefined;
+  pointColor: string | undefined;
+  pointStrokeColor: string | undefined;
+  strokeColor: [number, number, number] | undefined;
+} {
+  return {
+    color: fillHex,
+    colorRgb: hexToRgb(fillHex),
+    pointColor: isPoint ? fillHex : undefined,
+    pointStrokeColor: isPoint ? (strokeHex ?? "#000000") : undefined,
+    strokeColor: isPoint && strokeHex ? hexToRgb(strokeHex) : undefined,
+  };
+}
+
 export const MAX_STROKE_WIDTH_PX = 50;
 export const MAX_POINT_STROKE_WIDTH_PX = 12;
 export const MAX_PREVIEW_POINT_STROKE_WIDTH_PX = 6;
@@ -145,12 +165,12 @@ export function applyCustomLabelStyleToFeature(
       fontStyle: style.fontStyle || "normal",
       fontWeight: isBold ? "bold" : "normal",
       bold: isBold,
-      color: targetElementType === "point" ? pointColor : style.color,
-      colorRgb: targetElementType === "point" ? hexToRgb(pointColor) : hexToRgb(style.color),
+      ...storedFillAndStroke(
+        targetElementType === "point" ? pointColor : (style.color || "#000000"),
+        targetElementType === "point",
+        targetElementType === "point" ? pointStroke : undefined,
+      ),
       textColorRgb: hexToRgb(style.color),
-      pointColor: targetElementType === "point" ? pointColor : undefined,
-      pointStrokeColor: targetElementType === "point" ? pointStroke : undefined,
-      strokeColor: targetElementType === "point" ? hexToRgb(pointStroke) : undefined,
       fillOpacity: targetElementType === "point" ? (style.pointFillOpacity ?? 1) : undefined,
       strokeOpacity: targetElementType === "point" ? (style.pointStrokeOpacity ?? 1) : undefined,
       strokeWidth: targetElementType === "point" ? (style.pointStrokeWidth ?? 1) : undefined,
@@ -380,13 +400,13 @@ export function coerceEditedFeature(
       customLabelStyle: null,
       custom_label_style_id: null,
       customLabelStyleFallbackWordType: undefined,
-      color: isLabel ? labelColorHex : pointFillColor,
-      colorRgb: hexToRgb(isLabel ? labelColorHex : pointFillColor),
+      ...storedFillAndStroke(
+        (isLabel ? labelColorHex : pointFillColor) || "#000000",
+        isPoint,
+        isLabel ? undefined : pointStrokeColor,
+      ),
       textColorRgb: hexToRgb(textColorHex),
       textSizePx: customTextSizePx,
-      pointColor: isPoint ? pointFillColor : undefined,
-      pointStrokeColor: isPoint ? pointStrokeColor : undefined,
-      strokeColor: isLabel ? undefined : hexToRgb(pointStrokeColor),
       fillOpacity: isLabel
         ? undefined
         : (normalizeOpacity(payload.fillOpacity) ?? (isPoint ? 1 : undefined)),

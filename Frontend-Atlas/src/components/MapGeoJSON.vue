@@ -1106,10 +1106,7 @@ function materializeTextLayer(feature: Feature): L.Layer | null {
     const fillColor = presentation.pointColor || "#000000";
     const strokeColor = presentation.pointStrokeColor || "#000000";
     const strokeW = presentation.pointStrokeWidth ?? 1;
-    const swatch = Math.max(
-      STYLE_POINT_SWATCH_PX,
-      Math.ceil(STYLE_POINT_SWATCH_PX + strokeW),
-    );
+    const swatch = STYLE_POINT_SWATCH_PX;
     const anchorX = -Math.round(swatch / 2 + 2);
     const anchorY = Math.round(presentation.sizePx * 0.6 + 6);
 
@@ -1122,7 +1119,6 @@ function materializeTextLayer(feature: Feature): L.Layer | null {
           fillOpacity: presentation.pointFillOpacity ?? 1,
           strokeOpacity: presentation.pointStrokeOpacity ?? 1,
           strokeWidth: strokeW,
-          size: swatch,
         }),
         iconSize: [swatch, swatch],
         iconAnchor: [swatch / 2, swatch / 2],
@@ -2180,8 +2176,8 @@ watch(
 
 .map-point-marker svg {
   display: block;
-  width: 100%;
-  height: 100%;
+  width: 12px;
+  height: 12px;
 }
 
 .city-label-text {

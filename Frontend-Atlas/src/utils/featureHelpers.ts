@@ -165,10 +165,10 @@ export function getFeatureMapIds(
   return single ? [single] : [];
 }
 
-/** Custom start/end years on a feature that is not tied to a map period. */
+/** Custom years on a feature. `end` is null when only startYear was stored (open-ended). */
 export function getFeatureCustomYearRange(
   feature: Feature | Record<string, unknown> | null | undefined,
-): { start: number; end: number } | null {
+): { start: number; end: number | null } | null {
   if (!feature) return null;
   const props =
     "properties" in feature
@@ -182,7 +182,9 @@ export function getFeatureCustomYearRange(
     (feature as Feature).endYear ??
       (props?.endYear as string | number | null | undefined),
   );
-  if (start == null || end == null) return null;
+  if (start == null && end == null) return null;
+  if (start == null) return { start: end as number, end: end as number };
+  if (end == null) return { start, end: null };
   return { start, end: end < start ? start : end };
 }
 

@@ -345,6 +345,12 @@ describe("featureHelpers - copy / paste functionality", () => {
         }),
       ).toEqual({ start: 1875, end: 1880 });
       expect(getFeatureCustomYearRange(textFeature)).toBeNull();
+      expect(
+        getFeatureCustomYearRange({
+          ...textFeature,
+          startYear: 1800,
+        }),
+      ).toEqual({ start: 1800, end: null });
     });
 
     it("returns mapId from properties when not directly on feature", () => {

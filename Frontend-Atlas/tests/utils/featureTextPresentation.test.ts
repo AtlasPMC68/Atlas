@@ -240,6 +240,35 @@ describe("shared word styles and label presentation", () => {
     expect(pres.pointStrokeColor).toBe("#111111");
   });
 
+  it("does not let an invalid custom style color replace textColorRgb", () => {
+    const feature: Feature = {
+      type: "Feature",
+      id: "feat-bad-custom-color",
+      name: "Québec",
+      geometry: { type: "Point", coordinates: [-71, 46] },
+      properties: {
+        name: "Québec",
+        rawType: "city",
+        mapElementType: "point",
+        textColorRgb: [0, 128, 0],
+        customLabelStyle: {
+          id: "c-bad",
+          name: "Bad",
+          sizePx: 14,
+          fontStyle: "normal",
+          textTransform: "none",
+          color: "not-a-hex",
+          priority: 50,
+          minZoom: 1,
+        },
+      },
+      createdAt: "2026-01-01",
+      updatedAt: "2026-01-01",
+      projectId: "",
+    };
+    expect(getLabelPresentation(feature).colorCss).toBe("rgb(0, 128, 0)");
+  });
+
   it("uses this word's own size as collision priority, not its type", () => {
     const feature: Feature = {
       type: "Feature",

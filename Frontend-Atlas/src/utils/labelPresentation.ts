@@ -58,9 +58,8 @@ export function mapPointSwatchSvg(options: {
   fillOpacity?: number;
   strokeOpacity?: number;
   strokeWidth?: number;
-  size?: number;
 }): string {
-  const size = Math.max(STYLE_POINT_SWATCH_PX, Math.round(options.size ?? STYLE_POINT_SWATCH_PX));
+  const size = STYLE_POINT_SWATCH_PX;
   const strokeWidth = Math.min(Math.max(svgNumber(options.strokeWidth, 1), 0), size / 2);
   const radius = Math.max(1, size / 2 - 2 - strokeWidth / 2);
   const fillOpacity = Math.max(0, Math.min(1, svgNumber(options.fillOpacity, 1)));
@@ -456,7 +455,7 @@ function parseCustomStyle(value: unknown): {
   fontStyle: "normal" | "italic";
   fontWeight: "normal" | "bold";
   textTransform: "none" | "uppercase";
-  color: string;
+  color?: string;
   priority: number;
   minZoom: number;
   mapElementType?: "point" | "label";
@@ -473,7 +472,7 @@ function parseCustomStyle(value: unknown): {
   const fontStyle = style.fontStyle === "italic" ? "italic" : "normal";
   const textTransform = style.textTransform === "uppercase" ? "uppercase" : "none";
   const rawColor = typeof style.color === "string" ? style.color.trim() : "";
-  const color = /^#[0-9a-f]{6}$/i.test(rawColor) ? rawColor : "#000000";
+  const color = /^#[0-9a-f]{6}$/i.test(rawColor) ? rawColor : undefined;
   if (!Number.isFinite(sizePx) || sizePx <= 0) {
     return null;
   }

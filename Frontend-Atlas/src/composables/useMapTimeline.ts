@@ -424,33 +424,30 @@ export function useMapTimeline({
   /**
    * Whether `feature` is already visible at the current timeline position and mode.
    */
-  function isCustomYearRangeVisible(range: { start: number; end: number }): boolean {
-    if (timelineMode.value === "cumulative") {
-      return range.start <= selectedYear.value;
+  function isCustomYearRangeVisible(range: { start: number; end: number | null }): boolean {
+    if (range.start > selectedYear.value) return false;
+    if (timelineMode.value === "cumulative" || range.end == null) {
+      return true;
     }
-    return isPeriodActiveAt(
-      range.start,
-      range.end,
-      selectedYear.value,
-      periodStartYears.value,
-    );
+    return selectedYear.value <= range.end;
   }
 
-  function isFeatureVisibleOnTimeline(feature: Feature): boolean {
-    if (timelineMode.value === "global") return true;
-
+  function isVisibleViaMaps(feature: Feature): boolean {
     const { keys, hasExplicitIds } = getFeatureMapKeys(feature);
-    if (keys.length === 0) {
-      const customRange = getFeatureCustomYearRange(feature);
-      if (!customRange) return true;
-      return isCustomYearRangeVisible(customRange);
-    }
-
+    if (keys.length === 0) return true;
     return keys.some((effectiveMapKey: string) => {
       const period = resolvePeriodForKey(effectiveMapKey, !hasExplicitIds);
       if (!period) return true;
       return isPeriodVisibleAtCurrentDate(period);
     });
+  }
+
+  function isFeatureVisibleOnTimeline(feature: Feature): boolean {
+    if (timelineMode.value === "global") return true;
+
+    const customRange = getFeatureCustomYearRange(feature);
+    if (customRange && !isCustomYearRangeVisible(customRange)) return false;
+    return isVisibleViaMaps(feature);
   }
 
   /**
@@ -461,14 +458,15 @@ export function useMapTimeline({
     if (timelineMode.value === "global") return false;
     if (isFeatureVisibleOnTimeline(feature)) return false;
 
-    const { keys, hasExplicitIds } = getFeatureMapKeys(feature);
-    if (keys.length === 0) {
-      const customRange = getFeatureCustomYearRange(feature);
-      if (!customRange) return false;
+    const customRange = getFeatureCustomYearRange(feature);
+    if (customRange && !isCustomYearRangeVisible(customRange)) {
       selectedYear.value = customRange.start;
       selectedExactDate.value = null;
       return true;
     }
+
+    const { keys, hasExplicitIds } = getFeatureMapKeys(feature);
+    if (keys.length === 0) return false;
 
     const candidatePeriods = keys
       .map((key) => resolvePeriodForKey(key, !hasExplicitIds))
