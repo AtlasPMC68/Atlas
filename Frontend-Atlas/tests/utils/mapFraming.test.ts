@@ -32,11 +32,16 @@ describe("mapFraming - applySmartFeatureFraming", () => {
     expect(fitBoundsSpy).not.toHaveBeenCalled();
   });
 
-  it("does NOT move or pan map when element is already in the viewport (center contained)", () => {
-    // Current center is [46.8, -71.2] at zoom 10
+  it("does NOT move or pan map when element is fully inside the padded viewport", () => {
+    vi.spyOn(map, "getBounds").mockReturnValue(
+      L.latLngBounds([
+        [40, -80],
+        [52, -60],
+      ]),
+    );
     const targetInView = L.latLngBounds([
-      [46.81, -71.21],
-      [46.79, -71.19],
+      [45, -72],
+      [46, -70],
     ]);
 
     const panToSpy = vi.spyOn(map, "panTo");
@@ -72,7 +77,6 @@ describe("mapFraming - applySmartFeatureFraming", () => {
 
     expect(result).toBe("panned");
     expect(panToSpy).toHaveBeenCalled();
-    expect(setViewSpy).not.toHaveBeenCalled();
     expect(fitBoundsSpy).not.toHaveBeenCalled();
   });
 

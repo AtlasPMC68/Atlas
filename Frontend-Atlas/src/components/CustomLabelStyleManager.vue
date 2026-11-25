@@ -547,8 +547,6 @@ function onOpacityKeydown(event: KeyboardEvent) {
 function onOpacityInput(field: "pointFillOpacity" | "pointStrokeOpacity", event: Event) {
   const input = event.target as HTMLInputElement;
   if (input.value === "" || input.value === null) {
-    draft.value[field] = 0;
-    syncLiveDraft();
     return;
   }
   const parsed = parseClampedOpacityFromInput(input.value);

@@ -42,6 +42,12 @@ export function anchorMarkerLimitToCursor(map: L.Map): void {
   });
   map.on("pm:markerdragend", () => {
     tracked._atlasVertexDragging = false;
+    const latlng = tracked._atlasCursorLatLng;
+    if (!latlng) return;
+    map.eachLayer((layer) => {
+      const pm = (layer as { pm?: { applyLimitFilters?: (args: LimitFilterArgs) => void } }).pm;
+      pm?.applyLimitFilters?.({ latlng });
+    });
   });
 
   map.once("unload", () => {

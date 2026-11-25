@@ -118,7 +118,9 @@ describe("CustomLabelStyleManager", () => {
     await nextTick();
 
     const widthInput = wrapper.find("#custom-style-point-stroke-width");
-    await widthInput.setValue(20);
+    expect(widthInput.exists()).toBe(true);
+    (widthInput.element as HTMLInputElement).value = "20";
+    await widthInput.trigger("input");
     await nextTick();
 
     expect(wrapper.find('[data-testid="custom-point-stroke-width-max-warning"]').exists()).toBe(

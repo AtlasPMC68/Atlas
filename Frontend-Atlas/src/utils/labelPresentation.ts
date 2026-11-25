@@ -42,11 +42,9 @@ export const STYLE_POINT_SWATCH_PX = 12;
 /** Half the swatch: map marker and dropdown stay the same on-screen size. */
 export const MAP_POINT_MARKER_RADIUS_PX = STYLE_POINT_SWATCH_PX / 2;
 
-function svgAttr(value: string): string {
-  return value
-    .replace(/&/g, "&amp;")
-    .replace(/"/g, "&quot;")
-    .replace(/</g, "&lt;");
+function svgColor(value: string): string {
+  const trimmed = value.trim();
+  return /^#[0-9a-f]{3,8}$/i.test(trimmed) ? trimmed : "#000000";
 }
 
 function svgNumber(value: unknown, fallback: number): number {
@@ -70,9 +68,9 @@ export function mapPointSwatchSvg(options: {
   return (
     `<svg width="${size}" height="${size}" viewBox="0 0 ${size} ${size}" aria-hidden="true">` +
     `<circle cx="${size / 2}" cy="${size / 2}" r="${radius}"` +
-    ` fill="${svgAttr(options.fill)}"` +
+    ` fill="${svgColor(options.fill)}"` +
     ` fill-opacity="${fillOpacity}"` +
-    ` stroke="${svgAttr(options.stroke)}"` +
+    ` stroke="${svgColor(options.stroke)}"` +
     ` stroke-width="${strokeWidth}"` +
     ` stroke-opacity="${strokeOpacity}" />` +
     `</svg>`

@@ -133,13 +133,19 @@ let featurePropRenderHolds = 0;
 let featurePropRenderHoldTimer: ReturnType<typeof setTimeout> | null = null;
 const FEATURE_PROP_RENDER_HOLD_MS = 2500;
 
-function holdFeaturePropRenders() {
-  featurePropRenderHolds += 1;
+function scheduleFeaturePropRenderHoldTimeout() {
   if (featurePropRenderHoldTimer) clearTimeout(featurePropRenderHoldTimer);
   featurePropRenderHoldTimer = setTimeout(() => {
-    featurePropRenderHolds = 0;
     featurePropRenderHoldTimer = null;
+    if (featurePropRenderHolds <= 0) return;
+    featurePropRenderHolds -= 1;
+    if (featurePropRenderHolds > 0) scheduleFeaturePropRenderHoldTimeout();
   }, FEATURE_PROP_RENDER_HOLD_MS);
+}
+
+function holdFeaturePropRenders() {
+  featurePropRenderHolds += 1;
+  scheduleFeaturePropRenderHoldTimeout();
 }
 let blockNextMapClick = false;
 
@@ -1634,6 +1640,9 @@ onMounted(() => {
       return;
     }
 
+    if (btnName === "editMode" || btnName === "rotateMode") {
+      shapeScaling.detach();
+    }
     if (btnName === "editMode" && pm?.globalEditModeEnabled?.()) return;
     if (btnName === "rotateMode" && pm?.globalRotateModeEnabled?.()) return;
     if (btnName !== "editMode" && btnName !== "rotateMode") return;

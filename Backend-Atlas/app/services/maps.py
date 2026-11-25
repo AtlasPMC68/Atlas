@@ -7,7 +7,7 @@ from datetime import date
 from typing import Any, cast
 from uuid import UUID, uuid4
 
-from sqlalchemy import delete, or_, select
+from sqlalchemy import delete, or_, select, type_coerce
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.sql.expression import cast as sa_cast
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -243,17 +243,15 @@ async def delete_map_in_db(
         return False
 
     map_id_str = str(map_id)
+    map_id_json = sa_cast(f'["{map_id_str}"]', JSONB)
+    feature_data = type_coerce(Feature.data, JSONB)
     features_result = await db.execute(
         select(Feature).where(
             Feature.project_id == project_id,
             or_(
                 Feature.map_id == map_id,
-                sa_cast(Feature.data, JSONB)["properties"]["mapIds"].op("@>")(
-                    sa_cast(f'["{map_id_str}"]', JSONB)
-                ),
-                sa_cast(Feature.data, JSONB)["mapIds"].op("@>")(
-                    sa_cast(f'["{map_id_str}"]', JSONB)
-                ),
+                feature_data["properties"]["mapIds"].op("@>")(map_id_json),
+                feature_data["mapIds"].op("@>")(map_id_json),
             ),
         )
     )

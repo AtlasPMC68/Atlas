@@ -9,10 +9,11 @@ export interface SmartFramingOptions {
 export type FramingResult = "in-view" | "panned" | "view-set" | "bounds-fitted";
 
 /**
- * Frames targetBounds smartly according to current viewport and zoom level:
- * - If targetBounds is already visible in viewport (intersects or contains center), does nothing ("in-view").
- * - If targetBounds is outside viewport and user is zoomed in (currentZoom > mapLevelZoom), pans to center keeping zoom ("panned").
- * - If targetBounds is outside viewport at overview zoom, zooms/centers to mapLevelZoom ("view-set" or "bounds-fitted").
+ * Frames targetBounds according to the current viewport:
+ * - Fully inside pad(-0.05) → "in-view" (no camera move).
+ * - Intersects or center in view but clipped → panTo ("panned").
+ * - Outside view, zoomed in past mapLevelZoom → panTo keeping zoom ("panned").
+ * - Outside view at overview zoom → setView or fitBounds ("view-set" / "bounds-fitted").
  */
 export function applySmartFeatureFraming(
   map: L.Map,

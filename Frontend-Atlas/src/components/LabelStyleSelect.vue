@@ -11,6 +11,8 @@
       :class="compact ? 'select-sm h-8 min-h-8' : 'h-[50px] min-h-[50px]'"
       :aria-expanded="open"
       aria-haspopup="listbox"
+      :aria-controls="`${testId}-list`"
+      :aria-activedescendant="open ? `${testId}-opt-${highlightedIndex}` : undefined"
       @click="open = !open"
       @keydown="onTriggerKeydown"
     >
@@ -24,12 +26,14 @@
     </button>
     <ul
       v-if="open"
+      :id="`${testId}-list`"
       class="absolute z-50 max-h-60 w-full overflow-auto rounded-lg border border-base-300 bg-base-100 py-1 shadow-lg"
       :class="dropUp ? 'bottom-full mb-1' : 'top-full mt-1'"
       role="listbox"
     >
       <li
         v-for="(option, index) in options"
+        :id="`${testId}-opt-${index}`"
         :key="option.value"
         role="option"
         class="flex cursor-pointer items-center gap-2 px-3 py-1.5 text-sm hover:bg-base-200"
