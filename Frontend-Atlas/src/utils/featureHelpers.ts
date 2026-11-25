@@ -6,6 +6,7 @@ import type {
   MapElementType,
 } from "../typescript/feature";
 import wordTaxonomy from "../../../shared/word-taxonomy.json";
+import { toYear } from "./dateUtils";
 
 export function upsertFeature(features: Feature[], feature: Feature): Feature[] {
   const next = [...features];
@@ -162,6 +163,27 @@ export function getFeatureMapIds(
   }
   const single = getFeatureMapId(feature);
   return single ? [single] : [];
+}
+
+/** Custom start/end years on a feature that is not tied to a map period. */
+export function getFeatureCustomYearRange(
+  feature: Feature | Record<string, unknown> | null | undefined,
+): { start: number; end: number } | null {
+  if (!feature) return null;
+  const props =
+    "properties" in feature
+      ? ((feature as Feature).properties as Record<string, unknown> | undefined)
+      : (feature as Record<string, unknown>);
+  const start = toYear(
+    (feature as Feature).startYear ??
+      (props?.startYear as string | number | null | undefined),
+  );
+  const end = toYear(
+    (feature as Feature).endYear ??
+      (props?.endYear as string | number | null | undefined),
+  );
+  if (start == null || end == null) return null;
+  return { start, end: end < start ? start : end };
 }
 
 export function getDefaultLayer(type: MapElementType | string | null): number {

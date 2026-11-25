@@ -16,6 +16,8 @@ import {
   getWordTypeOptionStyle,
   getCustomStyleObject,
   mapPointSwatchSvg,
+  resolvePointFillHex,
+  resolvePointStrokeHex,
   type CustomLabelStyle,
 } from "../../src/utils/labelPresentation";
 import { getMapElementType } from "../../src/utils/featureHelpers";
@@ -209,6 +211,33 @@ describe("shared word styles and label presentation", () => {
     expect(pres.priority).toBe(16);
     expect(pres.minZoom).toBe(2.0);
     expect(pres.html).toContain("Baie d'Hudson");
+  });
+
+  it("prefers hex pointColor over a stale colorRgb for the symbol", () => {
+    const feature: Feature = {
+      type: "Feature",
+      id: "feat-stale-rgb",
+      name: "Québec",
+      geometry: { type: "Point", coordinates: [-71, 46] },
+      properties: {
+        name: "Québec",
+        rawType: "city",
+        mapElementType: "point",
+        pointColor: "#dc2626",
+        colorRgb: [0, 0, 255],
+        pointStrokeColor: "#111111",
+        strokeColor: [255, 255, 0],
+      },
+      createdAt: "2026-01-01",
+      updatedAt: "2026-01-01",
+      projectId: "",
+    };
+    const props = feature.properties as Record<string, unknown>;
+    expect(resolvePointFillHex(props, null)).toBe("#dc2626");
+    expect(resolvePointStrokeHex(props, null)).toBe("#111111");
+    const pres = getLabelPresentation(feature);
+    expect(pres.pointColor).toBe("#dc2626");
+    expect(pres.pointStrokeColor).toBe("#111111");
   });
 
   it("uses this word's own size as collision priority, not its type", () => {

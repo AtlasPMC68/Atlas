@@ -290,6 +290,37 @@ describe("useMapTimeline - revealFeatureOnTimeline", () => {
       expect(revealFeatureOnTimeline(fGeneral)).toBe(false);
       expect(selectedYear.value).toBe(1850);
     });
+
+    it("hides orphan startYear/endYear features outside that range", () => {
+      const orphan = makeFeature("f-orphan", null);
+      orphan.startYear = 1800;
+      orphan.endYear = 1840;
+      orphan.properties.startYear = 1800;
+      orphan.properties.endYear = 1840;
+
+      const { selectedYear, isFeatureVisibleOnTimeline, revealFeatureOnTimeline } =
+        setupTimeline([period1800, period1900], [orphan], 1900, "specific");
+
+      expect(isFeatureVisibleOnTimeline(orphan)).toBe(false);
+      expect(revealFeatureOnTimeline(orphan)).toBe(true);
+      expect(selectedYear.value).toBe(1800);
+      expect(isFeatureVisibleOnTimeline(orphan)).toBe(true);
+    });
+
+    it("shows orphan startYear features in cumulative mode from that year on", () => {
+      const orphan = makeFeature("f-orphan-cumul", null);
+      orphan.startYear = 1900;
+      orphan.endYear = 1920;
+
+      const { isFeatureVisibleOnTimeline } = setupTimeline(
+        [period1800, period1900],
+        [orphan],
+        1850,
+        "cumulative",
+      );
+
+      expect(isFeatureVisibleOnTimeline(orphan)).toBe(false);
+    });
   });
 });
 

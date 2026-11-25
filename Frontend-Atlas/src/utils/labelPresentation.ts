@@ -304,6 +304,41 @@ export function getEntryTypography(entry: {
   });
 }
 
+function hexColor(value: unknown): string | undefined {
+  if (typeof value !== "string") return undefined;
+  const trimmed = value.trim();
+  return /^#[0-9a-f]{3,8}$/i.test(trimmed) ? trimmed : undefined;
+}
+
+/** Canonical point fill: hex fields first, then RGB leftover from older saves. */
+export function resolvePointFillHex(
+  props: Record<string, unknown>,
+  customStyle: CustomLabelStyle | null,
+): string {
+  return (
+    hexColor(customStyle?.pointColor) ||
+    (customStyle?.hasPoint ? hexColor(customStyle.color) : undefined) ||
+    hexColor(props.pointColor) ||
+    hexColor(props.color) ||
+    colorRgbToCss(props.colorRgb) ||
+    "#000000"
+  );
+}
+
+/** Canonical point stroke: hex first, then RGB leftover from older saves. */
+export function resolvePointStrokeHex(
+  props: Record<string, unknown>,
+  customStyle: CustomLabelStyle | null,
+): string {
+  return (
+    hexColor(customStyle?.pointStrokeColor) ||
+    hexColor(props.pointStrokeColor) ||
+    colorRgbToCss(props.strokeColor) ||
+    hexColor(props.strokeColor) ||
+    "#000000"
+  );
+}
+
 export function getLabelPresentation(
   feature: Feature | Record<string, unknown>,
   customText?: string,
@@ -319,9 +354,16 @@ export function getLabelPresentation(
 
   // The text has its own colour when one was set; otherwise it follows the
   // element colour, which is also the point symbol's fill.
+  const mapElementType =
+    customStyle?.mapElementType ??
+    (customStyle?.hasPoint ? "point" : undefined) ??
+    taxonomy.mapElementType;
+  const hasPoint = mapElementType === "point";
+  const pointColor = resolvePointFillHex(props, customStyle);
   const colorCss =
     customStyle?.color ||
     colorRgbToCss(props.textColorRgb) ||
+    (hasPoint ? pointColor : undefined) ||
     colorRgbToCss(props.colorRgb) ||
     (typeof props.color === "string" ? props.color : "#000000");
 
@@ -338,10 +380,6 @@ export function getLabelPresentation(
       : rawText
     : formatWordText(rawText, wordType, typo.textTransform);
   const html = formatLabelHtml(formattedText);
-  const mapElementType =
-    customStyle?.mapElementType ??
-    (customStyle?.hasPoint ? "point" : undefined) ??
-    taxonomy.mapElementType;
 
   const inlineStyles: string[] = [];
   if (typo.isItalic) inlineStyles.push("font-style: italic");
@@ -349,21 +387,7 @@ export function getLabelPresentation(
   if (typo.isUppercase) inlineStyles.push("text-transform: uppercase");
   if (typo.color) inlineStyles.push(`color: ${typo.color}`);
 
-  const hasPoint = mapElementType === "point";
-  const pointColor =
-    customStyle?.pointColor ||
-    (customStyle?.hasPoint ? customStyle.color : undefined) ||
-    (typeof props.pointColor === "string" ? props.pointColor : undefined) ||
-    colorRgbToCss(props.colorRgb) ||
-    (typeof props.color === "string" ? props.color : undefined) ||
-    "#000000";
-
-  const pointStrokeColor =
-    customStyle?.pointStrokeColor ||
-    (typeof props.pointStrokeColor === "string" ? props.pointStrokeColor : undefined) ||
-    colorRgbToCss(props.strokeColor) ||
-    (typeof props.strokeColor === "string" ? props.strokeColor : undefined) ||
-    "#000000";
+  const pointStrokeColor = resolvePointStrokeHex(props, customStyle);
 
   const pointFillOpacity =
     customStyle?.pointFillOpacity ??

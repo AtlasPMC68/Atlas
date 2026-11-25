@@ -6,6 +6,7 @@ import {
   cloneFeatureWithOffset,
   getFeatureMapId,
   getFeatureMapIds,
+  getFeatureCustomYearRange,
 } from "../../src/utils/featureHelpers";
 import type { Feature } from "../../src/typescript/feature";
 
@@ -323,6 +324,27 @@ describe("featureHelpers - copy / paste functionality", () => {
       };
       expect(getFeatureMapId(feat)).toBe("carte-1");
       expect(getFeatureMapIds(feat)).toEqual(["carte-1", "carte-2"]);
+    });
+
+    it("reads orphan startYear/endYear from the feature or its properties", () => {
+      expect(
+        getFeatureCustomYearRange({
+          ...textFeature,
+          startYear: 1800,
+          endYear: 1850,
+        }),
+      ).toEqual({ start: 1800, end: 1850 });
+      expect(
+        getFeatureCustomYearRange({
+          ...textFeature,
+          properties: {
+            ...textFeature.properties,
+            startYear: "1875",
+            endYear: "1880",
+          },
+        }),
+      ).toEqual({ start: 1875, end: 1880 });
+      expect(getFeatureCustomYearRange(textFeature)).toBeNull();
     });
 
     it("returns mapId from properties when not directly on feature", () => {

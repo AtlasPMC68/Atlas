@@ -386,9 +386,7 @@ export function coerceEditedFeature(
       textSizePx: customTextSizePx,
       pointColor: isPoint ? pointFillColor : undefined,
       pointStrokeColor: isPoint ? pointStrokeColor : undefined,
-      strokeColor: isLabel
-        ? undefined
-        : hexToRgb(pointStrokeColor),
+      strokeColor: isLabel ? undefined : hexToRgb(pointStrokeColor),
       fillOpacity: isLabel
         ? undefined
         : (normalizeOpacity(payload.fillOpacity) ?? (isPoint ? 1 : undefined)),

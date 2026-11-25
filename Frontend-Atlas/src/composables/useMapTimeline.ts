@@ -2,7 +2,11 @@ import { ref, computed, watch, nextTick, type Ref } from "vue";
 import type { Feature } from "../typescript/feature";
 import type { MapPeriod, SliderPeriod } from "../typescript/map";
 import { toYear, isPeriodActiveAt } from "../utils/dateUtils";
-import { getFeatureMapId, getFeatureMapIds } from "../utils/featureHelpers";
+import {
+  getFeatureCustomYearRange,
+  getFeatureMapId,
+  getFeatureMapIds,
+} from "../utils/featureHelpers";
 
 export type TimelineFilterMode = "specific" | "cumulative" | "global";
 
@@ -420,11 +424,27 @@ export function useMapTimeline({
   /**
    * Whether `feature` is already visible at the current timeline position and mode.
    */
+  function isCustomYearRangeVisible(range: { start: number; end: number }): boolean {
+    if (timelineMode.value === "cumulative") {
+      return range.start <= selectedYear.value;
+    }
+    return isPeriodActiveAt(
+      range.start,
+      range.end,
+      selectedYear.value,
+      periodStartYears.value,
+    );
+  }
+
   function isFeatureVisibleOnTimeline(feature: Feature): boolean {
     if (timelineMode.value === "global") return true;
 
     const { keys, hasExplicitIds } = getFeatureMapKeys(feature);
-    if (keys.length === 0) return true;
+    if (keys.length === 0) {
+      const customRange = getFeatureCustomYearRange(feature);
+      if (!customRange) return true;
+      return isCustomYearRangeVisible(customRange);
+    }
 
     return keys.some((effectiveMapKey: string) => {
       const period = resolvePeriodForKey(effectiveMapKey, !hasExplicitIds);
@@ -442,7 +462,13 @@ export function useMapTimeline({
     if (isFeatureVisibleOnTimeline(feature)) return false;
 
     const { keys, hasExplicitIds } = getFeatureMapKeys(feature);
-    if (keys.length === 0) return false;
+    if (keys.length === 0) {
+      const customRange = getFeatureCustomYearRange(feature);
+      if (!customRange) return false;
+      selectedYear.value = customRange.start;
+      selectedExactDate.value = null;
+      return true;
+    }
 
     const candidatePeriods = keys
       .map((key) => resolvePeriodForKey(key, !hasExplicitIds))
