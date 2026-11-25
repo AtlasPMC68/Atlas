@@ -14,13 +14,16 @@
         </button>
       </div>
 
-      <!-- Two columns: list + preview | text settings + point settings -->
+      <!-- Row 1: style list (scrolls to typography height) | text settings
+           Row 2: preview | point settings -->
       <form
-        class="grid grid-cols-1 md:grid-cols-[1fr_1.45fr] flex-1 min-h-0 py-4 gap-y-3 overflow-y-auto md:overflow-hidden"
+        class="grid grid-cols-1 md:grid-cols-[1fr_1.45fr] md:grid-rows-[auto_auto] flex-1 min-h-0 py-4 gap-y-3 md:gap-y-0 overflow-y-auto"
         @submit.prevent="submitDraft"
       >
-        <!-- Left: style list and preview -->
-        <div class="flex flex-col gap-3 min-w-0 min-h-0 md:pr-6">
+        <!-- Style list: height follows first row (Mise en forme), then scrolls -->
+        <div
+          class="flex flex-col gap-3 min-w-0 min-h-[140px] order-1 md:h-0 md:min-h-full overflow-hidden md:pr-6 md:row-start-1 md:col-start-1"
+        >
           <div class="flex items-center justify-between gap-2 min-h-[2rem] shrink-0">
             <h4 class="section-title">Styles personnalisés</h4>
             <button
@@ -35,7 +38,7 @@
             </button>
           </div>
 
-          <div class="flex flex-col gap-2 flex-1 min-h-[140px] md:min-h-0 overflow-y-auto pr-1 py-0.5">
+          <div class="flex flex-col gap-2 flex-1 min-h-0 overflow-y-auto pr-1 py-0.5">
             <div
               v-for="(style, index) in draftStyles"
               :key="style.id"
@@ -93,8 +96,11 @@
               Aucun style personnalisé.
             </p>
           </div>
+        </div>
 
-          <div class="flex flex-col gap-2.5 shrink-0 pt-3 border-t border-gray-200">
+        <div
+          class="flex flex-col gap-2.5 min-w-0 shrink-0 pt-3 border-t border-gray-200 order-3 md:order-none md:pr-6 md:row-start-2 md:col-start-1"
+        >
             <div class="flex items-center justify-between min-h-[1.75rem]">
               <h4 class="section-title">Aperçu</h4>
             </div>
@@ -116,11 +122,12 @@
                 </span>
               </div>
             </div>
-          </div>
         </div>
 
-        <!-- Right: typography then point settings, stacked with no empty gap -->
-        <div class="flex flex-col gap-3 min-w-0 min-h-0 md:border-l md:border-gray-200 md:pl-6">
+        <!-- Typography: defines first-row height for the style list -->
+        <div
+          class="flex flex-col gap-3 min-w-0 order-2 md:order-none md:border-l md:border-gray-200 md:pl-6 md:row-start-1 md:col-start-2"
+        >
           <div class="flex items-center justify-between gap-2 min-h-[2rem] shrink-0">
             <h4 class="section-title">
               {{ editingId ? "Modifier un style" : "Créer un style" }}
@@ -238,7 +245,11 @@
             </div>
           </div>
 
-          <div class="flex flex-col gap-2.5 min-h-0 flex-1 pt-3 border-t border-gray-200">
+        </div>
+
+        <div
+          class="flex flex-col gap-2.5 min-h-0 pt-3 border-t border-gray-200 order-4 md:order-none md:border-l md:border-gray-200 md:pl-6 md:row-start-2 md:col-start-2"
+        >
           <div class="flex items-center justify-between gap-2 min-h-[1.75rem]">
             <span class="section-title">Réglages du point</span>
             <span class="field-hint">Symbole associé au texte</span>
@@ -399,7 +410,6 @@
               L'épaisseur maximale autorisée est de {{ MAX_POINT_STROKE_WIDTH_PX }} px (la valeur a été plafonnée).
             </span>
           </div>
-        </div>
         </div>
       </form>
 
