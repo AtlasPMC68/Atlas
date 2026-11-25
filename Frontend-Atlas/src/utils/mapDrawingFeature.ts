@@ -111,17 +111,18 @@ export function layerToFeature(
       coordinates: [latlng.lng, latlng.lat],
     };
     inferredType = "label";
-  } else if (layer instanceof L.Marker && existingType === "label") {
-    // Handle custom labels that don't have textMarker: true
+  } else if (layer instanceof L.Marker) {
     const latlng = layer.getLatLng();
     geometry = {
       type: "Point",
       coordinates: [latlng.lng, latlng.lat],
     };
-    inferredType = "label";
-    rotation = baseFeature?.properties?.rotation ?? 0;
-    labelText = baseFeature?.properties?.labelText;
-    sizePx = baseFeature?.properties?.sizePx;
+    inferredType = existingType === "point" ? "point" : "label";
+    if (inferredType === "label") {
+      rotation = baseFeature?.properties?.rotation ?? 0;
+      labelText = baseFeature?.properties?.labelText;
+      sizePx = baseFeature?.properties?.sizePx;
+    }
   } else if (layer instanceof L.CircleMarker && !(layer instanceof L.Circle)) {
     const latlng = layer.getLatLng();
     geometry = {

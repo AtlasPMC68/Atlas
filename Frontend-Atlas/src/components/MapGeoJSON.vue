@@ -71,6 +71,8 @@ import { createCartoTileLayer } from "../utils/basemap";
 import {
   getLabelPresentation,
   MAP_POINT_MARKER_RADIUS_PX,
+  STYLE_POINT_SWATCH_PX,
+  mapPointSwatchSvg,
   type LabelPresentationModel,
 } from "../utils/labelPresentation";
 import { updateMapLabelVisibility } from "../services/MapLabelVisibilityService";
@@ -127,17 +129,12 @@ let leavingModesForSelectionChange = false;
 // emit "draw-update" which propagates back down via props.features. This flag
 // tells the props watcher to skip the re-render for that one echo update so we
 // don't destroy and re-create the layer the user is actively interacting with.
-let suppressNextPropsRender = false;
 let featurePropRenderHolds = 0;
 
 function holdFeaturePropRenders() {
-  suppressNextPropsRender = true;
   featurePropRenderHolds += 1;
   nextTick(() => {
     featurePropRenderHolds = Math.max(0, featurePropRenderHolds - 1);
-    if (featurePropRenderHolds === 0) {
-      suppressNextPropsRender = false;
-    }
   });
 }
 let blockNextMapClick = false;
@@ -1092,19 +1089,25 @@ function materializeTextLayer(feature: Feature): L.Layer | null {
   if (presentation.mapElementType === "point") {
     const fillColor = presentation.pointColor || "#000000";
     const strokeColor = presentation.pointStrokeColor || "#000000";
-    const strokeWidth = presentation.pointStrokeWidth ?? 1;
-    const pointRadius = MAP_POINT_MARKER_RADIUS_PX;
-    const anchorX = -Math.round(pointRadius + strokeWidth / 2 + 2);
+    const swatch = STYLE_POINT_SWATCH_PX;
+    const anchorX = -Math.round(swatch / 2 + 2);
     const anchorY = Math.round(presentation.sizePx * 0.6 + 6);
 
-    const point = L.circleMarker(coord, {
-      renderer: vectorRenderer ?? undefined,
-      radius: pointRadius,
-      fillColor,
-      color: strokeColor,
-      weight: strokeWidth,
-      opacity: presentation.pointStrokeOpacity ?? 1,
-      fillOpacity: presentation.pointFillOpacity ?? 1,
+    const point = L.marker(coord, {
+      icon: L.divIcon({
+        className: "map-point-marker",
+        html: mapPointSwatchSvg({
+          fill: fillColor,
+          stroke: strokeColor,
+          fillOpacity: presentation.pointFillOpacity ?? 1,
+          strokeOpacity: presentation.pointStrokeOpacity ?? 1,
+          strokeWidth: presentation.pointStrokeWidth ?? 1,
+        }),
+        iconSize: [swatch, swatch],
+        iconAnchor: [swatch / 2, swatch / 2],
+      }),
+      zIndexOffset: 400,
+      keyboard: false,
     });
 
     const label = buildLabelMarker(feature, presentation, [anchorX, anchorY]);
@@ -1802,7 +1805,7 @@ watch(
   () => props.features,
   (newFeatures: Feature[]) => {
     localFeaturesSnapshot.value = [...newFeatures];
-    if (suppressNextPropsRender || featurePropRenderHolds > 0) {
+    if (featurePropRenderHolds > 0) {
       return;
     }
     if (!map) return;
@@ -1871,15 +1874,19 @@ function applySelectionEffects(id: string) {
     );
 
     let cityLatLng: L.LatLng | null = null;
-    let cityPointRadius = 6;
+    let cityPointRadius = MAP_POINT_MARKER_RADIUS_PX;
     let cityLabel: L.Marker | null = null;
     forEachLeafLayer(layer, (leaf) => {
-      if (!cityLatLng && leaf instanceof L.CircleMarker) {
-        const cm = leaf as L.CircleMarker;
-        cityLatLng = cm.getLatLng();
-        cityPointRadius = cm.getRadius();
+      if (!(leaf instanceof L.Marker) || leaf instanceof L.CircleMarker) return;
+      const el = leaf.getElement();
+      if (el?.classList.contains("map-point-marker")) {
+        if (!cityLatLng) {
+          cityLatLng = leaf.getLatLng();
+          cityPointRadius = MAP_POINT_MARKER_RADIUS_PX;
+        }
+        return;
       }
-      if (!cityLabel && leaf instanceof L.Marker && !(leaf instanceof L.CircleMarker)) {
+      if (!cityLabel) {
         cityLabel = leaf as L.Marker;
       }
     });
@@ -2126,6 +2133,17 @@ watch(
 </script>
 
 <style>
+.map-point-marker {
+  background: none !important;
+  border: none !important;
+}
+
+.map-point-marker svg {
+  display: block;
+  width: 12px;
+  height: 12px;
+}
+
 .city-label-text {
   font-size: var(--label-size, 14px);
   font-weight: var(--label-weight, bold);

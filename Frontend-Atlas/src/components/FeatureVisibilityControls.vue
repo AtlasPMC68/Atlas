@@ -34,8 +34,8 @@
     </div>
 
     <template v-else>
-    <div class="flex items-center gap-1 shrink-0">
-      <div class="tabs tabs-boxed bg-base-200 gap-2 p-1.5 overflow-x-auto flex-nowrap flex-1 min-w-0">
+    <div class="flex items-center gap-1 shrink-0 bg-base-200 rounded-lg p-1.5">
+      <div class="tabs tabs-boxed bg-transparent gap-2 p-0 overflow-x-auto flex-nowrap flex-1 min-w-0">
       <button
         v-for="group in featureGroups"
         :key="group.type"
@@ -55,7 +55,7 @@
     </div>
       <button
         type="button"
-        class="btn btn-ghost btn-sm btn-square shrink-0"
+        class="btn btn-ghost btn-sm btn-square shrink-0 bg-transparent hover:bg-base-300"
         data-testid="toggle-sidebar-button"
         title="Réduire le panneau"
         aria-label="Réduire le panneau"

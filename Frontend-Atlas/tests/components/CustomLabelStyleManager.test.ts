@@ -2,10 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { mount } from "@vue/test-utils";
 import { nextTick } from "vue";
 import CustomLabelStyleManager from "../../src/components/CustomLabelStyleManager.vue";
-import {
-  formatCustomStyleOptionLabel,
-  type CustomLabelStyle,
-} from "../../src/utils/labelPresentation";
+import type { CustomLabelStyle } from "../../src/utils/labelPresentation";
 
 describe("CustomLabelStyleManager", () => {
   beforeEach(() => {
@@ -66,38 +63,6 @@ describe("CustomLabelStyleManager", () => {
     expect(wrapper.emitted("save")?.[0][0]).toEqual([
       expect.objectContaining({ id: "new-style-id", name: "Nouveau" }),
     ]);
-  });
-
-  it("formats custom style options with color and gras / italique in parentheses", () => {
-    const boldStyle: CustomLabelStyle = {
-      id: "s1",
-      name: "Fort",
-      sizePx: 16,
-      fontStyle: "normal",
-      fontWeight: "bold",
-      bold: true,
-      textTransform: "uppercase",
-      color: "#9333ea",
-      priority: 30,
-      minZoom: 1,
-    };
-    expect(formatCustomStyleOptionLabel(boldStyle)).toBe(
-      "Fort (#9333ea, gras, majuscules)",
-    );
-
-    const italicStyle: CustomLabelStyle = {
-      id: "s2",
-      name: "Rivière",
-      sizePx: 12,
-      fontStyle: "italic",
-      textTransform: "none",
-      color: "#ff0000",
-      priority: 20,
-      minZoom: 1,
-    };
-    expect(formatCustomStyleOptionLabel(italicStyle)).toBe(
-      "Rivière (#ff0000, italique)",
-    );
   });
 
   it("toggles hasPoint and shows point customization controls", async () => {

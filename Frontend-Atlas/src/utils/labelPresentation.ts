@@ -38,8 +38,40 @@ export const MAX_PREVIEW_FONT_SIZE_PX = 18;
 export const MIN_TEXT_SIZE_PX = 6;
 export const MAX_TEXT_SIZE_PX = 96;
 /** Map / preview city marker: not tied to the label font size. */
-export const MAP_POINT_MARKER_RADIUS_PX = 6;
 export const STYLE_POINT_SWATCH_PX = 12;
+/** Half the swatch: map marker and dropdown stay the same on-screen size. */
+export const MAP_POINT_MARKER_RADIUS_PX = STYLE_POINT_SWATCH_PX / 2;
+
+function svgAttr(value: string): string {
+  return value
+    .replace(/&/g, "&amp;")
+    .replace(/"/g, "&quot;")
+    .replace(/</g, "&lt;");
+}
+
+export function mapPointSwatchSvg(options: {
+  fill: string;
+  stroke: string;
+  fillOpacity?: number;
+  strokeOpacity?: number;
+  strokeWidth?: number;
+}): string {
+  const size = STYLE_POINT_SWATCH_PX;
+  const radius = size / 2 - 2;
+  const strokeWidth = Math.min(options.strokeWidth ?? 1, 2);
+  const fillOpacity = options.fillOpacity ?? 1;
+  const strokeOpacity = options.strokeOpacity ?? 1;
+  return (
+    `<svg width="${size}" height="${size}" viewBox="0 0 ${size} ${size}" aria-hidden="true">` +
+    `<circle cx="${size / 2}" cy="${size / 2}" r="${radius}"` +
+    ` fill="${svgAttr(options.fill)}"` +
+    ` fill-opacity="${fillOpacity}"` +
+    ` stroke="${svgAttr(options.stroke)}"` +
+    ` stroke-width="${strokeWidth}"` +
+    ` stroke-opacity="${strokeOpacity}" />` +
+    `</svg>`
+  );
+}
 
 /** A usable label size from user input or stored data, or undefined when there is none. */
 export function normalizeTextSizePx(value: unknown): number | undefined {
@@ -98,46 +130,11 @@ export function hasCustomStylePoint(
 }
 
 export function getCustomStyleOptionLabel(style: CustomLabelStyle): string {
-  let cleanName = style.name?.startsWith("• ") ? style.name.slice(2) : (style.name || "");
+  const name = style.name?.startsWith("• ") ? style.name.slice(2) : (style.name || "");
   if (style.textTransform === "uppercase") {
-    cleanName = cleanName.toUpperCase();
+    return name.toUpperCase();
   }
-  return hasCustomStylePoint(style) ? `• ${cleanName}` : cleanName;
-}
-
-export function formatCustomStyleOptionLabel(
-  style: CustomLabelStyle,
-  verbose = true,
-): string {
-  if (!verbose) {
-    return style.name;
-  }
-
-  const parts: string[] = [];
-
-  if (style.color) {
-    parts.push(style.color);
-  }
-
-  const isBold = style.fontWeight === "bold" || Boolean(style.bold);
-  const isItalic = style.fontStyle === "italic";
-  const isUppercase = style.textTransform === "uppercase";
-
-  if (isBold) {
-    parts.push("gras");
-  }
-  if (isItalic) {
-    parts.push("italique");
-  }
-  if (isUppercase) {
-    parts.push("majuscules");
-  }
-
-  if (parts.length === 0) {
-    return `${style.name} (personnalisé)`;
-  }
-
-  return `${style.name} (${parts.join(", ")})`;
+  return name;
 }
 
 export function getWordTypeOptionStyle(typeKey: string): CSSProperties {
@@ -156,8 +153,7 @@ export function getWordTypeOptionLabel(typeKey: string): string {
   const norm = normalizeWordType(typeKey);
   const tax = WORD_TYPE_TAXONOMY[norm];
   if (!tax) return typeKey;
-  const label = tax.textTransform === "uppercase" ? tax.label.toUpperCase() : tax.label;
-  return tax.mapElementType === "point" ? `• ${label}` : label;
+  return tax.textTransform === "uppercase" ? tax.label.toUpperCase() : tax.label;
 }
 
 export function splitBalancedLine(text: string, maxLen = 13): string {

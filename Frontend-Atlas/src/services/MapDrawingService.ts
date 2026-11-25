@@ -687,7 +687,7 @@ export class MapDrawingService {
           // Signal MapGeoJSON to finalise the cut: detect any zones that geoman
           // silently removed from the map (fully enclosed by the cut polygon)
           // and delete them, then re-render intersected zones with their new
-          // geometry. Deferred so the Vue watcher echo cycle (suppressNextPropsRender)
+          // geometry. Deferred so the Vue watcher echo cycle (holdFeaturePropRenders)
           // has already flushed before we call renderAllFeatures.
           this.emit("cut-complete");
         }, 0);

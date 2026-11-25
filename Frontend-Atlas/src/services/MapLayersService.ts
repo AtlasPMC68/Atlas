@@ -1,6 +1,6 @@
 import { ref } from "vue";
 import L from "leaflet";
-import { getRadiusForZoom } from "../utils/map.ts";
+import { MAP_POINT_MARKER_RADIUS_PX } from "../utils/labelPresentation";
 import { toArray } from "../utils/utils";
 import { createCartoTileLayer } from "../utils/basemap";
 import { colorRgbToCss, getMapElementType } from "../utils/featureHelpers";
@@ -29,18 +29,16 @@ export class MapLayersService {
     );
   }
 
-  updateCircleSizes(map: L.Map) {
-    const currentZoom = map.getZoom();
-    const newRadius = getRadiusForZoom(currentZoom);
-
+  updateCircleSizes(_map: L.Map) {
     this.allCircles.value.forEach((circle) => {
-      circle.setRadius(newRadius);
+      circle.setRadius(MAP_POINT_MARKER_RADIUS_PX);
     });
   }
 
   renderCities(features: Feature[], map: L.Map) {
+    void map;
     const safeFeatures = toArray(features) as Feature[];
-    const radius = getRadiusForZoom(map.getZoom());
+    const radius = MAP_POINT_MARKER_RADIUS_PX;
 
     for (const feature of safeFeatures) {
       if (!feature.geometry || !Array.isArray(feature.geometry.coordinates))

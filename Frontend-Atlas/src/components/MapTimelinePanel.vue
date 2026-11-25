@@ -33,7 +33,7 @@
         </span>
       </div>
 
-      <!-- Center section: Flèches précédent / suivant parfaitement centrées sur toute la largeur -->
+      <!-- Center: previous / next milestone, centered on the toolbar -->
       <div
         v-if="sortedTimelineMilestones.length > 0"
         class="absolute left-1/2 -translate-x-1/2 inline-flex items-center rounded border border-base-300 bg-base-200/90 overflow-hidden shadow-xs pointer-events-auto"
@@ -62,7 +62,7 @@
         </button>
       </div>
 
-      <!-- Right section: Masquer la légende & Masquer la ligne du temps -->
+      <!-- Right: hide legend and hide timeline -->
       <div class="flex items-center gap-3 ml-auto">
         <button
           type="button"

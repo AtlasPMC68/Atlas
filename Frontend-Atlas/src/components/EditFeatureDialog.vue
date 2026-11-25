@@ -12,7 +12,7 @@
       </h3>
 
       <fieldset class="grid grid-cols-1 lg:grid-cols-2 gap-x-6 gap-y-5 items-start">
-        <!-- Section 1 (Top Left): Informations générales -->
+        <!-- Section 1 (top left): general info -->
         <div class="flex flex-col gap-2 min-w-0 order-1 lg:col-start-1 lg:row-start-1">
           <div class="flex items-center justify-between min-h-[1.75rem]">
             <span class="section-title">
@@ -68,24 +68,14 @@
                   class="preview-box px-3 py-1.5 min-h-[42px] w-full flex items-center gap-2"
                   :style="editTextStyle"
                 >
-                  <svg
+                  <PointSwatch
                     v-if="isEditingPoint"
-                    class="shrink-0 overflow-hidden"
-                    :width="STYLE_POINT_SWATCH_PX"
-                    :height="STYLE_POINT_SWATCH_PX"
-                    :viewBox="`0 0 ${STYLE_POINT_SWATCH_PX} ${STYLE_POINT_SWATCH_PX}`"
-                  >
-                    <circle
-                      :cx="STYLE_POINT_SWATCH_PX / 2"
-                      :cy="STYLE_POINT_SWATCH_PX / 2"
-                      :r="STYLE_POINT_SWATCH_PX / 2 - 2"
-                      :fill="pointPreviewFillColor"
-                      :fill-opacity="pointPreviewFillOpacity"
-                      :stroke="pointPreviewStrokeColor"
-                      :stroke-width="Math.min(pointPreviewStrokeWidth, 2)"
-                      :stroke-opacity="pointPreviewStrokeOpacity"
-                    />
-                  </svg>
+                    :fill="pointPreviewFillColor"
+                    :fill-opacity="pointPreviewFillOpacity"
+                    :stroke="pointPreviewStrokeColor"
+                    :stroke-width="Math.min(pointPreviewStrokeWidth, 2)"
+                    :stroke-opacity="pointPreviewStrokeOpacity"
+                  />
                   <span class="whitespace-pre-line break-words">
                     {{ editDraft.labelText || editDraft.name || "Exemple de texte" }}
                   </span>
@@ -102,7 +92,7 @@
           </div>
         </div>
 
-        <!-- Section 2 (Top Right): Cartes associées -->
+        <!-- Section 2 (top right): linked maps -->
         <div
           v-if="props.mapPeriods && props.mapPeriods.length > 0"
           class="flex flex-col gap-2 min-w-0 order-3 lg:col-start-2 lg:row-start-1"
@@ -158,7 +148,7 @@
           </div>
         </div>
 
-        <!-- Section 3 (Bottom Left): Réglages du texte -->
+        <!-- Section 3 (bottom left): text settings -->
         <div
           v-if="isTextElement"
           class="editor-section flex flex-col gap-3 pt-4 order-2 lg:col-start-1 lg:row-start-2"
@@ -250,7 +240,7 @@
           </div>
         </div>
 
-        <!-- Section 4 (Bottom Right / Shape settings): Réglages géométriques unifiés -->
+        <!-- Section 4 (bottom right): shared geometry settings -->
         <div
           v-if="hasGeometryControls"
           class="editor-section flex flex-col gap-3 pt-4"
@@ -465,7 +455,6 @@ import type { CustomLabelStyle } from "../utils/labelPresentation";
 import {
   MAX_TEXT_SIZE_PX,
   MIN_TEXT_SIZE_PX,
-  STYLE_POINT_SWATCH_PX,
   normalizeTextSizePx,
   MAX_PREVIEW_FONT_SIZE_PX,
   hasCustomStylePoint,
@@ -473,6 +462,7 @@ import {
 } from "../utils/labelPresentation";
 import CustomLabelStyleManager from "./CustomLabelStyleManager.vue";
 import LabelStyleSelect from "./LabelStyleSelect.vue";
+import PointSwatch from "./PointSwatch.vue";
 import { getMapElementType } from "../utils/featureHelpers";
 import {
   WORD_TYPE_TAXONOMY,

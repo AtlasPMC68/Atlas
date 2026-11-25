@@ -358,7 +358,7 @@ const multiSelectedFeatureIds = ref<string[]>([]);
 const selectedMapId = ref<string | null>(null);
 const copiedFeatures = ref<Feature[]>([]);
 
-// Presentation mode & Visibility states (Points 1, 6)
+// Sidebar, fullscreen, timeline, and legend visibility
 const COLLAPSED_SIDEBAR_WIDTH = 56;
 const isSidebarVisible = ref(true);
 const isFullscreen = ref(false);

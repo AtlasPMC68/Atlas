@@ -12,20 +12,12 @@
       aria-haspopup="listbox"
       @click="open = !open"
     >
-      <svg
-        v-if="selectedHasPoint"
-        :width="STYLE_POINT_SWATCH_PX"
-        :height="STYLE_POINT_SWATCH_PX"
-        :viewBox="`0 0 ${STYLE_POINT_SWATCH_PX} ${STYLE_POINT_SWATCH_PX}`"
-        class="shrink-0 overflow-hidden"
-      >
-        <circle
-          :cx="STYLE_POINT_SWATCH_PX / 2"
-          :cy="STYLE_POINT_SWATCH_PX / 2"
-          :r="STYLE_POINT_SWATCH_PX / 2 - 2"
-          :fill="selectedPointColor"
-        />
-      </svg>
+      <PointSwatch v-if="selectedHasPoint" :fill="selectedPointColor" />
+      <span
+        v-else
+        class="shrink-0"
+        :style="{ width: `${STYLE_POINT_SWATCH_PX}px` }"
+      />
       <span class="truncate text-sm" :style="selectedTextStyle">{{ selectedLabel }}</span>
     </button>
     <ul
@@ -34,68 +26,21 @@
       role="listbox"
     >
       <li
-        v-for="style in customStyles"
-        :key="style.id"
+        v-for="option in options"
+        :key="option.value"
         role="option"
         class="flex cursor-pointer items-center gap-2 px-3 py-1.5 text-sm hover:bg-base-200"
-        :aria-selected="modelValue === `custom:${style.id}`"
-        :data-value="`custom:${style.id}`"
-        @click="choose(`custom:${style.id}`)"
+        :aria-selected="modelValue === option.value"
+        :data-value="option.value"
+        @click="choose(option.value)"
       >
-        <svg
-          v-if="hasCustomStylePoint(style)"
-          :width="STYLE_POINT_SWATCH_PX"
-          :height="STYLE_POINT_SWATCH_PX"
-          :viewBox="`0 0 ${STYLE_POINT_SWATCH_PX} ${STYLE_POINT_SWATCH_PX}`"
-          class="shrink-0 overflow-hidden"
-        >
-          <circle
-            :cx="STYLE_POINT_SWATCH_PX / 2"
-            :cy="STYLE_POINT_SWATCH_PX / 2"
-            :r="STYLE_POINT_SWATCH_PX / 2 - 2"
-            :fill="style.pointColor || '#000000'"
-          />
-        </svg>
+        <PointSwatch v-if="option.hasPoint" :fill="option.fill" />
         <span
           v-else
           class="shrink-0"
           :style="{ width: `${STYLE_POINT_SWATCH_PX}px` }"
         />
-        <span class="truncate" :style="getCustomStyleObject(style)">{{
-          optionLabel(style)
-        }}</span>
-      </li>
-      <li
-        v-for="(_, typeKey) in WORD_TYPE_STYLES"
-        :key="String(typeKey)"
-        role="option"
-        class="flex cursor-pointer items-center gap-2 px-3 py-1.5 text-sm hover:bg-base-200"
-        :aria-selected="modelValue === typeKey"
-        :data-value="String(typeKey)"
-        @click="choose(String(typeKey))"
-      >
-        <svg
-          v-if="taxonomyHasPoint(String(typeKey))"
-          :width="STYLE_POINT_SWATCH_PX"
-          :height="STYLE_POINT_SWATCH_PX"
-          :viewBox="`0 0 ${STYLE_POINT_SWATCH_PX} ${STYLE_POINT_SWATCH_PX}`"
-          class="shrink-0 overflow-hidden"
-        >
-          <circle
-            :cx="STYLE_POINT_SWATCH_PX / 2"
-            :cy="STYLE_POINT_SWATCH_PX / 2"
-            :r="STYLE_POINT_SWATCH_PX / 2 - 2"
-            fill="#000000"
-          />
-        </svg>
-        <span
-          v-else
-          class="shrink-0"
-          :style="{ width: `${STYLE_POINT_SWATCH_PX}px` }"
-        />
-        <span class="truncate" :style="getWordTypeOptionStyle(String(typeKey))">{{
-          taxonomyLabel(String(typeKey))
-        }}</span>
+        <span class="truncate" :style="option.textStyle">{{ option.label }}</span>
       </li>
     </ul>
   </div>
@@ -103,6 +48,7 @@
 
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref } from "vue";
+import type { CSSProperties } from "vue";
 import {
   STYLE_POINT_SWATCH_PX,
   getCustomStyleObject,
@@ -113,6 +59,15 @@ import {
   type CustomLabelStyle,
 } from "../utils/labelPresentation";
 import { WORD_TYPE_STYLES, WORD_TYPE_TAXONOMY, type WordType } from "../utils/wordStyles";
+import PointSwatch from "./PointSwatch.vue";
+
+type StyleOption = {
+  value: string;
+  label: string;
+  textStyle: CSSProperties;
+  hasPoint: boolean;
+  fill: string;
+};
 
 const props = withDefaults(
   defineProps<{
@@ -135,45 +90,35 @@ const emit = defineEmits<{
 
 const open = ref(false);
 
-function optionLabel(style: CustomLabelStyle): string {
-  return getCustomStyleOptionLabel(style).replace(/^•\s*/, "");
-}
-
-function taxonomyLabel(typeKey: string): string {
-  return getWordTypeOptionLabel(typeKey).replace(/^•\s*/, "");
-}
-
 function taxonomyHasPoint(typeKey: string): boolean {
   return WORD_TYPE_TAXONOMY[typeKey as WordType]?.mapElementType === "point";
 }
 
-const selectedCustom = computed(() => {
-  if (!props.modelValue?.startsWith("custom:")) return undefined;
-  const id = props.modelValue.slice("custom:".length);
-  return props.customStyles.find((style) => style.id === id);
+const options = computed<StyleOption[]>(() => {
+  const custom = props.customStyles.map((style) => ({
+    value: `custom:${style.id}`,
+    label: getCustomStyleOptionLabel(style),
+    textStyle: getCustomStyleObject(style),
+    hasPoint: hasCustomStylePoint(style),
+    fill: style.pointColor || "#000000",
+  }));
+  const taxonomy = Object.keys(WORD_TYPE_STYLES).map((typeKey) => ({
+    value: typeKey,
+    label: getWordTypeOptionLabel(typeKey),
+    textStyle: getWordTypeOptionStyle(typeKey),
+    hasPoint: taxonomyHasPoint(typeKey),
+    fill: "#000000",
+  }));
+  return [...custom, ...taxonomy];
 });
 
-const selectedHasPoint = computed(() => {
-  if (selectedCustom.value) return hasCustomStylePoint(selectedCustom.value);
-  return WORD_TYPE_TAXONOMY[props.modelValue as WordType]?.mapElementType === "point";
-});
-
-const selectedPointColor = computed(() => {
-  if (selectedCustom.value) {
-    return selectedCustom.value.pointColor || "#000000";
-  }
-  return "#000000";
-});
-
-const selectedTextStyle = computed(() => {
-  if (selectedCustom.value) return getCustomStyleObject(selectedCustom.value);
-  return getWordTypeOptionStyle(props.modelValue || "");
-});
-
-const selectedLabel = computed(() => {
-  if (selectedCustom.value) return optionLabel(selectedCustom.value);
-  return taxonomyLabel(props.modelValue || "");
-});
+const selected = computed(
+  () => options.value.find((option) => option.value === props.modelValue),
+);
+const selectedHasPoint = computed(() => selected.value?.hasPoint ?? false);
+const selectedPointColor = computed(() => selected.value?.fill ?? "#000000");
+const selectedTextStyle = computed(() => selected.value?.textStyle ?? {});
+const selectedLabel = computed(() => selected.value?.label ?? "");
 
 function choose(value: string) {
   open.value = false;

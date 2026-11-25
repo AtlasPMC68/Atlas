@@ -60,25 +60,15 @@
                 >
                   <Bars3Icon class="w-4 h-4" />
                 </span>
-                <svg
+                <PointSwatch
                   v-if="hasStylePoint(style)"
-                  width="12"
-                  height="12"
-                  viewBox="0 0 12 12"
-                  class="shrink-0 overflow-hidden"
-                  title="Avec point sur la carte"
-                >
-                  <circle
-                    cx="6"
-                    cy="6"
-                    r="4"
-                    :fill="style.pointColor || style.color || '#000000'"
-                    :fill-opacity="style.pointFillOpacity ?? 1"
-                    :stroke="style.pointStrokeColor || '#000000'"
-                    :stroke-width="Math.min(style.pointStrokeWidth ?? 1, 2)"
-                    :stroke-opacity="style.pointStrokeOpacity ?? 1"
-                  />
-                </svg>
+                  :fill="style.pointColor || style.color || '#000000'"
+                  :fill-opacity="style.pointFillOpacity ?? 1"
+                  :stroke="style.pointStrokeColor || '#000000'"
+                  :stroke-width="Math.min(style.pointStrokeWidth ?? 1, 2)"
+                  :stroke-opacity="style.pointStrokeOpacity ?? 1"
+                  title="Map point"
+                />
                 <span
                   class="truncate font-medium pr-2"
                   :style="previewStyle(style, true)"
@@ -235,24 +225,14 @@
               class="preview-box overflow-hidden max-w-full px-3.5 py-2 w-full flex items-center gap-2"
               :style="{ ...previewStyle(currentLiveStyle, true, 44), lineHeight: '1.15' }"
             >
-              <svg
+              <PointSwatch
                 v-if="draft.hasPoint"
-                class="shrink-0 overflow-hidden"
-                :width="STYLE_POINT_SWATCH_PX"
-                :height="STYLE_POINT_SWATCH_PX"
-                :viewBox="`0 0 ${STYLE_POINT_SWATCH_PX} ${STYLE_POINT_SWATCH_PX}`"
-              >
-                <circle
-                  :cx="STYLE_POINT_SWATCH_PX / 2"
-                  :cy="STYLE_POINT_SWATCH_PX / 2"
-                  :r="STYLE_POINT_SWATCH_PX / 2 - 2"
-                  :fill="draft.pointColor || '#000000'"
-                  :fill-opacity="draft.pointFillOpacity"
-                  :stroke="draft.pointStrokeColor || '#000000'"
-                  :stroke-width="Math.min(pointPreviewStrokeWidth, 2)"
-                  :stroke-opacity="draft.pointStrokeOpacity"
-                />
-              </svg>
+                :fill="draft.pointColor || '#000000'"
+                :fill-opacity="draft.pointFillOpacity"
+                :stroke="draft.pointStrokeColor || '#000000'"
+                :stroke-width="Math.min(pointPreviewStrokeWidth, 2)"
+                :stroke-opacity="draft.pointStrokeOpacity"
+              />
               <span class="truncate min-w-0 max-w-full">
                 {{ draft.name.trim() || "Exemple de texte" }}
               </span>
@@ -455,7 +435,8 @@ import type {
   CustomLabelStyle,
   NewCustomLabelStyle,
 } from "../utils/labelPresentation";
-import { getLabelStylePreviewCss, STYLE_POINT_SWATCH_PX } from "../utils/labelPresentation";
+import { getLabelStylePreviewCss } from "../utils/labelPresentation";
+import PointSwatch from "./PointSwatch.vue";
 import {
   MAX_POINT_STROKE_WIDTH_PX,
   MAX_PREVIEW_POINT_STROKE_WIDTH_PX,
