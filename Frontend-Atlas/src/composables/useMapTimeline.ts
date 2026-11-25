@@ -17,6 +17,7 @@ export interface UseMapTimelineOptions {
   features: Ref<Feature[]>;
   mapPeriods: Ref<MapPeriod[]>;
   currentMapTitle: Ref<string | undefined>;
+  projectId?: Ref<string | undefined>;
   onFitVisibleFeatures?: () => void;
 }
 
@@ -24,30 +25,75 @@ export function useMapTimeline({
   features,
   mapPeriods,
   currentMapTitle,
+  projectId,
   onFitVisibleFeatures,
 }: UseMapTimelineOptions) {
+  const isValidTimelineMode = (m: string | null): m is TimelineFilterMode =>
+    m === "specific" || m === "cumulative" || m === "global";
+
   const selectedYear = ref(-1);
   const selectedExactDate = ref<string | null>(null);
+  const timelineMode = ref<TimelineFilterMode>("specific");
+  let isRestoringPosition = false;
 
-  let storedTimelineMode: string | null = null;
-  if (typeof window !== "undefined") {
+  function restoreTimelinePosition(id?: string) {
+    const targetId = id ?? projectId?.value;
+    if (!targetId || typeof window === "undefined") return;
+    isRestoringPosition = true;
     try {
-      storedTimelineMode = localStorage.getItem("atlas_timeline_filter_mode");
+      const storedYear = localStorage.getItem(`atlas_timeline_year_${targetId}`);
+      const storedExactDate = localStorage.getItem(
+        `atlas_timeline_exact_date_${targetId}`,
+      );
+      if (storedYear !== null) {
+        const parsed = Number(storedYear);
+        if (Number.isFinite(parsed) && parsed >= 0) {
+          selectedYear.value = parsed;
+          selectedExactDate.value = storedExactDate || null;
+        }
+      }
+      const storedMode = localStorage.getItem(
+        `atlas_timeline_filter_mode_${targetId}`,
+      );
+      timelineMode.value = isValidTimelineMode(storedMode)
+        ? storedMode
+        : "specific";
+    } catch {
+      // Ignore storage errors in restricted contexts
+    } finally {
+      isRestoringPosition = false;
+    }
+  }
+
+  watch([selectedYear, selectedExactDate], ([year, exactDate]) => {
+    if (isRestoringPosition || !projectId?.value || year < 0) return;
+    try {
+      localStorage.setItem(
+        `atlas_timeline_year_${projectId.value}`,
+        String(year),
+      );
+      if (exactDate) {
+        localStorage.setItem(
+          `atlas_timeline_exact_date_${projectId.value}`,
+          exactDate,
+        );
+      } else {
+        localStorage.removeItem(
+          `atlas_timeline_exact_date_${projectId.value}`,
+        );
+      }
     } catch {
       // Ignore storage errors in restricted contexts
     }
-  }
-  const timelineMode = ref<TimelineFilterMode>(
-    storedTimelineMode === "specific" ||
-      storedTimelineMode === "cumulative" ||
-      storedTimelineMode === "global"
-      ? storedTimelineMode
-      : "specific",
-  );
+  });
 
   watch(timelineMode, (mode: TimelineFilterMode) => {
+    if (isRestoringPosition || !projectId?.value) return;
     try {
-      localStorage.setItem("atlas_timeline_filter_mode", mode);
+      localStorage.setItem(
+        `atlas_timeline_filter_mode_${projectId.value}`,
+        mode,
+      );
     } catch {
       // Ignore storage errors in restricted contexts
     }
@@ -257,67 +303,138 @@ export function useMapTimeline({
     { immediate: true },
   );
 
-  const filteredFeatures = computed(() => {
-    return features.value.filter((feature: Feature) => {
-      if (timelineMode.value === "global") return true;
+  function getFeatureMapKeys(feature: Feature): {
+    keys: string[];
+    hasExplicitIds: boolean;
+  } {
+    const featureMapIds = getFeatureMapIds(feature);
+    if (featureMapIds.length > 0) {
+      return { keys: featureMapIds, hasExplicitIds: true };
+    }
+    const featureMapTitle =
+      ("mapTitle" in feature
+        ? (feature as { mapTitle?: string }).mapTitle
+        : undefined) || feature.properties?.mapTitle;
+    return {
+      keys: featureMapTitle ? [String(featureMapTitle)] : [],
+      hasExplicitIds: false,
+    };
+  }
 
-      const featureMapIds = getFeatureMapIds(feature);
-      const featureMapTitle =
-        ("mapTitle" in feature ? (feature as { mapTitle?: string }).mapTitle : undefined) ||
-        feature.properties?.mapTitle;
-      const targetMapKeys =
-        featureMapIds.length > 0
-          ? featureMapIds
-          : featureMapTitle
-            ? [featureMapTitle]
-            : [];
+  function resolvePeriodForKey(
+    effectiveMapKey: string,
+    allowTitleFallback: boolean,
+  ): SliderPeriod | undefined {
+    const normalizedMapId = String(effectiveMapKey).trim().toLowerCase();
+    return (
+      periodByMapId.value.get(effectiveMapKey) ??
+      periodByMapId.value.get(normalizedMapId) ??
+      enrichedPeriods.value.find(
+        (p: SliderPeriod) =>
+          String(p.id).trim().toLowerCase() === normalizedMapId,
+      ) ??
+      (allowTitleFallback
+        ? enrichedPeriods.value.find(
+            (p: SliderPeriod) =>
+              p.title?.trim().toLowerCase() === normalizedMapId,
+          )
+        : undefined)
+    );
+  }
 
-      if (targetMapKeys.length > 0) {
-        return targetMapKeys.some((effectiveMapKey: string) => {
-          const normalizedMapId = String(effectiveMapKey).trim().toLowerCase();
-          const period =
-            periodByMapId.value.get(effectiveMapKey) ??
-            periodByMapId.value.get(normalizedMapId) ??
-            enrichedPeriods.value.find(
-              (p: SliderPeriod) => String(p.id).trim().toLowerCase() === normalizedMapId,
-            ) ??
-            (featureMapIds.length === 0
-              ? enrichedPeriods.value.find(
-                  (p: SliderPeriod) => p.title?.trim().toLowerCase() === normalizedMapId,
-                )
-              : undefined);
+  function isPeriodVisibleAtCurrentDate(period: SliderPeriod): boolean {
+    if (timelineMode.value === "global") return true;
 
-          if (!period) return true;
-          if (timelineMode.value === "cumulative") {
-            return (
-              period.startYear == null || period.startYear <= selectedYear.value
-            );
-          } else if (
-            selectedExactDate.value &&
-            period.startDate &&
-            period.endDate
-          ) {
-            return isPeriodActiveAt(
-              period.startDate,
-              period.endDate,
-              selectedExactDate.value,
-              periodStartDates.value,
-            );
-          } else if (period.startYear == null || period.endYear == null) {
-            return true;
-          } else {
-            return isPeriodActiveAt(
-              period.startYear,
-              period.endYear,
-              selectedYear.value,
-              periodStartYears.value,
-            );
-          }
-        });
-      }
+    if (timelineMode.value === "cumulative") {
+      return period.startYear == null || period.startYear <= selectedYear.value;
+    }
 
+    if (selectedExactDate.value && period.startDate && period.endDate) {
+      return isPeriodActiveAt(
+        period.startDate,
+        period.endDate,
+        selectedExactDate.value,
+        periodStartDates.value,
+      );
+    }
+
+    if (period.startYear == null || period.endYear == null) {
       return true;
+    }
+
+    return isPeriodActiveAt(
+      period.startYear,
+      period.endYear,
+      selectedYear.value,
+      periodStartYears.value,
+    );
+  }
+
+  /**
+   * Whether `feature` is already visible at the current timeline position and mode.
+   */
+  function isFeatureVisibleOnTimeline(feature: Feature): boolean {
+    if (timelineMode.value === "global") return true;
+
+    const { keys, hasExplicitIds } = getFeatureMapKeys(feature);
+    if (keys.length === 0) return true;
+
+    return keys.some((effectiveMapKey: string) => {
+      const period = resolvePeriodForKey(effectiveMapKey, !hasExplicitIds);
+      if (!period) return true;
+      return isPeriodVisibleAtCurrentDate(period);
     });
+  }
+
+  /**
+   * Moves the timeline only when `feature` is not already visible at the current date.
+   * Returns true if the timeline position changed.
+   */
+  function revealFeatureOnTimeline(feature: Feature): boolean {
+    if (timelineMode.value === "global") return false;
+    if (isFeatureVisibleOnTimeline(feature)) return false;
+
+    const { keys, hasExplicitIds } = getFeatureMapKeys(feature);
+    if (keys.length === 0) return false;
+
+    const candidatePeriods = keys
+      .map((key) => resolvePeriodForKey(key, !hasExplicitIds))
+      .filter((period): period is SliderPeriod => period != null);
+
+    if (candidatePeriods.length === 0) return false;
+
+    const sortedCandidates = [...candidatePeriods].sort((a, b) => {
+      if (a.startYear !== b.startYear) return a.startYear - b.startYear;
+      return (a.startDate ?? "").localeCompare(b.startDate ?? "");
+    });
+
+    const targetPeriod = sortedCandidates[0];
+    const targetYear = targetPeriod.startYear ?? toYear(targetPeriod.startDate);
+    if (targetYear == null) return false;
+
+    const targetExactDate =
+      targetPeriod.exactDate && targetPeriod.startDate
+        ? targetPeriod.startDate
+        : null;
+
+    const changed =
+      targetYear !== selectedYear.value ||
+      targetExactDate !== selectedExactDate.value;
+
+    if (targetYear !== selectedYear.value) {
+      selectedYear.value = targetYear;
+    }
+    selectedExactDate.value = targetExactDate;
+
+    if (targetPeriod.title) {
+      currentMapTitle.value = targetPeriod.title;
+    }
+
+    return changed;
+  }
+
+  const filteredFeatures = computed(() => {
+    return features.value.filter(isFeatureVisibleOnTimeline);
   });
 
   function onExactDateChange(nextDate: string | null) {
@@ -350,6 +467,9 @@ export function useMapTimeline({
     periodStartDates,
     activeMapPeriod,
     filteredFeatures,
+    isFeatureVisibleOnTimeline,
+    revealFeatureOnTimeline,
     onExactDateChange,
+    restoreTimelinePosition,
   };
 }

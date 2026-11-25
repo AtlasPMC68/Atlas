@@ -348,55 +348,16 @@ function selectFeature(id: string | null, fitView = true) {
   if (id) {
     selectedMapId.value = null;
     multiSelectedFeatureIds.value = [];
+
+    const feat = features.value.find((f: Feature) => String(f.id) === String(id));
+    if (feat) {
+      revealFeatureOnTimeline(feat);
+    }
+
     if (fitView) {
       nextTick(() => {
         mapGeoJsonRef.value?.fitToVisibleFeatures?.([id], true);
       });
-    }
-
-    const feat = features.value.find((f: Feature) => String(f.id) === String(id));
-    if (feat) {
-      const featMapId = getFeatureMapId(feat);
-      const featMapTitle =
-        ("mapTitle" in feat ? (feat as { mapTitle?: string }).mapTitle : undefined) ||
-        feat.properties?.mapTitle;
-
-      const featMapKey = featMapId ?? featMapTitle;
-      const featMapKeyNorm = featMapKey ? String(featMapKey).trim().toLowerCase() : null;
-
-      const period = featMapKeyNorm
-        ? (periodByMapId.value.get(featMapKeyNorm) ??
-           periodByMapId.value.get(featMapKey!) ??
-           enrichedPeriods.value.find(
-             (p: SliderPeriod) =>
-               String(p.id).trim().toLowerCase() === featMapKeyNorm ||
-               p.title?.trim().toLowerCase() === featMapKeyNorm,
-           ) ??
-           mapPeriods.value.find(
-             (p: MapPeriod) =>
-               String(p.id).trim().toLowerCase() === featMapKeyNorm ||
-               p.title?.trim().toLowerCase() === featMapKeyNorm,
-           ))
-        : null;
-
-      let targetYear: number | null = null;
-      let targetExactDate: string | null = null;
-
-      if (period) {
-        targetYear = (period as any).startYear ?? toYear(period.startDate);
-        targetExactDate = ((period as any).exactDate && period.startDate) ? period.startDate : null;
-      }
-
-      if (timelineMode.value !== "global" && targetYear != null) {
-        if (targetYear !== selectedYear.value) {
-          selectedYear.value = targetYear;
-        }
-        selectedExactDate.value = targetExactDate ?? null;
-      }
-
-      if (period?.title) {
-        currentMapTitle.value = period.title;
-      }
     }
   }
 }
@@ -607,11 +568,14 @@ const {
   timelineMarkerYears,
   activeMapPeriod,
   filteredFeatures,
+  revealFeatureOnTimeline,
   onExactDateChange,
+  restoreTimelinePosition,
 } = useMapTimeline({
   features,
   mapPeriods,
   currentMapTitle,
+  projectId,
   onFitVisibleFeatures: () => {
     mapGeoJsonRef.value?.fitToVisibleFeatures(undefined, true);
   },
@@ -1933,6 +1897,7 @@ function onDocumentClick(e: MouseEvent) {
 onMounted(async () => {
   await fetchCurrentUser();
   await resolveRouteContext();
+  restoreTimelinePosition(projectId.value);
   await loadProjectMapsForTimeline();
   await loadCustomLabelStyles();
   await loadCurrentMapInfo();
@@ -1972,7 +1937,10 @@ onMounted(async () => {
 });
 
 watch([projectRouteId], async () => {
+  selectedYear.value = -1;
+  selectedExactDate.value = null;
   await resolveRouteContext();
+  restoreTimelinePosition(projectId.value);
   await loadProjectMapsForTimeline();
   await loadInitialFeatures();
   await frameVisibleFeatures();

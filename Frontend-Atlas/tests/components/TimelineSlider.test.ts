@@ -177,4 +177,51 @@ describe("TimelineSlider filter modes", () => {
     const bottom2 = parseFloat(tracks[1].attributes("style")?.match(/bottom:\s*([\d.]+)rem/)?.[1] || "0");
     expect(bottom2).toBe(bottom1);
   });
+
+  it("syncs day-zoom slider offset when currentExactDate prop updates within the same year", async () => {
+    const wrapper = mount(TimelineSlider, {
+      props: {
+        year: 1900,
+        min: 1900,
+        max: 1900,
+        currentExactDate: "1900-01-15",
+        mapPeriods: [
+          {
+            id: "p1",
+            title: "Map Jan",
+            startDate: "1900-01-15",
+            endDate: "1900-01-15",
+            startYear: 1900,
+            endYear: 1900,
+            exactDate: true,
+            color: "#ef4444",
+          },
+          {
+            id: "p2",
+            title: "Map Jun",
+            startDate: "1900-06-20",
+            endDate: "1900-06-20",
+            startYear: 1900,
+            endYear: 1900,
+            exactDate: true,
+            color: "#14b8a6",
+          },
+        ],
+      },
+    });
+
+    const dayRange = wrapper.find("input.timeline-day-range");
+    expect(dayRange.exists()).toBe(true);
+
+    await wrapper.setProps({ currentExactDate: "1900-06-20" });
+    await wrapper.vm.$nextTick();
+    const juneVal = Number((dayRange.element as HTMLInputElement).value);
+
+    await wrapper.setProps({ currentExactDate: "1900-01-15" });
+    await wrapper.vm.$nextTick();
+    const janVal = Number((dayRange.element as HTMLInputElement).value);
+
+    expect(janVal).toBeGreaterThan(0);
+    expect(juneVal).toBeGreaterThan(janVal);
+  });
 });

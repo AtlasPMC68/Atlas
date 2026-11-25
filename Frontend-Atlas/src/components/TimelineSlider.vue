@@ -908,4 +908,20 @@ watch(
     emit("exact-date-change", current ? toIsoDateUtc(current) : null);
   },
 );
+
+watch(
+  () => props.currentExactDate,
+  (newExactDate: string | null | undefined) => {
+    const window = dayZoomWindow.value;
+    if (!window || !newExactDate) return;
+    const parsed = parseIsoDateUtc(newExactDate);
+    if (!parsed) return;
+    const days = Math.round(
+      (parsed.getTime() - window.minDate.getTime()) / 86_400_000,
+    );
+    if (days >= 0 && days <= window.spanDays && days !== dayZoomOffset.value) {
+      dayZoomOffset.value = days;
+    }
+  },
+);
 </script>
