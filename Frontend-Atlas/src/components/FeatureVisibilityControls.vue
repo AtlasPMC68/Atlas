@@ -231,13 +231,6 @@
                     >
                       {{ getFeatureMapIds(feature).length }} cartes
                     </span>
-                    <span
-                      v-else-if="getOrphanCustomPeriod(feature)"
-                      class="badge badge-warning badge-outline badge-xs font-semibold shrink-0 ml-auto"
-                      :title="`Période custom ${getOrphanCustomPeriod(feature)?.start}–${getOrphanCustomPeriod(feature)?.end}`"
-                    >
-                      Période
-                    </span>
                   </div>
                   <div class="flex items-center gap-0.5 shrink-0 ml-auto -mr-1">
                     <button
@@ -440,11 +433,7 @@ import { isTextFeature } from "../utils/wordStyles";
 import EditFeatureDialog from "./EditFeatureDialog.vue";
 import ConfirmDialog from "./ConfirmDialog.vue";
 import DeleteFeatureDialog from "./DeleteFeatureDialog.vue";
-import {
-  getFeatureCustomYearRange,
-  getFeatureMapId,
-  getFeatureMapIds,
-} from "../utils/featureHelpers";
+import { getFeatureMapId, getFeatureMapIds } from "../utils/featureHelpers";
 import {
   groupFeaturesByType,
   groupFeaturesByMap,
@@ -499,11 +488,6 @@ const activeGroupType = ref<FeatureVisibilityGroupType | undefined>(undefined);
 function isFeatureNameMissing(feature: Feature): boolean {
   const name = feature.properties?.name?.trim().toLowerCase();
   return !name || name === "nom manquant" || name === "! nom manquant";
-}
-
-function getOrphanCustomPeriod(feature: Feature): { start: number; end: number } | null {
-  if (getFeatureMapIds(feature).length > 0) return null;
-  return getFeatureCustomYearRange(feature);
 }
 
 function getFeatureDisplayName(feature: Feature): string {

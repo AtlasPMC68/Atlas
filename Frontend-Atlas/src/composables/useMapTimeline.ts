@@ -2,11 +2,7 @@ import { ref, computed, watch, nextTick, type Ref } from "vue";
 import type { Feature } from "../typescript/feature";
 import type { MapPeriod, SliderPeriod } from "../typescript/map";
 import { toYear, isPeriodActiveAt } from "../utils/dateUtils";
-import {
-  getFeatureCustomYearRange,
-  getFeatureMapId,
-  getFeatureMapIds,
-} from "../utils/featureHelpers";
+import { getFeatureMapId, getFeatureMapIds } from "../utils/featureHelpers";
 
 export type TimelineFilterMode = "specific" | "cumulative" | "global";
 
@@ -423,31 +419,19 @@ export function useMapTimeline({
 
   /**
    * Whether `feature` is already visible at the current timeline position and mode.
+   * Dates come from maps only: no mapId → all periods; with mapId → that map's dates.
    */
-  function isCustomYearRangeVisible(range: { start: number; end: number | null }): boolean {
-    if (range.start > selectedYear.value) return false;
-    if (timelineMode.value === "cumulative" || range.end == null) {
-      return true;
-    }
-    return selectedYear.value <= range.end;
-  }
+  function isFeatureVisibleOnTimeline(feature: Feature): boolean {
+    if (timelineMode.value === "global") return true;
 
-  function isVisibleViaMaps(feature: Feature): boolean {
     const { keys, hasExplicitIds } = getFeatureMapKeys(feature);
     if (keys.length === 0) return true;
+
     return keys.some((effectiveMapKey: string) => {
       const period = resolvePeriodForKey(effectiveMapKey, !hasExplicitIds);
       if (!period) return true;
       return isPeriodVisibleAtCurrentDate(period);
     });
-  }
-
-  function isFeatureVisibleOnTimeline(feature: Feature): boolean {
-    if (timelineMode.value === "global") return true;
-
-    const customRange = getFeatureCustomYearRange(feature);
-    if (customRange && !isCustomYearRangeVisible(customRange)) return false;
-    return isVisibleViaMaps(feature);
   }
 
   /**
@@ -457,13 +441,6 @@ export function useMapTimeline({
   function revealFeatureOnTimeline(feature: Feature): boolean {
     if (timelineMode.value === "global") return false;
     if (isFeatureVisibleOnTimeline(feature)) return false;
-
-    const customRange = getFeatureCustomYearRange(feature);
-    if (customRange && !isCustomYearRangeVisible(customRange)) {
-      selectedYear.value = customRange.start;
-      selectedExactDate.value = null;
-      return true;
-    }
 
     const { keys, hasExplicitIds } = getFeatureMapKeys(feature);
     if (keys.length === 0) return false;

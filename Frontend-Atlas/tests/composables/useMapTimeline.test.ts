@@ -291,37 +291,22 @@ describe("useMapTimeline - revealFeatureOnTimeline", () => {
       expect(selectedYear.value).toBe(1850);
     });
 
-    it("hides orphan startYear/endYear features outside that range", () => {
+    it("shows features with no map at every year, even if they still have leftover startYear", () => {
       const orphan = makeFeature("f-orphan", null);
       orphan.startYear = 1800;
       orphan.endYear = 1840;
       orphan.properties.startYear = 1800;
       orphan.properties.endYear = 1840;
 
-      const { selectedYear, isFeatureVisibleOnTimeline, revealFeatureOnTimeline } =
+      const { isFeatureVisibleOnTimeline, revealFeatureOnTimeline, selectedYear } =
         setupTimeline([period1800, period1900], [orphan], 1900, "specific");
 
-      expect(isFeatureVisibleOnTimeline(orphan)).toBe(false);
-      expect(revealFeatureOnTimeline(orphan)).toBe(true);
-      expect(selectedYear.value).toBe(1800);
       expect(isFeatureVisibleOnTimeline(orphan)).toBe(true);
+      expect(revealFeatureOnTimeline(orphan)).toBe(false);
+      expect(selectedYear.value).toBe(1900);
     });
 
-    it("hides a startYear-only feature before that year", () => {
-      const orphan = makeFeature("f-start-only", null);
-      orphan.startYear = 1900;
-
-      const { isFeatureVisibleOnTimeline } = setupTimeline(
-        [period1800, period1900],
-        [orphan],
-        1850,
-        "specific",
-      );
-
-      expect(isFeatureVisibleOnTimeline(orphan)).toBe(false);
-    });
-
-    it("still applies custom years when the feature also has a mapId", () => {
+    it("uses only the map period when a feature has a mapId, ignoring leftover startYear", () => {
       const mapped = makeFeature("f-mapped-custom", "map-1900");
       mapped.startYear = 1800;
       mapped.endYear = 1840;
@@ -335,37 +320,15 @@ describe("useMapTimeline - revealFeatureOnTimeline", () => {
         "specific",
       );
 
-      expect(isFeatureVisibleOnTimeline(mapped)).toBe(false);
-    });
+      expect(isFeatureVisibleOnTimeline(mapped)).toBe(true);
 
-    it("keeps the last custom year even if a map starts that year", () => {
-      const orphan = makeFeature("f-end-inclusive", null);
-      orphan.startYear = 1800;
-      orphan.endYear = 1850;
-
-      const { isFeatureVisibleOnTimeline } = setupTimeline(
-        [period1850, period1900],
-        [orphan],
+      const at1850 = setupTimeline(
+        [period1800, period1900],
+        [mapped],
         1850,
         "specific",
       );
-
-      expect(isFeatureVisibleOnTimeline(orphan)).toBe(true);
-    });
-
-    it("shows orphan startYear features in cumulative mode from that year on", () => {
-      const orphan = makeFeature("f-orphan-cumul", null);
-      orphan.startYear = 1900;
-      orphan.endYear = 1920;
-
-      const { isFeatureVisibleOnTimeline } = setupTimeline(
-        [period1800, period1900],
-        [orphan],
-        1850,
-        "cumulative",
-      );
-
-      expect(isFeatureVisibleOnTimeline(orphan)).toBe(false);
+      expect(at1850.isFeatureVisibleOnTimeline(mapped)).toBe(false);
     });
   });
 });
