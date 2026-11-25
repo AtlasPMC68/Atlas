@@ -1128,6 +1128,46 @@ def test_delete_map_removes_map_id_from_shared_features_even_if_primary_map_id_d
     assert shared_feature.data["properties"]["mapIds"] == [str(map_1_id)]
 
 
+def test_delete_map_does_not_delete_feature_owned_by_another_map_when_map_ids_invalid():
+    from app.services.maps import delete_map_in_db
+    from app.models.project import Project
+
+    project_id = uuid4()
+    map_1_id = uuid4()
+    map_2_id = uuid4()
+    user_id = uuid4()
+
+    shared_feature = Feature(
+        id=uuid4(),
+        project_id=project_id,
+        map_id=map_1_id,
+        data={
+            "properties": {
+                "name": "Fleuve partagé",
+                "mapIds": ["not-a-uuid", str(map_2_id)],
+            },
+        },
+    )
+
+    deleted_objs = []
+    session = SimpleNamespace(
+        execute=AsyncMock(side_effect=[
+            SimpleNamespace(scalar_one_or_none=lambda: Project(id=project_id, user_id=user_id)),
+            SimpleNamespace(scalar_one_or_none=lambda: Map(id=map_2_id, project_id=project_id)),
+            SimpleNamespace(scalars=lambda: SimpleNamespace(all=lambda: [shared_feature])),
+            None,
+            None,
+        ]),
+        delete=AsyncMock(side_effect=lambda obj: deleted_objs.append(obj)),
+        commit=AsyncMock(),
+    )
+
+    success = asyncio.run(delete_map_in_db(session, project_id, map_2_id, user_id))
+    assert success is True
+    assert shared_feature not in deleted_objs
+    assert str(map_2_id) not in shared_feature.data["properties"]["mapIds"]
+
+
 def test_get_project_maps_excludes_extraction_failed():
     import app.routers.projects as projects_router
     from app.models.project import Project

@@ -255,6 +255,20 @@ describe("featureTextEditing", () => {
       expect(edited.properties.strokeColor).toEqual([0, 0, 0]);
     });
 
+    it("clamps a point stroke to MAX_POINT_STROKE_WIDTH_PX", () => {
+      const edited = coerceEditedFeature(basePointFeature, {
+        name: "Québec",
+        wordType: "city",
+        colorHex: "#000000",
+        strokeColorHex: "#111111",
+        strokeWidth: 50,
+        selectedMapIds: ["map-1"],
+      });
+
+      expect(edited.properties.mapElementType).toBe("point");
+      expect(edited.properties.strokeWidth).toBe(12);
+    });
+
     it("persists text color for label elements without custom style (e.g. country)", () => {
       const countryFeature: Feature = {
         type: "Feature",

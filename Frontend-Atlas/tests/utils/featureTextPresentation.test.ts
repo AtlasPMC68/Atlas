@@ -15,6 +15,7 @@ import {
   getLabelPresentation,
   getWordTypeOptionStyle,
   getCustomStyleObject,
+  mapPointSwatchSvg,
   type CustomLabelStyle,
 } from "../../src/utils/labelPresentation";
 import { getMapElementType } from "../../src/utils/featureHelpers";
@@ -451,5 +452,18 @@ describe("shared word styles and label presentation", () => {
       pointColor: "#dc2626",
     };
     expect(getCustomStyleObject(customWithPoint).color).toBe("#10b981");
+  });
+
+  it("escapes quote characters and clamps opacities in the map point SVG", () => {
+    const svg = mapPointSwatchSvg({
+      fill: '#00ff00" onclick="alert(1)',
+      stroke: "#000000",
+      fillOpacity: 4,
+      strokeOpacity: Number.NaN,
+    });
+    expect(svg).toContain("fill-opacity=\"1\"");
+    expect(svg).toContain("stroke-opacity=\"1\"");
+    expect(svg).not.toContain("onclick");
+    expect(svg).toContain("&quot;");
   });
 });

@@ -364,4 +364,29 @@ describe("useMapTimeline - persist user position", () => {
     await timeline.restoreTimelinePosition();
     expect(timeline.selectedYear.value).toBe(1900);
   });
+
+  it("restores year and mode from the previous per-key localStorage format", async () => {
+    const projectId = ref("proj-legacy");
+    localStorage.setItem("atlas_timeline_year_proj-legacy", "1875");
+    localStorage.setItem("atlas_timeline_filter_mode_proj-legacy", "cumulative");
+
+    const features = ref<Feature[]>([
+      makeFeature("f-1850", "map-1850"),
+      makeFeature("f-1900", "map-1900"),
+    ]);
+    const mapPeriods = ref<MapPeriod[]>([period1850, period1900]);
+    const currentMapTitle = ref<string | undefined>(undefined);
+    const timeline = useMapTimeline({
+      features,
+      mapPeriods,
+      currentMapTitle,
+      projectId,
+    });
+
+    timeline.beginTimelineRestore();
+    await timeline.restoreTimelinePosition();
+
+    expect(timeline.selectedYear.value).toBe(1875);
+    expect(timeline.timelineMode.value).toBe("cumulative");
+  });
 });

@@ -47,4 +47,22 @@ describe("LabelStyleSelect", () => {
     expect(list.classes()).toContain("bottom-full");
     expect(list.classes()).not.toContain("top-full");
   });
+
+  it("highlights the next option with the keyboard", async () => {
+    const wrapper = mount(LabelStyleSelect, {
+      props: {
+        modelValue: "custom:fort",
+        customStyles: [pointStyle],
+      },
+      attachTo: document.body,
+    });
+
+    const button = wrapper.find("button");
+    await button.trigger("keydown", { key: "ArrowDown" });
+    await button.trigger("keydown", { key: "ArrowDown" });
+    const options = wrapper.findAll('[role="option"]');
+    expect(options.length).toBeGreaterThan(1);
+    expect(options[1].classes()).toContain("bg-base-200");
+    wrapper.unmount();
+  });
 });

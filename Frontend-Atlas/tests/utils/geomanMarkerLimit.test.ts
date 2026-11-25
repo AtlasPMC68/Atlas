@@ -61,10 +61,9 @@ describe("anchorMarkerLimitToCursor", () => {
     layer.pm.enable({ limitMarkersToCount: 10 });
 
     const end = L.latLng(22, 20);
-    const container = map.getContainer();
     const point = map.latLngToContainerPoint(end);
-    const rect = container.getBoundingClientRect();
-    container.dispatchEvent(
+    const rect = map.getContainer().getBoundingClientRect();
+    document.dispatchEvent(
       new PointerEvent("pointermove", {
         clientX: rect.left + point.x,
         clientY: rect.top + point.y,
@@ -98,6 +97,36 @@ describe("anchorMarkerLimitToCursor", () => {
     for (const marker of shown) {
       expect(marker.getLatLng().distanceTo(cursor)).toBeLessThan(1_000_000);
     }
+    layer.pm.disable();
+  });
+
+  it("does not hide the dragged vertex when the limit filter runs mid-drag", () => {
+    const layer = L.polygon(denseRing()).addTo(map) as PmLayer;
+    const start = L.latLng(22, -10);
+    map.fire("mousemove", { latlng: start });
+    layer.pm.enable({ limitMarkersToCount: 10 });
+
+    const before = shownVertices(layer).map((m) => m.getLatLng().toString());
+    map.fire("pm:markerdragstart");
+
+    const far = L.latLng(22, 20);
+    const point = map.latLngToContainerPoint(far);
+    const rect = map.getContainer().getBoundingClientRect();
+    document.dispatchEvent(
+      new PointerEvent("pointermove", {
+        clientX: rect.left + point.x,
+        clientY: rect.top + point.y,
+        bubbles: true,
+      }),
+    );
+    (layer.pm as unknown as { applyLimitFilters: (args: object) => void }).applyLimitFilters(
+      {},
+    );
+
+    const during = shownVertices(layer).map((m) => m.getLatLng().toString());
+    expect(during).toEqual(before);
+
+    map.fire("pm:markerdragend");
     layer.pm.disable();
   });
 });

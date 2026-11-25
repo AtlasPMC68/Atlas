@@ -95,4 +95,35 @@ describe("CustomLabelStyleManager", () => {
     expect(wrapper.text()).toContain("Mise en forme");
     expect(wrapper.text()).toContain("Réglages du point");
   });
+
+  it("warns that an over-max point stroke will be clamped", async () => {
+    const styles: CustomLabelStyle[] = [
+      {
+        id: "style-point",
+        name: "Capitale",
+        sizePx: 16,
+        fontStyle: "normal",
+        textTransform: "none",
+        color: "#000000",
+        priority: 40,
+        minZoom: 1,
+        hasPoint: true,
+        pointStrokeWidth: 1,
+      },
+    ];
+    const wrapper = mount(CustomLabelStyleManager, { props: { styles } });
+    (wrapper.vm as { open: () => void }).open();
+    await nextTick();
+    await wrapper.find('[aria-label="Modifier le style Capitale"]').trigger("click");
+    await nextTick();
+
+    const widthInput = wrapper.find("#custom-style-point-stroke-width");
+    await widthInput.setValue(20);
+    await nextTick();
+
+    expect(wrapper.find('[data-testid="custom-point-stroke-width-max-warning"]').exists()).toBe(
+      true,
+    );
+    expect(wrapper.text()).toContain("sera plafonnée");
+  });
 });

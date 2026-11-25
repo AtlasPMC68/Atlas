@@ -470,3 +470,12 @@ def test_lake_ontario_prefix_priority_over_province():
     assert res["found"] is True
     assert res["type"] == "lake"
     assert res["name"] == "Lac Ontario"
+
+
+def test_token_score_is_shared_with_tokens_compatible():
+    from app.utils.place_resolution import _token_score, _tokens_compatible
+
+    assert _token_score(["quebec"], ["quebec"]) == 1.0
+    assert _tokens_compatible(["quebec"], ["quebec"], 0.8) is True
+    assert _token_score([], ["quebec"]) is None
+    assert _tokens_compatible(["montreal"], ["quebec"], 0.9) is False
