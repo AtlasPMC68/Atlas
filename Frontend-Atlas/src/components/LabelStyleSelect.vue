@@ -22,7 +22,8 @@
     </button>
     <ul
       v-if="open"
-      class="absolute z-50 mt-1 max-h-60 w-full overflow-auto rounded-lg border border-base-300 bg-base-100 py-1 shadow-lg"
+      class="absolute z-50 max-h-60 w-full overflow-auto rounded-lg border border-base-300 bg-base-100 py-1 shadow-lg"
+      :class="dropUp ? 'bottom-full mb-1' : 'top-full mt-1'"
       role="listbox"
     >
       <li
@@ -74,10 +75,12 @@ const props = withDefaults(
     modelValue?: string;
     customStyles: CustomLabelStyle[];
     compact?: boolean;
+    dropUp?: boolean;
     testId?: string;
   }>(),
   {
     compact: false,
+    dropUp: false,
     testId: "word-type-select",
     modelValue: "",
   },

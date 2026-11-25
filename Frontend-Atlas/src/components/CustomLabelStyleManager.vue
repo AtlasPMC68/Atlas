@@ -267,6 +267,7 @@
           </label>
 
           <div
+            v-if="draft.hasPoint"
             class="flex flex-col gap-2.5"
             data-testid="custom-style-point-settings"
           >

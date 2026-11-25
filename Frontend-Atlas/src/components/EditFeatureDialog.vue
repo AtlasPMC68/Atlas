@@ -165,6 +165,7 @@
               <LabelStyleSelect
                 v-model="editDraft.labelStyleSelection"
                 :custom-styles="availableCustomLabelStyles"
+                drop-up
                 test-id="word-type-select"
                 @change="onLabelStyleSelectionChange"
               />
