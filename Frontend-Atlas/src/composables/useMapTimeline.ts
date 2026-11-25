@@ -2,7 +2,7 @@ import { ref, computed, watch, nextTick, type Ref } from "vue";
 import type { Feature } from "../typescript/feature";
 import type { MapPeriod, SliderPeriod } from "../typescript/map";
 import { toYear, isPeriodActiveAt } from "../utils/dateUtils";
-import { getFeatureMapId, getFeatureMapIds } from "../utils/featureHelpers";
+import { getFeatureMapIds } from "../utils/featureHelpers";
 
 export type TimelineFilterMode = "specific" | "cumulative" | "global";
 
@@ -149,8 +149,9 @@ export function useMapTimeline({
   const enrichedPeriods = computed<SliderPeriod[]>(() => {
     const mapIdsWithFeatures = new Set<string>();
     for (const f of features.value) {
-      const mid = getFeatureMapId(f);
-      if (mid) mapIdsWithFeatures.add(mid.toLowerCase());
+      for (const mid of getFeatureMapIds(f)) {
+        mapIdsWithFeatures.add(mid.toLowerCase());
+      }
     }
 
     const periods: SliderPeriod[] = [];
@@ -341,10 +342,6 @@ export function useMapTimeline({
     { immediate: true },
   );
 
-  function getFeatureMapKeys(feature: Feature): { keys: string[] } {
-    return { keys: getFeatureMapIds(feature) };
-  }
-
   function resolvePeriodForKey(effectiveMapKey: string): SliderPeriod | undefined {
     const normalizedMapId = String(effectiveMapKey).trim().toLowerCase();
     return (
@@ -392,7 +389,7 @@ export function useMapTimeline({
   function isFeatureVisibleOnTimeline(feature: Feature): boolean {
     if (timelineMode.value === "global") return true;
 
-    const { keys } = getFeatureMapKeys(feature);
+    const keys = getFeatureMapIds(feature);
     if (keys.length === 0) return true;
 
     return keys.some((effectiveMapKey: string) => {
@@ -410,7 +407,7 @@ export function useMapTimeline({
     if (timelineMode.value === "global") return false;
     if (isFeatureVisibleOnTimeline(feature)) return false;
 
-    const { keys } = getFeatureMapKeys(feature);
+    const keys = getFeatureMapIds(feature);
     if (keys.length === 0) return false;
 
     const candidatePeriods = keys

@@ -66,8 +66,6 @@ def _rewrite_feature_dict(
     *,
     new_map_id_str: str,
     new_title: str,
-    source_map: Map,
-    new_map: Map,
 ) -> None:
     f_dict["id"] = str(uuid4())
     for target in (f_dict, f_dict.setdefault("properties", {})):
@@ -291,16 +289,12 @@ async def duplicate_map_in_project(
                             inner,
                             new_map_id_str=new_map_id_str,
                             new_title=new_title,
-                            source_map=source_map,
-                            new_map=new_map,
                         )
             else:
                 _rewrite_feature_dict(
                     new_data,
                     new_map_id_str=new_map_id_str,
                     new_title=new_title,
-                    source_map=source_map,
-                    new_map=new_map,
                 )
 
         db.add(
