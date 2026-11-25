@@ -925,13 +925,12 @@ def test_duplicate_map_in_project_feature_collection(tmp_path, monkeypatch):
     inner = duplicated_feat.data["features"][0]
     assert inner["mapId"] == str(new_map_id)
     assert inner["properties"]["mapId"] == str(new_map_id)
-    # Check that the dates adapted to the new map's period so elements are visible
-    assert inner["properties"]["startYear"] == 1509
-    assert inner["properties"]["endYear"] == 1509
+    assert "startYear" not in inner["properties"]
+    assert "endYear" not in inner["properties"]
 
 
-def test_duplicate_map_adapts_relative_feature_years():
-    """Features with internal/relative years within a period must scale proportionally."""
+def test_duplicate_map_strips_feature_years():
+    """Copied features follow the new map's dates; they do not keep startYear/endYear."""
     from app.services.maps import duplicate_map_in_project
     from app.models.project import Project
 
@@ -1000,8 +999,8 @@ def test_duplicate_map_adapts_relative_feature_years():
     assert new_map_id is not None
     duplicated_feat = next(o for o in added if isinstance(o, Feature))
     inner = duplicated_feat.data["features"][0]
-    assert inner["properties"]["startYear"] == 1820
-    assert inner["properties"]["endYear"] == 1850
+    assert "startYear" not in inner["properties"]
+    assert "endYear" not in inner["properties"]
 
     # 2. Duplication to a scaled period of 50 years (1800-1850)
     added2 = []
@@ -1034,9 +1033,8 @@ def test_duplicate_map_adapts_relative_feature_years():
     assert new_map_id2 is not None
     duplicated_feat2 = next(o for o in added2 if isinstance(o, Feature))
     inner2 = duplicated_feat2.data["features"][0]
-    # Ratio 20% of 50 = 10 -> 1810; Ratio 50% of 50 = 25 -> 1825
-    assert inner2["properties"]["startYear"] == 1810
-    assert inner2["properties"]["endYear"] == 1825
+    assert "startYear" not in inner2["properties"]
+    assert "endYear" not in inner2["properties"]
 
 
 def test_duplicate_map_in_project_empty_source():

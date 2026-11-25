@@ -52,4 +52,54 @@ describe("MapLabelVisibilityService", () => {
     expect(label.style.visibility).toBe("");
     expect(label.style.pointerEvents).toBe("");
   });
+
+  it("hides the city point marker with the label when they collide", () => {
+    const cityLabel = document.createElement("div");
+    cityLabel.className = "city-label-text";
+    cityLabel.dataset.featureId = "city-1";
+    cityLabel.dataset.sizePx = "10";
+    cityLabel.textContent = "Québec";
+    cityLabel.getBoundingClientRect = () =>
+      ({
+        left: 10,
+        right: 80,
+        top: 10,
+        bottom: 30,
+        width: 70,
+        height: 20,
+        x: 10,
+        y: 10,
+        toJSON: () => ({}),
+      }) as DOMRect;
+    container.appendChild(cityLabel);
+
+    const other = document.createElement("div");
+    other.className = "city-label-text";
+    other.dataset.featureId = "city-2";
+    other.dataset.sizePx = "18";
+    other.textContent = "Montréal";
+    other.getBoundingClientRect = () =>
+      ({
+        left: 10,
+        right: 80,
+        top: 10,
+        bottom: 30,
+        width: 70,
+        height: 20,
+        x: 10,
+        y: 10,
+        toJSON: () => ({}),
+      }) as DOMRect;
+    container.appendChild(other);
+
+    const point = L.marker([50, 10], {
+      icon: L.divIcon({ className: "map-point-marker", html: "<svg></svg>" }),
+    }).addTo(map);
+    const layers = new Map<string, L.Layer>([["city-1", point]]);
+
+    updateMapLabelVisibility(map, null, layers);
+
+    expect(cityLabel.style.visibility).toBe("hidden");
+    expect(point.options.opacity).toBe(0);
+  });
 });

@@ -127,8 +127,6 @@ export class MapDrawingService {
         name: labelText,
         labelText,
         mapElementType: "label",
-        startYear: feature.properties?.startYear ?? null,
-        endYear: feature.properties?.endYear ?? null,
       },
     };
 

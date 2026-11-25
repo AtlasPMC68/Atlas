@@ -61,34 +61,6 @@ def update_feature_map_ids(feat_data: dict[str, Any] | None, new_map_ids: list[s
     return data
 
 
-def _adapt_year(
-    yr: int | float | None,
-    src_start: int,
-    src_end: int | None,
-    new_start: int,
-    new_end: int | None,
-) -> int | None:
-    if yr is None:
-        return None
-    try:
-        yr_num = int(yr)
-    except (ValueError, TypeError):
-        return cast(Any, yr)
-
-    src_duration = (src_end - src_start) if (src_end is not None and src_end > src_start) else 0
-    new_duration = (new_end - new_start) if (new_end is not None and new_end > new_start) else 0
-
-    if src_duration == 0 or yr_num == src_start:
-        return new_start
-    if src_end is not None and yr_num == src_end:
-        return new_end
-    if src_end is not None and new_end is not None and src_start <= yr_num <= src_end:
-        ratio = (yr_num - src_start) / src_duration
-        adapted = round(new_start + ratio * new_duration)
-        return max(new_start, min(new_end, adapted))
-    return yr_num + (new_start - src_start)
-
-
 def _rewrite_feature_dict(
     f_dict: dict[str, Any],
     *,
@@ -112,29 +84,9 @@ def _rewrite_feature_dict(
     if not isinstance(props, dict):
         return
 
-    src_start = cast(date | None, source_map.start_date)
-    src_end = cast(date | None, source_map.end_date) or src_start
-    new_start = cast(date | None, new_map.start_date)
-    new_end = cast(date | None, new_map.end_date) or new_start
-
-    if src_start is not None and new_start is not None:
-        src_end_val = src_end or src_start
-        new_end_val = new_end or new_start
-
-        for key in ("startYear", "endYear"):
-            if props.get(key) is not None:
-                props[key] = _adapt_year(
-                    props[key],
-                    src_start.year,
-                    src_end_val.year,
-                    new_start.year,
-                    new_end_val.year,
-                )
-
-        if props.get("startDate") == src_start.isoformat():
-            props["startDate"] = new_start.isoformat()
-        if props.get("endDate") == src_end_val.isoformat():
-            props["endDate"] = new_end_val.isoformat()
+    for target in (f_dict, props):
+        for key in ("startYear", "endYear", "startDate", "endDate"):
+            target.pop(key, None)
 
 
 def _media_root() -> str:

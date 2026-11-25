@@ -206,8 +206,6 @@ export function layerToFeature(
       shapeKind: baseFeature?.properties?.shapeKind ?? shapeKind,
       layer: baseFeature?.properties?.layer ?? getDefaultLayer(type),
       rotation,
-      startYear: baseFeature?.properties?.startYear ?? null,
-      endYear: baseFeature?.properties?.endYear ?? null,
     },
     createdAt: baseFeature?.createdAt ?? now,
     updatedAt: now,

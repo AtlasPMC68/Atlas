@@ -5,21 +5,42 @@ import { selectVisibleLabels } from "../utils/labelCollision";
 
 type CircleMarkerWithFeature = L.CircleMarker & { feature?: Feature };
 
+function isMapPointMarker(layer: L.Layer): layer is L.Marker {
+  if (!(layer instanceof L.Marker) || layer instanceof L.CircleMarker) {
+    return false;
+  }
+  const el = layer.getElement();
+  if (el?.classList.contains("map-point-marker")) return true;
+  const icon = layer.options.icon;
+  return Boolean(
+    icon && "options" in icon && icon.options.className === "map-point-marker",
+  );
+}
+
 function updatePointVisibility(
-  circle: L.CircleMarker | null,
+  point: L.Layer | null,
   visible: boolean,
 ): void {
-  if (!circle) return;
-  if (!visible) {
-    circle.setStyle({ opacity: 0, fillOpacity: 0 });
+  if (!point) return;
+
+  if (point instanceof L.CircleMarker) {
+    if (!visible) {
+      point.setStyle({ opacity: 0, fillOpacity: 0 });
+      return;
+    }
+    const feature = (point as CircleMarkerWithFeature).feature;
+    point.setStyle({
+      opacity: feature?.properties.strokeOpacity ?? 1,
+      fillOpacity: feature?.properties.fillOpacity ?? 0.5,
+    });
     return;
   }
 
-  const feature = (circle as CircleMarkerWithFeature).feature;
-  circle.setStyle({
-    opacity: feature?.properties.strokeOpacity ?? 1,
-    fillOpacity: feature?.properties.fillOpacity ?? 0.5,
-  });
+  if (point instanceof L.Marker) {
+    point.setOpacity(visible ? 1 : 0);
+    const el = point.getElement();
+    if (el) el.style.pointerEvents = visible ? "" : "none";
+  }
 }
 
 function readLabelSizePx(label: HTMLElement): number {
@@ -33,12 +54,14 @@ function readLabelSizePx(label: HTMLElement): number {
   return Number.isFinite(fromCss) && fromCss > 0 ? fromCss : 0;
 }
 
-function findCircleMarker(layer: L.Layer | undefined): L.CircleMarker | null {
+function findPointLayer(layer: L.Layer | undefined): L.Layer | null {
   if (!layer) return null;
   if (layer instanceof L.CircleMarker) return layer;
-  let found: L.CircleMarker | null = null;
+  if (isMapPointMarker(layer)) return layer;
+  let found: L.Layer | null = null;
   forEachLeafLayer(layer, (leaf) => {
-    if (!found && leaf instanceof L.CircleMarker) {
+    if (found) return;
+    if (leaf instanceof L.CircleMarker || isMapPointMarker(leaf)) {
       found = leaf;
     }
   });
@@ -88,7 +111,6 @@ export function updateMapLabelVisibility(
       label.classList.contains("label-selected");
     label.style.visibility = isVisible ? "" : "hidden";
     label.style.pointerEvents = isVisible ? "" : "none";
-    const circle = findCircleMarker(layers.get(featureId));
-    updatePointVisibility(circle, isVisible);
+    updatePointVisibility(findPointLayer(layers.get(featureId)), isVisible);
   });
 }
