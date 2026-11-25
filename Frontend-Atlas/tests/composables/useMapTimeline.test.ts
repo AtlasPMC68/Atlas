@@ -177,7 +177,7 @@ describe("useMapTimeline - revealFeatureOnTimeline", () => {
         selectedYear,
         isFeatureVisibleOnTimeline,
         revealFeatureOnTimeline,
-      } = setupTimeline([period1850, period1875], [f1850, f1875], 1875, "specific");
+      } = setupTimeline([period1850, period1875Mid], [f1850, f1875], 1875, "specific");
 
       expect(isFeatureVisibleOnTimeline(f1850)).toBe(true);
       expect(revealFeatureOnTimeline(f1850)).toBe(false);
