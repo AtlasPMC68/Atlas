@@ -1,6 +1,51 @@
 <template>
   <div class="flex h-full min-h-0 flex-col overflow-auto" data-testid="feature-visibility-controls">
-    <div class="tabs tabs-boxed bg-base-200 gap-2 p-1.5 overflow-x-auto flex-nowrap shrink-0">
+    <div
+      v-if="collapsed"
+      class="flex h-full w-full flex-col items-center gap-2 py-2 px-1 bg-white"
+      data-testid="sidebar-collapsed-rail"
+    >
+      <button
+        type="button"
+        class="w-9 h-9 bg-primary-600 rounded-lg flex items-center justify-center shrink-0 hover:bg-primary-700 transition-colors"
+        data-testid="toggle-sidebar-button"
+        title="Afficher le panneau"
+        aria-label="Afficher le panneau"
+        @click="emit('toggle-collapsed')"
+      >
+        <MapIcon class="h-5 w-5 text-white" />
+      </button>
+      <div class="w-8 h-px bg-base-300 shrink-0" />
+      <button
+        v-for="group in featureGroups"
+        :key="group.type"
+        type="button"
+        class="w-9 h-9 rounded-lg flex items-center justify-center hover:bg-base-200 transition-colors"
+        :class="activeGroup?.type === group.type ? 'bg-primary/10 ring-1 ring-primary/40' : ''"
+        :title="group.label"
+        :data-testid="`feature-tab-${group.type}`"
+        @click="onCollapsedGroupClick(group.type)"
+      >
+        <component
+          :is="getGroupIcon(group.type)"
+          class="h-5 w-5 text-primary-500"
+        />
+      </button>
+    </div>
+
+    <template v-else>
+    <div class="flex items-center gap-1 shrink-0">
+      <button
+        type="button"
+        class="btn btn-ghost btn-sm btn-square shrink-0"
+        data-testid="toggle-sidebar-button"
+        title="Réduire le panneau"
+        aria-label="Réduire le panneau"
+        @click="emit('toggle-collapsed')"
+      >
+        <ChevronLeftIcon class="w-5 h-5" />
+      </button>
+      <div class="tabs tabs-boxed bg-base-200 gap-2 p-1.5 overflow-x-auto flex-nowrap flex-1 min-w-0">
       <button
         v-for="group in featureGroups"
         :key="group.type"
@@ -17,6 +62,7 @@
           class="h-5 w-5 text-primary-500"
         />
       </button>
+    </div>
     </div>
 
     <!-- Element list with visibility controls -->
@@ -275,6 +321,7 @@
         </button>
       </div>
     </div>
+    </template>
   </div>
 
   <!-- Standardized element edit modal -->
@@ -366,6 +413,7 @@ import type { Component, CSSProperties } from "vue";
 import {
   ChatBubbleLeftEllipsisIcon,
   ChevronDownIcon,
+  ChevronLeftIcon,
   DocumentCheckIcon,
   MapIcon,
   PencilSquareIcon,
@@ -398,6 +446,7 @@ import { applySelectionModifier } from "../utils/selectionUtils";
 import { createActionCallbacks } from "../utils/actionCallbacks";
 
 const props = defineProps<{
+  collapsed?: boolean;
   features: Feature[];
   featureVisibility: Map<string, boolean>;
   mapPeriods?: MapPeriod[];
@@ -410,6 +459,7 @@ const props = defineProps<{
 }>();
 
 const emit = defineEmits([
+  "toggle-collapsed",
   "toggle-feature",
   "open-add-image-feature-dialog",
   "save-map",
@@ -613,6 +663,11 @@ watch(
   },
   { immediate: true },
 );
+
+function onCollapsedGroupClick(type: FeatureVisibilityGroupType) {
+  activeGroupType.value = type;
+  emit("toggle-collapsed");
+}
 
 function getGroupIcon(type: FeatureVisibilityGroupType): Component {
   return groupIcons[type];

@@ -1023,3 +1023,34 @@ describe("FeatureVisibilityControls - Word Type Selection and Font Modification"
     });
   });
 });
+
+describe("FeatureVisibilityControls collapsed rail", () => {
+  const pointFeature: Feature = {
+    type: "Feature",
+    id: "feat-1",
+    projectId: "proj-1",
+    mapId: "map-1",
+    name: "Québec",
+    geometry: { type: "Point", coordinates: [-71.2, 46.8] },
+    properties: { name: "Québec", mapElementType: "point" },
+    createdAt: "2026-01-01",
+    updatedAt: "2026-01-01",
+  };
+
+  it("shows a logo strip to expand and hides the full list when collapsed", async () => {
+    const wrapper = mount(FeatureVisibilityControls, {
+      props: {
+        collapsed: true,
+        features: [pointFeature],
+        featureVisibility: new Map([[pointFeature.id, true]]),
+      },
+    });
+
+    expect(wrapper.find('[data-testid="sidebar-collapsed-rail"]').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="toggle-sidebar-button"]').exists()).toBe(true);
+    expect(wrapper.text()).not.toContain("Tout afficher");
+
+    await wrapper.find('[data-testid="toggle-sidebar-button"]').trigger("click");
+    expect(wrapper.emitted("toggle-collapsed")).toBeTruthy();
+  });
+});

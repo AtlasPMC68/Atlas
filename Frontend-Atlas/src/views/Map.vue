@@ -4,12 +4,14 @@
   >
     <div class="flex flex-1 min-h-0 overflow-hidden">
       <div
-        v-show="isSidebarVisible"
-        class="h-full min-h-0 shrink-0 overflow-auto bg-base-200 border-r border-base-300 py-3 px-1.5 flex flex-col"
-        :style="{ width: `${sidebarWidth}px` }"
+        class="h-full min-h-0 shrink-0 overflow-hidden bg-white border-r border-base-300 flex flex-col"
+        :class="isSidebarVisible ? 'overflow-auto bg-base-200 py-3 px-1.5' : ''"
+        :style="{ width: isSidebarVisible ? `${sidebarWidth}px` : `${COLLAPSED_SIDEBAR_WIDTH}px` }"
+        data-testid="sidebar-wrapper"
       >
         <FeatureVisibilityControls
           ref="featureVisibilityControlsRef"
+          :collapsed="!isSidebarVisible"
           :features="features"
           :feature-visibility="featureVisibility"
           :map-periods="mapPeriods"
@@ -18,6 +20,7 @@
           :multi-selected-feature-ids="multiSelectedFeatureIds"
           :active-map-id="activeMapPeriod?.id ?? null"
           :selected-map-id="selectedMapId"
+          @toggle-collapsed="toggleSidebar"
           @select-feature="selectFeature"
           @select-features="onSelectFeatures"
           @toggle-feature="toggleFeatureVisibility"
@@ -50,17 +53,6 @@
         <div class="flex-1 relative min-h-0 h-full w-full bg-[#d4dadc]">
           <!-- Presentation mode & View controls (Point 1) positioned on the left next to zoom -->
           <div class="absolute top-20 left-2 z-[1001] flex items-center gap-2">
-            <button
-              type="button"
-              class="btn btn-sm bg-base-200/90 hover:bg-base-300 border border-base-300 shadow-md gap-1.5 text-base-content"
-              data-testid="toggle-sidebar-button"
-              :title="isSidebarVisible ? 'Masquer le panneau gauche (Mode présentation)' : 'Afficher le panneau gauche'"
-              @click="toggleSidebar"
-            >
-              <Bars3Icon v-if="!isSidebarVisible" class="w-4 h-4 text-primary" />
-              <ChevronLeftIcon v-else class="w-4 h-4" />
-            </button>
-
             <button
               type="button"
               class="btn btn-sm btn-circle bg-base-200/90 hover:bg-base-300 border border-base-300 shadow-md text-base-content"
@@ -222,8 +214,6 @@ import {
 import { nudgeFeatureByPixels } from "../utils/mapDragUtils";
 import { getNudgeDelta, getSelectedTargetFeatures } from "../utils/selectionUtils";
 import {
-  Bars3Icon,
-  ChevronLeftIcon,
   ArrowsPointingOutIcon,
   ArrowsPointingInIcon,
 } from "@heroicons/vue/24/outline";
@@ -369,6 +359,7 @@ const selectedMapId = ref<string | null>(null);
 const copiedFeatures = ref<Feature[]>([]);
 
 // Presentation mode & Visibility states (Points 1, 6)
+const COLLAPSED_SIDEBAR_WIDTH = 56;
 const isSidebarVisible = ref(true);
 const isFullscreen = ref(false);
 const isTimelineVisible = ref(true);

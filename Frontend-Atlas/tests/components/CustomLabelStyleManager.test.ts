@@ -121,11 +121,11 @@ describe("CustomLabelStyleManager", () => {
     const pointCheckbox = wrapper.find('[data-testid="custom-style-has-point-checkbox"]');
     expect(pointCheckbox.exists()).toBe(true);
     expect((pointCheckbox.element as HTMLInputElement).checked).toBe(false);
+    expect(wrapper.find('[data-testid="custom-style-point-settings"]').exists()).toBe(true);
 
     await pointCheckbox.setValue(true);
     await nextTick();
 
-    const pointSettings = wrapper.find('[data-testid="custom-style-point-settings"]');
-    expect(pointSettings.exists()).toBe(true);
+    expect(wrapper.find('[data-testid="custom-style-point-settings"]').exists()).toBe(true);
   });
 });

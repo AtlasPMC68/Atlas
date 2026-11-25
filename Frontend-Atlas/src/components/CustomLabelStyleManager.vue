@@ -236,7 +236,6 @@
               :style="{ ...previewStyle(currentLiveStyle, true, 44), lineHeight: '1.15' }"
             >
               <svg
-                v-if="draft.hasPoint"
                 class="shrink-0 overflow-visible"
                 :style="{ width: '1em', height: '1em', flexShrink: 0 }"
                 viewBox="0 0 1 1"
@@ -263,7 +262,7 @@
         <div class="flex flex-col gap-2.5 min-w-0 pt-3 border-t border-gray-200 md:border-l md:pl-6">
           <div class="flex items-center justify-between gap-2 min-h-[1.75rem]">
             <span class="section-title">Réglages du point</span>
-            <span v-if="draft.hasPoint" class="field-hint">Symbole associé au texte</span>
+            <span class="field-hint">Symbole associé au texte</span>
           </div>
 
           <label
@@ -286,7 +285,6 @@
           </label>
 
           <div
-            v-if="draft.hasPoint"
             class="flex flex-col gap-2.5"
             data-testid="custom-style-point-settings"
           >

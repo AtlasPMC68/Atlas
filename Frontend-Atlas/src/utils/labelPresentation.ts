@@ -48,9 +48,12 @@ export function normalizeTextSizePx(value: unknown): number | undefined {
 
 export function getCustomStyleObject(style: CustomLabelStyle): CSSProperties {
   const isBold = style.fontWeight === "bold" || Boolean(style.bold);
+  const optionColor = hasCustomStylePoint(style)
+    ? style.pointColor || style.color || "#000000"
+    : style.color || "#000000";
 
   return {
-    color: style.color || "#000000",
+    color: optionColor,
     fontWeight: isBold ? "bold" : "normal",
     fontStyle: style.fontStyle || "normal",
     textTransform: style.textTransform || "none",

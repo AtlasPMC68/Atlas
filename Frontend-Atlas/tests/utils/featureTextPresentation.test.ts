@@ -443,5 +443,13 @@ describe("shared word styles and label presentation", () => {
       minZoom: 1,
     };
     expect(getCustomStyleObject(customWithoutColor).color).toBe("#000000");
+
+    const customWithPoint: CustomLabelStyle = {
+      ...customWithColor,
+      id: "c-point",
+      hasPoint: true,
+      pointColor: "#dc2626",
+    };
+    expect(getCustomStyleObject(customWithPoint).color).toBe("#dc2626");
   });
 });
