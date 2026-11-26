@@ -22,7 +22,6 @@ services:
       - ./Backend-Atlas/tests:/app/tests
       - ./Backend-Atlas/requirements.txt:/app/requirements.txt
       - ./shared:/shared:ro
-      - ocr-data:/data
       - media-data:/app/media
     depends_on:
       migrate:
@@ -99,7 +98,6 @@ services:
       - ./Backend-Atlas/debug_runs:/app/debug_runs
       - ./Backend-Atlas/requirements.txt:/app/requirements.txt
       - ./shared:/shared:ro
-      - ocr-data:/data
       - media-data:/app/media
     depends_on:
       migrate:
@@ -284,7 +282,6 @@ services:
       - ./Backend-Atlas/scripts:/app/scripts
       - ./Backend-Atlas/requirements.txt:/app/requirements.txt
       - ./shared:/shared:ro
-      - ocr-data:/data
 
   # Fast georeferencing loop: no broker, no database, no pytest collection, and
   # colour extraction cached between runs. See scripts/run_georef_alignment.py.
@@ -301,7 +298,6 @@ services:
       - ./Backend-Atlas/ablations:/app/ablations
       - ./Backend-Atlas/requirements.txt:/app/requirements.txt
       - ./shared:/shared:ro
-      - ocr-data:/data
 
   test-frontend:
     profiles: [test]
@@ -320,5 +316,4 @@ volumes:
   keycloak-data:
   caddy-data:
   caddy-config:
-  ocr-data:
   media-data:

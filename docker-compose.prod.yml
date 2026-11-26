@@ -17,7 +17,6 @@ services:
     security_opt: [no-new-privileges:true]
     # shared/: word taxonomy read at import time; media: uploaded reference images
     volumes: !override
-      - ocr-data:/data
       - media-data:/app/media
       - ./shared:/shared:ro
     command:
@@ -34,10 +33,8 @@ services:
   celery-worker:
     user: app
     security_opt: [no-new-privileges:true]
-    # Code from the image; keep the OCR files, the uploaded media and the
-    # shared word taxonomy
+    # Code from the image; keep the uploaded media and the shared word taxonomy
     volumes: !override
-      - ocr-data:/data
       - media-data:/app/media
       - ./shared:/shared:ro
     logging: *default-logging
@@ -46,7 +43,6 @@ services:
     user: app
     security_opt: [no-new-privileges:true]
     volumes: !override
-      - ocr-data:/data
       - ./shared:/shared:ro
     logging: *default-logging
 

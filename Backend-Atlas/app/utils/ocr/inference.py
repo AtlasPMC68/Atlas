@@ -13,8 +13,6 @@ logger = logging.getLogger(__name__)
 # A box this much taller than wide is read as vertical text
 VERTICAL_RATIO = 1.5
 REC_BATCH_SIZE = 32
-# CPU threads of each model. PaddleX defaults to 8, which segfaults Paddle on
-# aarch64 (Docker on Apple Silicon); several Celery processes share the CPU anyway
 OCR_CPU_THREADS = max(1, min(int(os.environ.get("OCR_CPU_THREADS", "4")), os.cpu_count() or 1))
 
 # Keep the models loaded in memory between each uses
