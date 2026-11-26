@@ -18,24 +18,38 @@ def pytest_runtest_makereport(item: Any, call: Any) -> Generator[None, None, Non
 
 
 def pytest_report_teststatus(report: Any, config: Any) -> tuple[str, str, str] | None:
-    """Format test execution status with hit_rate and average_distance metrics."""
+    """Format test execution status with hit_rate, precision and average_distance metrics."""
     if report.when == "call" and hasattr(report, "user_metadata"):
         hit_rate = report.user_metadata.get("hit_rate", 0.0)
         d_average = report.user_metadata.get("average_distance", 0.0)
+        precision = report.user_metadata.get("precision", 0.0)
         if report.passed:
             return (
                 "passed",
                 ".",
-                f"PASSED (hit_rate={hit_rate:4.1f}%, d_average={d_average:4.2f})",
+                f"PASSED (hit_rate={hit_rate:4.1f}%, precision={precision:4.1f}%, d_average={d_average:4.2f})",
             )
         elif report.failed:
             return (
                 "failed",
                 "F",
-                f"FAILED (hit_rate={hit_rate:4.1f}%, d_average={d_average:4.2f})",
+                f"FAILED (hit_rate={hit_rate:4.1f}%, precision={precision:4.1f}%, d_average={d_average:4.2f})",
             )
 
     return None
+
+
+def pytest_collection_modifyitems(config: Any, items: list[Any]) -> None:
+    """Skip integration and slow tests when running with parallel xdist workers."""
+    # Tests are collected in the workers, where xdist resets numprocesses to None:
+    # workerinput is only set there
+    if hasattr(config, "workerinput") or config.getoption("numprocesses", default=None):
+        skip_marker = pytest.mark.skip(
+            reason="integration tests run sequentially, not with -n"
+        )
+        for item in items:
+            if "integration" in item.keywords or "slow" in item.keywords:
+                item.add_marker(skip_marker)
 
 
 def pytest_addoption(parser: Any) -> None:

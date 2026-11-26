@@ -41,7 +41,7 @@ from typing import Any, Dict, List, Optional, Set, Tuple
 import geonamescache
 
 from app.utils.place_nomenclature import (
-    _normalize,
+    normalize,
     _not_found,
     format_place_result,
     is_exploitable_text,
@@ -68,7 +68,7 @@ def _ensure_geo_data() -> None:
         with open(_GEO_DATA_PATH, "r", encoding="utf-8") as _f:
             for _entry in json.load(_f):
                 for _alias in _entry.get("aliases", []):
-                    _key = _normalize(_alias)
+                    _key = normalize(_alias)
                     if _key:
                         _GEO_INDEX.setdefault(_key, []).append(_entry)
                 if _entry.get("lat") is not None and _entry.get("lon") is not None:
@@ -86,7 +86,7 @@ def _ensure_geo_data() -> None:
 
 
 # Semantic prefix to entity types mapping for prefix-aware candidate priority
-_PREFIX_TYPE_MAP: Dict[str, Set[str]] = {
+PREFIX_TYPE_MAP: Dict[str, Set[str]] = {
     # Hydrography
     "lac": {"lake"},
     "lacs": {"lake"},
@@ -287,10 +287,10 @@ def resolve_best_candidate(
 
     # 3. Prefix-Aware Priority: when query contains an explicit prefix (e.g. 'lac ontarion' -> 'lake')
     if query:
-        norm_q = _normalize(query)
+        norm_q = normalize(query)
         tokens = set(norm_q.split())
         desired_types: Set[str] = set()
-        for pfx, types in _PREFIX_TYPE_MAP.items():
+        for pfx, types in PREFIX_TYPE_MAP.items():
             if pfx in tokens:
                 desired_types.update(types)
 
@@ -342,7 +342,7 @@ def find_geo_entity(
     """
     _ensure_geo_data()
     clean_text = strip_dates_for_matching(text)
-    norm = _normalize(clean_text)
+    norm = normalize(clean_text)
     if not norm:
         return None
 
@@ -394,7 +394,7 @@ for _info in _gc.get_cities().values():
         "lon": _lon,
         "population": _parse_pop(_info.get("population")),
     }
-    _ck = _normalize(_name)
+    _ck = normalize(_name)
     _CITY_INDEX.setdefault(_ck, []).append(_city)
     if _ck.endswith(" city"):
         _base = _ck[:-5].strip()
@@ -410,7 +410,7 @@ for _info in _gc.get_cities().values():
     # Index French alternate names (e.g. 'La Nouvelle-Orléans', 'Londres', 'Québec')
     for _alt in (_info.get("alternatenames") or []):
         if len(_alt) >= 3 and _LATIN_NAME_PAT.match(_alt) and _FRENCH_CHAR_PAT.search(_alt):
-            _alt_k = _normalize(_alt)
+            _alt_k = normalize(_alt)
             if _alt_k and _alt_k != _ck:
                 _alt_city = {**_city, "name_fr": _alt}
                 _CITY_INDEX.setdefault(_alt_k, []).append(_alt_city)
@@ -456,7 +456,7 @@ def find_nearby_candidate_place(
 
     lon, lat = float(coords[0]), float(coords[1])
     clean_text = strip_dates_for_matching(text)
-    normalized_query = _normalize(clean_text)
+    normalized_query = normalize(clean_text)
     if not normalized_query:
         return None
 
@@ -508,7 +508,7 @@ def find_nearby_candidate_place(
     scored: List[Tuple[float, float, Dict[str, Any]]] = []
     for candidate in candidates.values():
         variants = {
-            _normalize(str(value))
+            normalize(str(value))
             for value in (
                 candidate.get("name"),
                 candidate.get("name_fr"),
@@ -569,7 +569,7 @@ def resolve_place(
     Returns a dict containing at minimum ``found`` (bool).
     """
     clean_text = strip_dates_for_matching(text)
-    key = _normalize(clean_text)
+    key = normalize(clean_text)
     if not key:
         return _not_found(text)
 

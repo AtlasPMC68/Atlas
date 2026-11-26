@@ -1,7 +1,6 @@
 import logging
-import re
 import unicodedata
-import warnings
+from collections import Counter
 from copy import deepcopy
 from pathlib import Path
 from typing import Any
@@ -12,7 +11,13 @@ from app.utils.place_resolution import match_ocr_label
 from app.utils.text_extraction import extract_text
 from Levenshtein import distance as levenshtein_distance
 
-from tests.utils.expected_text_results import MAP_EXPECTED_TEXTS, MAP_EXPECTED_ZONE_DETECTION_COUNTS, CARD_THRESHOLDS
+from tests.utils.expected_text_results import (
+    CARD_THRESHOLDS,
+    COUNT_TOLERANCE_RATIO,
+    DEFAULT_THRESHOLDS,
+    MAP_EXPECTED_TEXTS,
+    MAP_EXPECTED_ZONE_DETECTION_COUNTS,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -23,9 +28,6 @@ YELLOW = "\033[93m"
 RED = "\033[91m"
 BOLD = "\033[1m"
 RESET = "\033[0m"
-
-# Text zones count may be off by this ratio of the expected count
-COUNT_TOLERANCE_RATIO = 0.20
 
 
 @pytest.fixture(autouse=True)
@@ -139,120 +141,94 @@ def normalize_array_to_ascii_format(text: list[str]) -> list[str]:
     return res
 
 
+# An expected text is found when its character error is at most this
+HIT_MAX_ERROR = 0.20
+
+# Beyond HIT_MAX_ERROR, a block is still paired with an expected text up to this
+# error, to show the near misses
+PAIR_MAX_ERROR = 0.50
+
+
+def text_error(found: str, expected: str) -> float:
+    """Character error of a normalized text against the expected one: 0 when exact, up to 1."""
+    return min(1.0, levenshtein_distance(found, expected) / max(len(expected), 1))
+
+
 def check_for_match(
     actual: list[str],
     expected: list[str],
-) -> list[tuple[str, tuple[str, float]]]:
-    """Match each OCR word with the closest expected word and compute Levenshtein distance."""
+) -> list[tuple[str, str, float]]:
+    """
+    Pair each expected text with at most one OCR block, the closest pairs first.
+    Texts are compared lowercase, without accents nor punctuation.
+
+    Returns: one (expected text, OCR block, error) per expected text, in order.
+    The block is "" and the error 1.0 when no block is close enough.
+    """
     actual_ascii = normalize_array_to_ascii_format(actual)
     expected_ascii = normalize_array_to_ascii_format(expected)
+    pairs = sorted(
+        (text_error(found, wanted), exp_idx, ocr_idx)
+        for exp_idx, wanted in enumerate(expected_ascii)
+        for ocr_idx, found in enumerate(actual_ascii)
+    )
 
-    actual_dict = {}
-    for i, word in enumerate(actual_ascii):
-        if word not in actual_dict:
-            actual_dict[word] = []
-        actual_dict[word].append(i)
-
-    used_exp_indices = set()
+    paired: dict[int, tuple[int, float]] = {}
     used_ocr_indices = set()
-    result: list[tuple[str, tuple[str, float]]] = []
-
-    for exp_idx, exp_word in enumerate(expected_ascii):
-        if exp_word in actual_dict:
-            available_ocr_indices = [idx for idx in actual_dict[exp_word] if idx not in used_ocr_indices]
-            if available_ocr_indices:
-                ocr_idx = available_ocr_indices[0]
-                used_exp_indices.add(exp_idx)
-                used_ocr_indices.add(ocr_idx)
-                dist = 0.0 if actual[ocr_idx] == expected[exp_idx] else 0.1
-                result.append((actual[ocr_idx], (expected[exp_idx], dist)))
-
-    all_pairs = []
-    for exp_idx, exp_word in enumerate(expected_ascii):
-        if exp_idx in used_exp_indices:
+    for error, exp_idx, ocr_idx in pairs:
+        if error > PAIR_MAX_ERROR:
+            break
+        if exp_idx in paired or ocr_idx in used_ocr_indices:
             continue
+        paired[exp_idx] = (ocr_idx, error)
+        used_ocr_indices.add(ocr_idx)
 
-        for ocr_idx, ocr_word in enumerate(actual_ascii):
-            if ocr_idx in used_ocr_indices:
-                continue
-
-            dist = float(levenshtein_distance(ocr_word, exp_word))
-
-            base_expected = re.sub(r"\b(1[5-9]\d\d|20\d\d)\b", "", exp_word).strip()
-            base_expected = " ".join(base_expected.split())
-            if base_expected and len(base_expected) >= 4 and base_expected != exp_word:
-                if len(ocr_word) >= 4 and (base_expected in ocr_word or ocr_word in base_expected):
-                    dist = min(dist, 0.5)
-                else:
-                    base_dist = float(levenshtein_distance(ocr_word, base_expected))
-                    dist = min(dist, base_dist)
-            elif len(exp_word) >= 4 and len(ocr_word) >= 4:
-                if exp_word in ocr_word or ocr_word in exp_word:
-                    dist = min(dist, 0.5)
-
-            all_pairs.append((dist, exp_idx, ocr_idx))
-
-    all_pairs.sort(key=lambda x: x[0])
-
-    MAX_ALLOWED_DIST = 6.0
-
-    for dist, exp_idx, ocr_idx in all_pairs:
-        if exp_idx not in used_exp_indices and ocr_idx not in used_ocr_indices:
-            if dist <= MAX_ALLOWED_DIST:
-                used_exp_indices.add(exp_idx)
-                used_ocr_indices.add(ocr_idx)
-                result.append((actual[ocr_idx], (expected[exp_idx], dist)))
-
-    for exp_idx in range(len(expected)):
-        if exp_idx not in used_exp_indices:
-            result.append(("", (expected[exp_idx], 1000.0)))
-
-    return result
+    return [
+        (wanted, actual[paired[exp_idx][0]], paired[exp_idx][1]) if exp_idx in paired else (wanted, "", 1.0)
+        for exp_idx, wanted in enumerate(expected)
+    ]
 
 
 def calculate_match_metrics(
-    matches: list[tuple[str, tuple[str, float]]],
-    expected: list[str],
-) -> tuple[float, float]:
-    """Compute hit rate coverage percentage and average distance from matched OCR results."""
+    matches: list[tuple[str, str, float]],
+    block_count: int,
+) -> tuple[float, float, float]:
+    """
+    Metrics of check_for_match results, over every expected text:
+        - hit rate: % of the expected texts found
+        - precision: % of the OCR blocks that are an expected text
+        - average error: mean character error, a missing text counting as 1
+    """
     if not matches:
-        return (0.0, 0.0)
-
-    valid_distances = [distance for _, (_, distance) in matches if distance < 500.0]
-    total_distance = sum(valid_distances)
-
-    matched_expected_words = {
-        expected_word
-        for _, (expected_word, distance) in matches
-        if expected_word and (distance <= max(3.0, len(expected_word) * 0.25))
-    }
-    box_find_rate = (len(matched_expected_words) / len(expected)) * 100 if expected else 0.0
-
-    average_dist = total_distance / len(valid_distances) if valid_distances else 0.0
-    return box_find_rate, average_dist
+        return 0.0, 0.0, 0.0
+    hits = sum(1 for _, _, error in matches if error <= HIT_MAX_ERROR)
+    hit_rate = hits / len(matches) * 100
+    precision = hits / block_count * 100 if block_count else 0.0
+    average_error = sum(error for _, _, error in matches) / len(matches)
+    return hit_rate, precision, average_error
 
 
-def test_match_metrics_count_expected_coverage_once() -> None:
-    """Verify that calculate_match_metrics counts unique expected words correctly."""
-    matches = [
-        ("Quebec", ("Québec", 0.0)),
-        ("Quebec", ("Québec", 0.0)),
+def test_check_for_match_pairs_each_block_once() -> None:
+    """Each expected text gets its own block, and a text without a close block is missing."""
+    actual = ["Quebec", "Quebec", "Bostn", "Légende: territoires"]
+    expected = ["Québec", "Boston", "New York"]
+
+    assert check_for_match(actual, expected) == [
+        ("Québec", "Quebec", 0.0),
+        ("Boston", "Bostn", 1 / 6),
+        ("New York", "", 1.0),
     ]
 
-    box_find_rate, average_dist = calculate_match_metrics(matches, ["Québec"])
 
-    assert box_find_rate == 100.0
-    assert average_dist == 0.0
+def test_match_metrics_count_every_expected_text() -> None:
+    """Missing texts lower the hit rate and count as an error of 1, extra blocks lower the precision."""
+    matches = [("Québec", "Quebec", 0.0), ("Boston", "Bostn", 1 / 6), ("New York", "", 1.0)]
 
+    hit_rate, precision, average_error = calculate_match_metrics(matches, block_count=4)
 
-def test_check_for_match_drops_extra_ocr_words() -> None:
-    """Verify that check_for_match drops extra OCR words that do not match expected words."""
-    actual = ["Quebec", "Boston", "Légende: territoires"]
-    expected = ["Québec", "Boston"]
-
-    matches = check_for_match(actual, expected)
-
-    assert [ocr_word for ocr_word, _ in matches] == ["Quebec", "Boston"]
+    assert round(hit_rate, 1) == 66.7
+    assert precision == 50.0
+    assert round(average_error, 3) == round((0.0 + 1 / 6 + 1.0) / 3, 3)
 
 
 _OCR_RESULT_CACHE: dict[Path, list[dict[str, Any]]] = {}
@@ -282,7 +258,10 @@ def test_ocr_raw_detection_count(
     image_path: Path,
     expected_text: list[str],
 ) -> None:
-    """Test raw count of text zones detected by the OCR without evaluating textual accuracy."""
+    """
+    Test the count of text zones given by the OCR, without evaluating textual accuracy:
+    within COUNT_TOLERANCE_RATIO of the expected count.
+    """
     assert image_path.exists()
     expected_count = MAP_EXPECTED_ZONE_DETECTION_COUNTS.get(image_path.stem)
     if expected_count is None:
@@ -291,17 +270,14 @@ def test_ocr_raw_detection_count(
     extracted_text = get_extracted_text_cached(image_path)
     actual_count = len(extracted_text)
 
-    # A count within the margin passes. Beyond it, only a warning: labels split over
-    # several boxes or merged differently change the count, not the text found,
-    # which test_text_extraction_accuracy checks
-    off_ratio = abs(actual_count - expected_count) / expected_count
-    if off_ratio > COUNT_TOLERANCE_RATIO:
-        warning_msg = (
-            f"{image_path.name}: {actual_count} text zones detected vs {expected_count} expected "
-            f"in MAP_EXPECTED_ZONE_DETECTION_COUNTS ({off_ratio:.0%} off, over the {COUNT_TOLERANCE_RATIO:.0%} margin)"
+    count_ratio = actual_count / expected_count
+    if abs(count_ratio - 1) > COUNT_TOLERANCE_RATIO:
+        error_msg = (
+            f"Text zones (OCR): {actual_count} detected vs {expected_count} expected in "
+            f"MAP_EXPECTED_ZONE_DETECTION_COUNTS ({count_ratio:.0%}, "
+            f"{1 - COUNT_TOLERANCE_RATIO:.0%} to {1 + COUNT_TOLERANCE_RATIO:.0%} allowed)"
         )
-        logger.warning(f"{YELLOW}{warning_msg}{RESET}")
-        warnings.warn(warning_msg, UserWarning)
+        pytest.fail(error_msg, pytrace=False)
 
 
 @pytest.mark.integration
@@ -316,10 +292,13 @@ def test_text_extraction_accuracy(
     expected_text: list[str],
     request: pytest.FixtureRequest,
 ) -> None:
-    """Validate full text extraction accuracy (Hit Rate, Levenshtein distance, GeoNamesCache)."""
+    """
+    Validate text extraction accuracy over every expected text: hit rate and character
+    error. The precision is reported only, test_ocr_raw_detection_count checks the extra blocks.
+    """
     assert image_path.exists()
 
-    logger.info(f"\n{CYAN}{BOLD}▶ [TESTING]{RESET} {YELLOW}{image_path.name}{RESET} (Expected: {len(expected_text)} words)")
+    logger.info(f"\n{CYAN}{BOLD}▶ [TESTING]{RESET} {YELLOW}{image_path.name}{RESET} (Expected: {len(expected_text)} texts)")
 
     extracted_text = get_extracted_text_cached(image_path)
 
@@ -331,11 +310,23 @@ def test_text_extraction_accuracy(
         unpaired_expected_words,
     )
 
-    mismatches = [(expected_word, ocr_word, distance) for ocr_word, (expected_word, distance) in results if distance > 0.1]
+    box_find_rate, precision, average_dist = calculate_match_metrics(results, len(unpaired_ocr_words))
 
-    box_find_rate, average_dist = calculate_match_metrics(results, unpaired_expected_words)
+    # Expected texts not exact, the worst first, and blocks matching no expected text
+    mismatches = sorted(
+        ((expected_word, ocr_word, error) for expected_word, ocr_word, error in results if error > 0),
+        key=lambda mismatch: mismatch[2],
+        reverse=True,
+    )
+    hit_blocks = Counter(ocr_word for _, ocr_word, error in results if error <= HIT_MAX_ERROR)
+    extra_blocks = []
+    for word in unpaired_ocr_words:
+        if hit_blocks[word]:
+            hit_blocks[word] -= 1
+        else:
+            extra_blocks.append(" ".join(word.split()))
 
-    thresholds = CARD_THRESHOLDS.get(image_path.stem, {"min_hit_rate": 40.0, "max_dist": 15.0})
+    thresholds = {**DEFAULT_THRESHOLDS, **CARD_THRESHOLDS.get(image_path.stem, {})}
     min_hit_rate = thresholds["min_hit_rate"]
     max_dist = thresholds["max_dist"]
 
@@ -375,8 +366,9 @@ def test_text_extraction_accuracy(
     summary_lines = [
         f"\n{status_icon} {status_color}{BOLD}[{status_text}] {card_name_fmt}{RESET}",
         f"   • Hit Rate : {hit_color}{box_find_rate:.1f}%{RESET} (min: {min_hit_rate}%)",
+        f"   • Precision: {BLUE}{precision:.1f}%{RESET} (reported only)",
         f"   • Distance : {dist_color}{average_dist:.2f}{RESET} (max: {max_dist})",
-        f"   • OCR Words: {BLUE}{len(unpaired_ocr_words)}{RESET} detected / {len(unpaired_expected_words)} expected",
+        f"   • OCR Texts: {BLUE}{len(unpaired_ocr_words)}{RESET} detected / {len(unpaired_expected_words)} expected",
         f"   • GeoNames : {GREEN}{len(geocache_accepted)} accepted{RESET} vs {RED}{len(geocache_unrecognized)} unrecognized{RESET}",
     ]
 
@@ -387,16 +379,18 @@ def test_text_extraction_accuracy(
         if geocache_unrecognized:
             summary_lines.append(f"   {YELLOW}• Unrecognized GeoNames: {' | '.join(geocache_unrecognized)}{RESET}")
         if mismatches:
-            mismatches.sort(key=lambda x: x[2], reverse=True)
-            summary_lines.append(f"   • {YELLOW}Detection mismatches (approximate or missing words):{RESET}")
+            summary_lines.append(f"   • {YELLOW}Detection mismatches (approximate or missing texts):{RESET}")
             for expected_word, ocr_word, distance in mismatches:
-                if distance > 500:
+                if not ocr_word:
                     summary_lines.append(f"       - Expected: '{BOLD}{expected_word}{RESET}' | {RED}NOT FOUND{RESET}")
                 else:
-                    d_color = GREEN if distance <= 2.0 else (YELLOW if distance <= 4.0 else RED)
+                    d_color = GREEN if distance <= HIT_MAX_ERROR else (YELLOW if distance <= 0.35 else RED)
+                    found = " ".join(ocr_word.split())
                     summary_lines.append(
-                        f"       - Expected: '{BOLD}{expected_word}{RESET}' | Found: '{RED}{ocr_word}{RESET}' (dist: {d_color}{distance:.1f}{RESET})"
+                        f"       - Expected: '{BOLD}{expected_word}{RESET}' | Found: '{RED}{found}{RESET}' (dist: {d_color}{distance:.2f}{RESET})"
                     )
+        if extra_blocks:
+            summary_lines.append(f"   • {YELLOW}OCR blocks matching no expected text:{RESET} {' | '.join(extra_blocks)}")
 
     log_fn = logger.error if status_text == "FAIL" else logger.warning
     log_fn("\n".join(summary_lines))
@@ -407,6 +401,7 @@ def test_text_extraction_accuracy(
         "card_name": image_path.name,
         "average_distance": average_dist,
         "hit_rate": box_find_rate,
+        "precision": precision,
         "min_hit_rate": min_hit_rate,
         "max_dist": max_dist,
     }

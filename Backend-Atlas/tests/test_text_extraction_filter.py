@@ -1,4 +1,4 @@
-from app.utils.text_extraction import process_candidate_text, should_ignore
+from app.utils.text_extraction import _filter_detections, _to_blocks, clean_candidate_text, should_ignore
 
 
 def test_should_ignore_numeric_and_scale_annotations():
@@ -9,10 +9,15 @@ def test_should_ignore_numeric_and_scale_annotations():
     assert should_ignore("Miles")
 
 
-def test_process_candidate_text_keeps_numbers_but_strips_years():
-    quad = [[0, 0], [10, 0], [10, 10], [0, 10]]
+def test_clean_candidate_text_keeps_numbers_but_strips_years():
+    assert clean_candidate_text("Route 600") == "Route 600"
+    assert clean_candidate_text("Québec 1783") == "Québec"
+    assert clean_candidate_text("Boston (1630)") == "Boston"
+    assert clean_candidate_text("600 Km") is None
 
-    assert process_candidate_text("Route 600", quad)["text"] == "Route 600"
-    assert process_candidate_text("Québec 1783", quad)["text"] == "Québec"
-    assert process_candidate_text("Boston (1630)", quad)["text"] == "Boston"
-    assert process_candidate_text("600 Km", quad) is None
+
+def test_filtered_detections_keep_their_ocr_score():
+    quad = [[0, 0], [10, 0], [10, 10], [0, 10]]
+    detections = [{"text": "Québec 1783", "score": 0.42, "quad": quad}, {"text": "600 Km", "score": 0.9, "quad": quad}]
+
+    assert _to_blocks(_filter_detections(detections)) == [{"text": "Québec", "bbox": quad, "prob": 0.42}]

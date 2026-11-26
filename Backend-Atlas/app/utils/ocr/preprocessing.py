@@ -1,5 +1,8 @@
+import io
+
 import cv2
 import numpy as np
+from PIL import Image
 
 # Maximum upscale factor of map images
 MAX_UPSCALE_FACTOR = 1.5
@@ -32,6 +35,16 @@ def read_image(image_path: str) -> np.ndarray:
 
 def decode_image(content: bytes) -> np.ndarray:
     """Decode an encoded image (PNG, JPEG, ...) and return it as an RGB uint8 NumPy array."""
+    # Checked in the header, before decoding: a compressed file of a few MB can
+    # hold an image that fills the memory once decoded
+    try:
+        with Image.open(io.BytesIO(content)) as header:
+            width, height = header.size
+    except Exception as exc:
+        raise IOError(f"Could not read the image header: {exc}") from exc
+    if max(width, height) > MAX_IMAGE_SIDE:
+        raise IOError(f"Image too large ({width}x{height} px, {MAX_IMAGE_SIDE} px at most per side)")
+
     img = cv2.imdecode(np.frombuffer(content, dtype=np.uint8), cv2.IMREAD_UNCHANGED)
     if img is None:
         raise IOError("Could not decode the image content")

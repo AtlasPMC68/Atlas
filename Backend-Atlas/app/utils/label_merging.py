@@ -15,27 +15,40 @@ and either:
     - or the joined text is a place while neither piece is one on its own
 """
 
+import functools
 import logging
 import math
 
 import numpy as np
 
-from app.utils.place_nomenclature import _normalize
-from app.utils.place_resolution import _PREFIX_TYPE_MAP, MATCHING_CONFIG, resolve_place
+from app.utils.place_nomenclature import normalize
+from app.utils.place_resolution import PREFIX_TYPE_MAP, MATCHING_CONFIG, resolve_place
 
 logger = logging.getLogger(__name__)
 
 # Two boxes have the same font size when their heights differ by at most this
-# ratio, or this many pixels for small text where one pixel is already 8%
-HEIGHT_TOLERANCE_RATIO = 0.10
-HEIGHT_TOLERANCE_PX = 2.0
+# ratio, or this many pixels for small text. A box is as tall as its letters: an
+# accent or a descender alone adds about a fifth of the height (PROVINCE 25 px,
+# DE QUÉBEC 31 px), or 2 to 4 px on small text (OCÉAN, Winnipeg)
+HEIGHT_TOLERANCE_RATIO = 0.20
+HEIGHT_TOLERANCE_PX = 5.0
 
-# Maximal angle difference, in degrees, between two boxes of the same label
-ANGLE_TOLERANCE_DEG = 5.0
+# Looser ratio when one box is a lone generic word ("Province", "Lac", "Bay"): the
+# word already says it goes with a name, so its size may differ more
+KEYWORD_HEIGHT_TOLERANCE_RATIO = 0.30
+
+# Maximal angle difference, in degrees, between two boxes of the same label. The
+# angle of a short box is rough: a 4 px skew tilts the 34 px box of "JEAN" by 7°
+ANGLE_TOLERANCE_DEG = 15.0
 
 # Each box is grown by this ratio of the text height: two boxes whose grown
 # versions touch are close enough to be one label
 MERGE_MARGIN_RATIO = 0.5
+
+# Largest gap, in text heights, between a lone generic word and its name: big water
+# labels space their lines widely (Baie / d'Hudson 1.5 heights apart, Océan /
+# Pacifique 1.05). Other pairs keep the gap of MERGE_MARGIN_RATIO, one height
+KEYWORD_MAX_GAP_RATIO = 2.0
 
 # Boxes side by side whose gap is within this range of the text height are words
 # of one line, merged whatever they say. Measured on the test maps: title words
@@ -50,11 +63,16 @@ WORD_GAP_MAX_RATIO = 0.5
 # label misread as "Base d'Hudson" matches Baie d'Hudson at about 0.92
 MERGE_MATCH_THRESHOLD = 0.90
 
-# Words that start a place name and need the name after them
-GENERIC_PREFIXES = set(_PREFIX_TYPE_MAP) | {
+# Place lookups kept in memory, for the life of the worker: the least recently
+# used are dropped past this count (about 250 bytes each)
+PLACE_CACHE_SIZE = 4096
+
+# Words that start a place name and need the name after them. "New" is one too: alone,
+# it matches a place of the dictionary, so "New" / "Hampshire" would not merge otherwise
+GENERIC_PREFIXES = set(PREFIX_TYPE_MAP) | {
     "fort", "saint", "sainte", "st", "ste", "pointe", "port",
     "grand", "grande", "haut", "haute", "bas", "basse",
-    "nouveau", "nouvel", "nouvelle", "petit", "petite", "petites", "monts",
+    "nouveau", "nouvel", "nouvelle", "new", "petit", "petite", "petites", "monts",
     # Hydrography ("Océan" / "Atlantique", "Rivière" / "Ohio", "Isle" / "Royale")
     "oceans", "mers", "golfes", "detroits", "rivieres", "fleuves", "ruisseaux",
     "isle", "isles", "ilot", "ilots", "anse", "bassin", "estuaire", "lagune",
@@ -99,13 +117,12 @@ def merge_split_labels(detections):
     while merged_any:
         merged_any = False
 
-        # Every compatible pair, the closest first
+        # Every compatible pair of neighbours, the closest first
         pairs = []
-        for i in range(len(boxes)):
-            for j in range(i + 1, len(boxes)):
-                layout = _pair_layout(boxes[i], boxes[j], i, j)
-                if layout is not None:
-                    pairs.append(layout)
+        for i, j in _neighbour_pairs(boxes):
+            layout = _pair_layout(boxes[i], boxes[j], i, j)
+            if layout is not None:
+                pairs.append(layout)
         pairs.sort(key=lambda pair: pair["gap"])
 
         # Each box is merged at most once per pass, a merged box can merge
@@ -118,7 +135,10 @@ def merge_split_labels(detections):
                 continue
             separator = " " if pair["layout"] == "line" else "\n"
             text = f"{boxes[first]['text']}{separator}{boxes[second]['text']}"
-            if not (_is_word_space(pair) or _should_merge(boxes[first]["text"], boxes[second]["text"], text)):
+            if not (
+                _is_word_space(pair)
+                or _should_merge(boxes[first]["text"], boxes[second]["text"], text)
+            ):
                 continue
 
             logger.debug(f"[OCR] Merged {boxes[first]['text']!r} and {boxes[second]['text']!r}")
@@ -158,22 +178,70 @@ def _should_merge(first_text, second_text, joined_text):
 
 def _is_lone_prefix(text):
     """A generic word waiting for its name: "Lac", "Golfe du", "Île de", "Saint"."""
-    tokens = _normalize(text).split()
+    tokens = normalize(text).split()
     return bool(tokens) and tokens[0] in GENERIC_PREFIXES and all(t in GENERIC_PREFIXES | PARTICLES for t in tokens)
 
 
 def _is_lone_suffix(text):
     """A generic word following its name: "City", "Bay", "Island"."""
-    tokens = _normalize(text).split()
+    tokens = normalize(text).split()
     return bool(tokens) and tokens[-1] in GENERIC_SUFFIXES and all(t in GENERIC_SUFFIXES | PARTICLES for t in tokens)
 
 
+@functools.lru_cache(maxsize=PLACE_CACHE_SIZE)
 def _is_place(text, threshold):
-    """Tell if a text matches a known place, anywhere in the world."""
+    """
+    Tell if a text matches a known place, anywhere in the world. Answers are
+    cached: a pair left unmerged is checked again on every pass, and the same
+    names come back from map to map.
+    """
     try:
         return bool(resolve_place(text.replace("\n", " "), confidence_threshold=threshold).get("found"))
     except Exception:
         return False
+
+
+def _neighbour_pairs(boxes):
+    """
+    Every pair (i, j), i < j, of boxes close enough for _pair_layout to accept them:
+    their bounding rectangles, once grown by _reach, overlap. It spares comparing
+    every pair of boxes of the map, most of them far apart.
+    """
+    bounds = [_reach(box) for box in boxes]
+
+    # Sweep the boxes from left to right: once a box starts past the right edge of
+    # the current one, every following box does too
+    order = sorted(range(len(boxes)), key=lambda k: bounds[k][0])
+    pairs = []
+    for position, i in enumerate(order):
+        _, top, right, bottom = bounds[i]
+        for j in order[position + 1:]:
+            other_left, other_top, _, other_bottom = bounds[j]
+            if other_left > right:
+                break
+            if other_top <= bottom and other_bottom >= top:
+                pairs.append((min(i, j), max(i, j)))
+
+    # The order of the full comparison, so pairs at equal gap are merged as before
+    pairs.sort()
+    return pairs
+
+
+def _reach(box):
+    """
+    Bounding rectangle (left, top, right, bottom) of a box, grown as far as
+    _pair_layout can find a partner:
+        - the largest gap allowed, a lone generic word's (KEYWORD_MAX_GAP_RATIO), in
+          its own height: grown by both boxes, it covers the gap in the taller one
+        - plus the drift of measuring a box in the frame of another one tilted by
+          up to ANGLE_TOLERANCE_DEG
+    """
+    quad = np.asarray(box["quad"], dtype=float)
+    low, high = quad.min(axis=0), quad.max(axis=0)
+    height, _ = _box_size(box)
+    tilt = np.linalg.norm(high - low) * math.sin(math.radians(ANGLE_TOLERANCE_DEG))
+    margin = max(KEYWORD_MAX_GAP_RATIO, 2 * MERGE_MARGIN_RATIO) * height + tilt
+    return low[0] - margin, low[1] - margin, high[0] + margin, high[1] + margin
 
 
 def _frame(quad):
@@ -207,9 +275,13 @@ def _pair_layout(a, b, i, j):
     height_a, angle_a = _box_size(a)
     height_b, angle_b = _box_size(b)
 
+    # A lone generic word allows a looser font size and a wider gap
+    keyword = any(_is_lone_prefix(box["text"]) or _is_lone_suffix(box["text"]) for box in (a, b))
+
     # Same font size
     height = max(height_a, height_b)
-    if abs(height_a - height_b) > max(HEIGHT_TOLERANCE_RATIO * height, HEIGHT_TOLERANCE_PX):
+    ratio = KEYWORD_HEIGHT_TOLERANCE_RATIO if keyword else HEIGHT_TOLERANCE_RATIO
+    if abs(height_a - height_b) > max(ratio * height, HEIGHT_TOLERANCE_PX):
         return None
 
     # Same angle
@@ -221,7 +293,7 @@ def _pair_layout(a, b, i, j):
     origin, u, v = _frame(a["quad"])
     a_left, a_right, a_top, a_bottom = _extent(a["quad"], origin, u, v)
     b_left, b_right, b_top, b_bottom = _extent(b["quad"], origin, u, v)
-    max_gap = 2 * MERGE_MARGIN_RATIO * height
+    max_gap = (KEYWORD_MAX_GAP_RATIO if keyword else 2 * MERGE_MARGIN_RATIO) * height
     overlap_across = min(a_bottom, b_bottom) - max(a_top, b_top)
     overlap_along = min(a_right, b_right) - max(a_left, b_left)
 

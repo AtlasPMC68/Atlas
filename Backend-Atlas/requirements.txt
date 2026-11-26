@@ -1,3 +1,5 @@
+# Paddlepaddle > 3.3.0 not available on PyPi
+--find-links https://www.paddlepaddle.org.cn/packages/stable/cpu/paddlepaddle/
 fastapi==0.104.1
 uvicorn[standard]==0.24.0
 pytest==7.4.3

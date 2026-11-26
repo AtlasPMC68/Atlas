@@ -16,7 +16,7 @@ from app.utils.place_nomenclature import (
     STYLES_MAP,
     WORD_TAXONOMY,
     _WORD_STYLE_CONFIG,
-    _normalize,
+    normalize,
     capitalize_first,
     capitalize_words,
     format_geographic_nomenclature,
@@ -26,10 +26,10 @@ from app.utils.place_nomenclature import (
 
 
 def test_normalize():
-    assert _normalize("Montréal") == "montreal"
-    assert _normalize("  États-Unis  ") == "etats unis"
-    assert _normalize("Océan Atlantique!!!") == "ocean atlantique"
-    assert _normalize("") == ""
+    assert normalize("Montréal") == "montreal"
+    assert normalize("  États-Unis  ") == "etats unis"
+    assert normalize("Océan Atlantique!!!") == "ocean atlantique"
+    assert normalize("") == ""
 
 
 def test_capitalize_first():

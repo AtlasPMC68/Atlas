@@ -19,7 +19,7 @@ with _WORD_STYLE_CONFIG_PATH.open(encoding="utf-8") as _config_file:
     _WORD_STYLE_CONFIG = json.load(_config_file)
 
 
-def _normalize(text: str) -> str:
+def normalize(text: str) -> str:
     """Lower-case, strip accents, collapse whitespace."""
     text = unicodedata.normalize("NFKD", text)
     text = "".join(c for c in text if not unicodedata.combining(c))
@@ -139,8 +139,8 @@ def format_geographic_nomenclature(raw_name: str, query: str = "") -> str:
     if not clean_name:
         return raw_name
 
-    norm_query = _normalize(query)
-    norm_raw = _normalize(clean_name)
+    norm_query = normalize(query)
+    norm_raw = normalize(clean_name)
 
     query_prefix = _find_geographic_prefix(norm_query) if query else None
     raw_prefix = _find_geographic_prefix(norm_raw)
@@ -194,7 +194,7 @@ def format_place_result(
         "mapElementType": map_element_type,
         "sizePx": size_px,
         "fontStyle": font_style,
-        "matched_text": _normalize(query),
+        "matched_text": normalize(query),
     }
 
     if "population" in place and place["population"] is not None:
@@ -232,7 +232,7 @@ def is_exploitable_text(text: str) -> bool:
 
 
 __all__ = [
-    "_normalize",
+    "normalize",
     "capitalize_first",
     "capitalize_words",
     "format_geographic_nomenclature",

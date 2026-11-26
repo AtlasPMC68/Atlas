@@ -108,6 +108,12 @@ services:
         condition: service_healthy
     command: celery -A app.celery_app worker --loglevel=info -E -Q default
 
+  celery-worker-ocr:
+    extends:
+      service: celery-worker
+    container_name: atlas-celery-worker-ocr
+    command: celery -A app.celery_app worker --loglevel=info -E -Q maps_ocr --concurrency=1 -n maps_ocr@%h
+
   flower:
     build:
       context: ./Backend-Atlas

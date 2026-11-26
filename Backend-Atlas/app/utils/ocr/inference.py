@@ -6,16 +6,16 @@ import numpy as np
 from paddleocr import TextDetection, TextRecognition
 
 from app.utils.ocr import OCR_DET_MODEL, OCR_REC_MODEL
-from app.utils.ocr.preprocessing import *
+from app.utils.ocr import preprocessing as pp
 
 logger = logging.getLogger(__name__)
 
-# The detector shrinks images to this size on their longest side, Paddle's default
-# of 960 px loses the small labels of big maps
-DET_MAX_SIDE = 4000
 # A box this much taller than wide is read as vertical text
 VERTICAL_RATIO = 1.5
 REC_BATCH_SIZE = 32
+# CPU threads of each model. PaddleX defaults to 8, which segfaults Paddle on
+# aarch64 (Docker on Apple Silicon); several Celery processes share the CPU anyway
+OCR_CPU_THREADS = max(1, min(int(os.environ.get("OCR_CPU_THREADS", "4")), os.cpu_count() or 1))
 
 # Keep the models loaded in memory between each uses
 _CACHED_DETECTOR: TextDetection | None = None
@@ -26,19 +26,21 @@ def initialize_models() -> tuple[TextDetection, TextRecognition]:
     """Load the PP-OCRv5 text detection and recognition models."""
     logger.debug("Initializing PaddleOCR models from %s", os.environ.get("PADDLE_PDX_CACHE_HOME"))
 
+    # Paddle's default of 960 px loses the small labels of big maps
     detector = TextDetection(
         model_name=OCR_DET_MODEL,
         limit_type="max",
-        limit_side_len=DET_MAX_SIDE,
+        limit_side_len=pp.MAX_IMAGE_SIDE,
+        cpu_threads=OCR_CPU_THREADS,
     )
-    recognizer = TextRecognition(model_name=OCR_REC_MODEL)
+    recognizer = TextRecognition(model_name=OCR_REC_MODEL, cpu_threads=OCR_CPU_THREADS)
 
     logger.debug("PaddleOCR models initialized.")
     return detector, recognizer
 
 
 def get_models() -> tuple[TextDetection, TextRecognition]:
-    """PaddleOCR detection and recognition models singleton"""
+    """PaddleOCR detection and recognition models singletons"""
     global _CACHED_DETECTOR, _CACHED_RECOGNIZER
     if _CACHED_DETECTOR is None:
         _CACHED_DETECTOR, _CACHED_RECOGNIZER = initialize_models()
@@ -63,22 +65,22 @@ def _crop_variants(crop: np.ndarray) -> list[np.ndarray]:
         # Vertical text is processed twice since we need to find the right orientation.
         # Therefore, less variants are offered because we duplicate each one with a [-90,90] rotation
         for img in (cv2.rotate(crop, cv2.ROTATE_90_CLOCKWISE), cv2.rotate(crop, cv2.ROTATE_90_COUNTERCLOCKWISE)):
-            c = Crop(img)
+            c = pp.Crop(img)
             variants.extend([
                 img,
-                c.enhance_contrast(NORMAL_CONTRAST).img,
-                c.denoise(LIGHT_DENOISE).enhance_contrast(NORMAL_CONTRAST).binarize().img,
+                c.enhance_contrast(pp.NORMAL_CONTRAST).img,
+                c.denoise(pp.LIGHT_DENOISE).enhance_contrast(pp.NORMAL_CONTRAST).binarize().img,
             ])
         return variants
 
     # For the majority of the text boxes, we return a multitude of variants
-    c = Crop(crop)
+    c = pp.Crop(crop)
     return [
         crop,
-        c.enhance_contrast(LIGHT_CONTRAST).img,
-        c.enhance_contrast(NORMAL_CONTRAST).img,
-        c.denoise(STRONG_DENOISE).enhance_contrast(STRONG_CONTRAST).img,
-        c.denoise(LIGHT_DENOISE).enhance_contrast(NORMAL_CONTRAST).binarize().img,
+        c.enhance_contrast(pp.LIGHT_CONTRAST).img,
+        c.enhance_contrast(pp.NORMAL_CONTRAST).img,
+        c.denoise(pp.STRONG_DENOISE).enhance_contrast(pp.STRONG_CONTRAST).img,
+        c.denoise(pp.LIGHT_DENOISE).enhance_contrast(pp.NORMAL_CONTRAST).binarize().img,
     ]
 
 
@@ -95,7 +97,7 @@ def _read_text_boxes(recognizer: TextRecognition, image: np.ndarray, quads: list
     # Create variants of the same cropped text box, then flatten into
     # a crops array which remember a variant's original crop
     for idx, quad in enumerate(quads):
-        crop = crop_quad(image, quad)
+        crop = pp.crop_quad(image, quad)
         if crop is None:
             continue
         for variant in _crop_variants(crop):
@@ -125,11 +127,11 @@ def run_ocr(detector: TextDetection, recognizer: TextRecognition, original: np.n
     """
     # Detect and read on the upscaled image: its crops read the letters at the box
     # edges better (scripts/ocr_compare_read_source.py)
-    upscaled, scale_factor = adaptive_upscaling(original)
+    upscaled, scale_factor = pp.adaptive_upscaling(original)
     upscaled_quads = _detect_text_boxes(detector, upscaled)
     logger.debug(f"{len(upscaled_quads)} text boxes detected")
     readings = _read_text_boxes(recognizer, upscaled, upscaled_quads)
 
     # Text boxes are returned in the coordinates of the original image
-    quads = downscale_quads(upscaled_quads, scale_factor)
+    quads = pp.downscale_quads(upscaled_quads, scale_factor)
     return [{"text": text, "score": score, "quad": quad} for quad, (text, score) in zip(quads, readings) if text]

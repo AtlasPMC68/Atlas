@@ -76,17 +76,17 @@ def ocr_blocks_to_payload(blocks: list[dict[str, Any]]) -> list[list]:
     return payload
 
 
-def process_candidate_text(text_val: str, quad: list[list[int]]) -> dict[str, Any] | None:
+def clean_candidate_text(text_val):
+    """
+    The text of a box without its years and stray punctuation, or None when it
+    is not worth keeping (see should_ignore).
+    """
     clean_text = re.sub(r"[\(\[\{]?\b(1[0-9]{3}|20[0-9]{2})\b[\)\]\}]?", "", text_val)
     # Retain newlines, but collapse spaces within each line
     clean_text = "\n".join(" ".join(line.split()) for line in clean_text.split("\n")).strip(" .,;:!?()[]{}'\"")
     if not clean_text or should_ignore(clean_text):
         return None
-    return {
-        "text": clean_text,
-        "bbox": quad,
-        "mapElementType": "ville",
-    }
+    return clean_text
 
 
 def _detection_quad(detection):
@@ -103,25 +103,28 @@ def _detection_quad(detection):
 def _filter_detections(
     detections: list[dict[str, Any]],
 ) -> list[dict[str, Any]]:
-    """Keep the OCR detections worth placing on the map, as {"text", "bbox", "mapElementType"} dicts."""
-    extracted_text: list[dict[str, Any]] = []
+    """
+    Keep the OCR detections worth placing on the map, with their text cleaned.
+    They stay {"text", "score", "quad"} dicts, the format merge_split_labels reads.
+    """
+    kept: list[dict[str, Any]] = []
     for detection in detections:
-        if not isinstance(detection, dict):
+        if not isinstance(detection, dict) or _detection_quad(detection) is None:
             continue
 
-        raw_text = str(detection.get("text", "")).strip()
-        if not raw_text:
-            continue
+        clean_text = clean_candidate_text(str(detection.get("text", "")).strip())
+        if clean_text is not None:
+            kept.append({**detection, "text": clean_text})
 
-        quad = _detection_quad(detection)
-        if quad is None:
-            continue
+    return kept
 
-        candidate_block = process_candidate_text(raw_text, quad)
-        if candidate_block is not None:
-            extracted_text.append(candidate_block)
 
-    return extracted_text
+def _to_blocks(detections: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Detections as the {"text", "bbox", "prob"} blocks saved for the map, quads in integer pixels."""
+    return [
+        {"text": detection["text"], "bbox": _detection_quad(detection), "prob": float(detection.get("score", 1.0))}
+        for detection in detections
+    ]
 
 
 def _run_ocr_pipeline(
@@ -148,10 +151,11 @@ def _run_ocr_pipeline(
 
     logger.info(f"==> [OCR] Pipeline successfully completed for map {map_id} in {time.monotonic() - started:.1f}s!")
 
-    # Join the boxes of labels split over several lines, then keep only the
-    # readings worth placing on the map (see should_ignore)
+    # Drop the boxes not worth placing on the map (see should_ignore) before
+    # joining the boxes of labels split by the OCR detection
+    detections = _filter_detections(detections)
     detections = merge_split_labels(detections)
-    return _filter_detections(detections)
+    return _to_blocks(detections)
 
 
 def extract_text(
@@ -162,19 +166,11 @@ def extract_text(
     if not image_bytes:
         return []
 
+    # Raised, not returned as []: an empty list is saved as "done, no text"
     try:
         image = preprocessing.decode_image(image_bytes)
     except IOError as exc:
-        logger.warning(f"Could not decode the image of map {map_id}: {exc}")
-        return []
-
-    if preprocessing.exceeds_max_side(image):
-        height, width = image.shape[:2]
-        logger.warning(
-            f"Image for map {map_id} is too large ({width}x{height} px). "
-            f"Rejected to prevent an OOM crash ({preprocessing.MAX_IMAGE_SIDE} px limit on the longest side)."
-        )
-        return []
+        raise OcrPipelineError(f"Could not read the image of map {map_id}: {exc}") from exc
 
     logger.info(f"Starting OCR pipeline for map {map_id}")
 

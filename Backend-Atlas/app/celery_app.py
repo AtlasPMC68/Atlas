@@ -29,6 +29,9 @@ celery_app.conf.update(
     enable_utc=True,
     result_expires=3600,
     task_routes={
+        # OCR specific queue with conccurency of 1
+        "app.tasks.run_map_ocr": {"queue": "maps_ocr"},
+        "app.tasks.warm_dev_test_text_regions": {"queue": "maps_ocr"},
         "app.tasks.*": {"queue": "default"},
     },
 )
