@@ -17,10 +17,12 @@
           ref="fileInputRef"
           type="file"
           class="file-input file-input-ghost"
-          accept="image/*"
+          accept=".jpg,.jpeg,.png,image/jpeg,image/png"
           @change="onFileChange"
         />
-        <span class="text-xs text-base-content/60 mt-1">Taille maximale : 10 Mo</span>
+        <span class="text-xs text-base-content/60 mt-1">
+          Formats acceptés : JPG, PNG. Taille maximale : 10 Mo.
+        </span>
       </fieldset>
       <div class="modal-action mt-6 flex justify-end gap-2">
         <button

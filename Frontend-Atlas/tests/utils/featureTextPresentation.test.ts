@@ -132,6 +132,15 @@ describe("shared word styles and label presentation", () => {
       properties: { name: "Province", mapElementType: "label" },
     } as Feature;
     expect(isTextFeature(labelFeature)).toBe(true);
+
+    const imageFeature = {
+      type: "Feature",
+      id: "img-1",
+      image: "base64",
+      geometry: { type: "Point", coordinates: [0, 0] },
+      properties: { name: "carte.gif", mapElementType: "image" },
+    } as Feature;
+    expect(isTextFeature(imageFeature)).toBe(false);
   });
 
   it("getWordTypeForFeature extracts word type with correct fallbacks", () => {

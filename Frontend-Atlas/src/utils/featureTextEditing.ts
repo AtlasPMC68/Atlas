@@ -241,7 +241,7 @@ export function prepareFeatureForEdit(feature: Feature): FeatureEditState {
       (elementType === "label" || elementType === "point" ? (colorHex || "#000000") : "#000000");
     strokeColorHex =
       rawStrokeColorHex ??
-      (elementType === "point" ? "#000000" : undefined);
+      (elementType === "point" || elementType === "image" ? "#000000" : undefined);
   }
 
   return {
@@ -285,6 +285,25 @@ export function coerceEditedFeature(
       ? [...payload.selectedMapIds]
       : [];
   const chosenMapId = chosenMapIds.length > 0 ? chosenMapIds[0] : null;
+
+  if (getMapElementType(originalFeature) === "image") {
+    return {
+      ...originalFeature,
+      mapId: chosenMapId,
+      mapIds: chosenMapIds,
+      map_id: chosenMapId,
+      name: payload.name,
+      properties: {
+        ...originalFeature.properties,
+        mapId: chosenMapId,
+        mapIds: chosenMapIds,
+        map_id: chosenMapId,
+        name: payload.name,
+        mapElementType: "image",
+        strokeColor: hexToRgb(payload.strokeColorHex),
+      },
+    };
+  }
 
   if (!isTextFeature(originalFeature)) {
     const cleanedProps = { ...originalFeature.properties };

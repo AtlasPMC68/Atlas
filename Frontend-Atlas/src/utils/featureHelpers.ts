@@ -31,7 +31,16 @@ export function getMapElementType(
     : featureOrProperties;
 
   const geometry = hasProperties ? featureOrProperties.geometry : undefined;
-  const rawMapElementType = properties?.mapElementType;
+  const rawMapElementType =
+    properties?.mapElementType ??
+    (properties as { map_element_type?: MapElementType } | undefined)
+      ?.map_element_type;
+  if (
+    rawMapElementType === "image" ||
+    (hasProperties && Boolean((featureOrProperties as Feature).image))
+  ) {
+    return "image";
+  }
 
   // Geometry constraints: Polygons can ONLY be zone or shape, NEVER point or label
   if (geometry?.type === "Polygon" || geometry?.type === "MultiPolygon") {

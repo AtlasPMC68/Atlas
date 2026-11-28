@@ -234,6 +234,48 @@ describe("featureTextEditing", () => {
       expect(edited.properties.fontWeight).toBe("bold");
     });
 
+    it("keeps an image overlay as an image and only updates name, stroke and maps", () => {
+      const imageFeature: Feature = {
+        type: "Feature",
+        id: "img-1",
+        projectId: "p1",
+        name: "carte.png",
+        image: "base64-bytes",
+        createdAt: "2026-01-01T00:00:00Z",
+        updatedAt: "2026-01-01T00:00:00Z",
+        geometry: { type: "Point", coordinates: [-71.0, 46.5] },
+        properties: {
+          name: "carte.png",
+          mapElementType: "image",
+          mimeType: "image/png",
+          bounds: [
+            [46.0, -72.0],
+            [47.0, -70.0],
+          ],
+        },
+      };
+
+      const edited = coerceEditedFeature(imageFeature, {
+        name: "Blason",
+        wordType: "city",
+        strokeColorHex: "#ff0000",
+        colorHex: "#00ff00",
+        fillOpacity: 0,
+        selectedMapIds: ["map-2"],
+      });
+
+      expect(edited.image).toBe("base64-bytes");
+      expect(edited.properties.mapElementType).toBe("image");
+      expect(edited.properties.bounds).toEqual([
+        [46.0, -72.0],
+        [47.0, -70.0],
+      ]);
+      expect(edited.name).toBe("Blason");
+      expect(edited.mapId).toBe("map-2");
+      expect(edited.properties.strokeColor).toEqual([255, 0, 0]);
+      expect(edited.properties.colorRgb).toBeUndefined();
+    });
+
     it("updates non-text features (opacity, stroke, strokeWidth)", () => {
       const edited = coerceEditedFeature(baseZoneFeature, {
         name: "Nouvelle Zone",

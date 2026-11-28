@@ -1312,10 +1312,11 @@ function renderImages(features: Feature[]) {
 
     const src = toImageSrc(feature.image);
     const overlay = L.imageOverlay(src, bounds, {
-      opacity: feature.properties.fillOpacity ?? 1,
+      opacity: 1,
       interactive: true,
       pane: 'imagePane',
     });
+    const strokeCss = colorRgbToCss(feature.properties.strokeColor);
 
     const applyRotation = (layer: any) => {
       const currentFeature = layer.feature || feature;
@@ -1353,6 +1354,9 @@ function renderImages(features: Feature[]) {
       const el = overlay.getElement();
       if (el) {
         el.setAttribute('draggable', 'false');
+        if (strokeCss) {
+          el.style.outline = `2px solid ${strokeCss}`;
+        }
       }
       applyRotation(overlay);
     });
@@ -1894,7 +1898,13 @@ function applySelectionEffects(id: string) {
   const selectedFeature = props.features.find((f: Feature) => String(f.id) === String(id)) ||
     localFeaturesSnapshot.value.find((f: Feature) => String(f.id) === String(id));
   const elementType = selectedFeature ? getMapElementType(selectedFeature) : null;
-  const isTextOrPoint = elementType === "point" || elementType === "label" || selectedFeature?.geometry?.type === "Point";
+  const isImage =
+    elementType === "image" || layer instanceof L.ImageOverlay;
+  const isTextOrPoint =
+    !isImage &&
+    (elementType === "point" ||
+      elementType === "label" ||
+      selectedFeature?.geometry?.type === "Point");
 
   if (layer instanceof L.ImageOverlay) {
     drawing.setToolbarMode("label");

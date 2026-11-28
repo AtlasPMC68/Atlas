@@ -194,7 +194,7 @@ import {
   toImageSrc,
 } from "../utils/utils";
 import { toYear } from "../utils/dateUtils";
-import { apiFetch } from "../utils/api";
+import { apiErrorMessage, apiFetch } from "../utils/api";
 import { useCurrentUser } from "../composables/useCurrentUser";
 import { useProjectLabelStyles } from "../composables/useProjectLabelStyles";
 import { getOriginalMapImage } from "../composables/useMapImageCache";
@@ -741,7 +741,26 @@ function getImageNaturalSize(
   });
 }
 
+const FEATURE_IMAGE_EXTENSIONS = [".jpg", ".jpeg", ".png"];
+const FEATURE_IMAGE_MIME_TYPES = ["image/jpeg", "image/jpg", "image/png"];
+
+function isSupportedFeatureImage(file: File): boolean {
+  const name = file.name.toLowerCase();
+  const hasAllowedExt = FEATURE_IMAGE_EXTENSIONS.some((ext) => name.endsWith(ext));
+  const mime = (file.type || "").toLowerCase();
+  const hasAllowedMime = !mime || FEATURE_IMAGE_MIME_TYPES.includes(mime);
+  return hasAllowedExt && hasAllowedMime;
+}
+
 async function onAddFeatureImage(file: File) {
+  if (!isSupportedFeatureImage(file)) {
+    showAlert(
+      "error",
+      "Ce format n'est pas pris en charge. Utilisez une image JPG ou PNG.",
+    );
+    return;
+  }
+
   if (!keycloak.token) {
     mapDialogsRef.value?.closeAddImageDialog();
     return;
@@ -780,13 +799,24 @@ async function onAddFeatureImage(file: File) {
     });
 
     if (!res.ok) {
-      throw new Error(`HTTP error : ${res.status}`);
+      throw new Error(
+        await apiErrorMessage(
+          res,
+          "Ce format n'est pas pris en charge. Utilisez une image JPG ou PNG.",
+        ),
+      );
     }
 
     await loadInitialFeatures();
     mapDialogsRef.value?.closeAddImageDialog();
   } catch (e) {
     console.error("Upload image failed:", e);
+    showAlert(
+      "error",
+      e instanceof Error
+        ? e.message
+        : "Impossible d'ajouter l'image. Vérifiez le format (JPG ou PNG) et réessayez.",
+    );
   } finally {
     isAdding.value = false;
   }

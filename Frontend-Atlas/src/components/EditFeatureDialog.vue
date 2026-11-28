@@ -59,6 +59,21 @@
               />
             </div>
 
+            <div v-if="isImageElement" class="flex flex-col gap-1.5 min-w-0">
+              <div class="setting-card h-[50px]">
+                <label class="setting-card-label" for="edit-feature-stroke-color">
+                  Contour
+                </label>
+                <input
+                  id="edit-feature-stroke-color"
+                  v-model="editDraft.strokeColorHex"
+                  data-testid="image-stroke-color-input"
+                  type="color"
+                  class="setting-color-input"
+                />
+              </div>
+            </div>
+
             <div v-if="isTextElement" class="flex flex-col gap-1.5 min-w-0">
               <span class="field-label leading-5">
                 Aperçu
@@ -508,7 +523,14 @@ const editDraft = ref<FeatureEditSubmitPayload>({
 });
 const isEditing = ref(false);
 
-const isTextElement = computed(() => isTextFeature(featureToEdit.value));
+const isImageElement = computed(
+  () =>
+    Boolean(featureToEdit.value) &&
+    getMapElementType(featureToEdit.value) === "image",
+);
+const isTextElement = computed(
+  () => !isImageElement.value && isTextFeature(featureToEdit.value),
+);
 
 const availableCustomLabelStyles = computed<CustomLabelStyle[]>(() => {
   return props.customLabelStyles ?? [];
@@ -595,7 +617,7 @@ const defaultTextSizePx = computed(() => {
 });
 
 const hasGeometryControls = computed(() => {
-  if (!featureToEdit.value) return false;
+  if (!featureToEdit.value || isImageElement.value) return false;
   if (activeCustomLabelStyle.value || editDraft.value.customLabelStyleId) return false;
   return isEditingPoint.value || !isTextElement.value;
 });
