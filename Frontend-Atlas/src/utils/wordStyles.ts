@@ -142,7 +142,7 @@ export function isTextFeature(
   }
   const props = (feature.properties || {}) as Record<string, unknown>;
   const elemType = getMapElementType(feature as Feature);
-  if (elemType === "image" || Boolean((feature as Feature).image)) {
+  if (elemType === "image") {
     return false;
   }
   return (

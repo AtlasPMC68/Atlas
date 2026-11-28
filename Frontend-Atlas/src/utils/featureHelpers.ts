@@ -35,9 +35,13 @@ export function getMapElementType(
     properties?.mapElementType ??
     (properties as { map_element_type?: MapElementType } | undefined)
       ?.map_element_type;
+  if (rawMapElementType === "image") {
+    return "image";
+  }
   if (
-    rawMapElementType === "image" ||
-    (hasProperties && Boolean((featureOrProperties as Feature).image))
+    !rawMapElementType &&
+    hasProperties &&
+    Boolean((featureOrProperties as Feature).image)
   ) {
     return "image";
   }

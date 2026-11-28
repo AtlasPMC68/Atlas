@@ -103,7 +103,7 @@ import { useRouter } from "vue-router";
 import FileDropZone from "../../components/import/FileDropZone.vue";
 import ImportPreview from "../../components/import/ImportPreview.vue";
 import { useFileUpload } from "../../composables/useFileUpload";
-import { apiErrorMessage, apiFetch } from "../../utils/api";
+import { apiFetch } from "../../utils/api";
 
 const router = useRouter();
 
