@@ -347,9 +347,11 @@ export function getLabelPresentation(
   const wordType = getWordTypeForFeature(feature);
   const taxonomy = getWordTypeStyle(wordType);
   const customStyle = parseCustomStyle(props.customLabelStyle);
+  const storedLabel = String(props.labelText ?? "").trim();
+  const storedName = String(props.name ?? typedFeature.name ?? "").trim();
   const rawText =
     customText ??
-    String(props.labelText ?? props.name ?? typedFeature.name ?? "");
+    (storedLabel || storedName);
 
   // The text has its own colour when one was set; otherwise it follows the
   // element colour, which is also the point symbol's fill.

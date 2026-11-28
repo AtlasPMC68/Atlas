@@ -8,6 +8,8 @@ import {
   doesLayerIntersectBounds,
   applySelectionModifier,
   getNudgeDelta,
+  getSelectedTargetFeatures,
+  removeFeaturesByIds,
 } from "../../src/utils/selectionUtils";
 
 describe("selectionUtils - getContinuousRangeSelection", () => {
@@ -317,6 +319,42 @@ describe("selectionUtils - getNudgeDelta & Escape interaction", () => {
     handleKey("Escape");
     expect(selectedFeatureId).toBeNull();
     expect(multiSelectedFeatureIds).toEqual([]);
+  });
+});
+
+describe("selectionUtils - cut and duplicate selection helpers", () => {
+  const features = [
+    { id: "a", name: "A" },
+    { id: "b", name: "B" },
+    { id: "c", name: "C" },
+  ];
+
+  it("removeFeaturesByIds drops the cut selection and keeps the rest", () => {
+    expect(removeFeaturesByIds(features, ["b"])).toEqual([
+      { id: "a", name: "A" },
+      { id: "c", name: "C" },
+    ]);
+    expect(removeFeaturesByIds(features, ["a", "c"])).toEqual([
+      { id: "b", name: "B" },
+    ]);
+    expect(removeFeaturesByIds(features, [])).toEqual(features);
+  });
+
+  it("Ctrl+X cut copies the selection then removes those ids", () => {
+    const selectedId = "a";
+    const multiSelectedIds = ["a", "c"];
+    const clipboard = getSelectedTargetFeatures(
+      features,
+      selectedId,
+      multiSelectedIds,
+    );
+    expect(clipboard.map((f) => f.id)).toEqual(["a", "c"]);
+
+    const remaining = removeFeaturesByIds(
+      features,
+      clipboard.map((f) => String(f.id)),
+    );
+    expect(remaining.map((f) => f.id)).toEqual(["b"]);
   });
 });
 

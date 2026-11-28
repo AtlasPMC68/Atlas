@@ -53,4 +53,14 @@ describe("Multi-element copy and offset paste", () => {
     expect(polyCoords[0]).toEqual([10.5, 19.5]);
     expect(polyCoords[1]).toEqual([15.5, 19.5]);
   });
+
+  it("Ctrl+D duplicates the current selection with new ids and an offset", () => {
+    const selected = [feat1, feat2];
+    const duplicated = selected.map((f) => cloneFeatureWithOffset(f, 0.2, 0.1));
+
+    expect(duplicated).toHaveLength(2);
+    expect(duplicated[0].id).not.toBe(feat1.id);
+    expect(duplicated[1].id).not.toBe(feat2.id);
+    expect(duplicated[1].geometry.coordinates).toEqual([12.2, 18.1]);
+  });
 });

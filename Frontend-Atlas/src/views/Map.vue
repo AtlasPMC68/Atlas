@@ -212,7 +212,11 @@ import {
   getFeatureMapIds,
 } from "../utils/featureHelpers";
 import { nudgeFeatureByPixels } from "../utils/mapDragUtils";
-import { getNudgeDelta, getSelectedTargetFeatures } from "../utils/selectionUtils";
+import {
+  getNudgeDelta,
+  getSelectedTargetFeatures,
+  removeFeaturesByIds,
+} from "../utils/selectionUtils";
 import {
   ArrowsPointingOutIcon,
   ArrowsPointingInIcon,
@@ -507,15 +511,64 @@ function pasteCopiedFeature() {
 }
 
 function duplicateFeature(feature: Feature) {
+  duplicateFeatures([feature]);
+}
+
+function getSelectedCopyableFeatures(): Feature[] {
+  const ids =
+    multiSelectedFeatureIds.value.length > 0
+      ? multiSelectedFeatureIds.value
+      : selectedFeatureId.value
+        ? [selectedFeatureId.value]
+        : [];
+  if (ids.length === 0) return [];
+  return features.value.filter(
+    (f: Feature) => ids.includes(String(f.id)) && isCopyableFeature(f) && f.geometry,
+  );
+}
+
+function duplicateFeatures(sources: Feature[]) {
   const map = leafletMap.value;
-  if (!map || !feature.geometry) return;
+  if (!map || sources.length === 0) return;
 
   const { deltaLat, deltaLng } = getCenterOffsetDelta(map);
+  const pastedFeatures: Feature[] = [];
+  const newIds: string[] = [];
 
-  const pasted = cloneFeatureWithOffset(feature, deltaLng, deltaLat);
-  commitFeatureSnapshot([...features.value, pasted]);
-  selectedFeatureId.value = String(pasted.id);
+  sources.forEach((source: Feature) => {
+    if (!source.geometry) return;
+    const pasted = cloneFeatureWithOffset(source, deltaLng, deltaLat);
+    pastedFeatures.push(pasted);
+    newIds.push(String(pasted.id));
+  });
+
+  if (pastedFeatures.length === 0) return;
+
+  commitFeatureSnapshot([...features.value, ...pastedFeatures]);
+
+  if (pastedFeatures.length === 1) {
+    selectedFeatureId.value = newIds[0];
+    multiSelectedFeatureIds.value = [];
+  } else {
+    selectedFeatureId.value = null;
+    multiSelectedFeatureIds.value = newIds;
+  }
+}
+
+function duplicateSelectedFeatures() {
+  duplicateFeatures(getSelectedCopyableFeatures());
+}
+
+function cutSelectedFeatures(): boolean {
+  const validFeatures = getSelectedCopyableFeatures();
+  if (validFeatures.length === 0) return false;
+
+  copiedFeatures.value = validFeatures;
+  const idsToRemove = validFeatures.map((f: Feature) => String(f.id));
+  commitFeatureSnapshot(removeFeaturesByIds(features.value, idsToRemove));
+  selectedFeatureId.value = null;
   multiSelectedFeatureIds.value = [];
+  return true;
 }
 
 function onDirectDeleteFeature(feature: Feature) {
@@ -1858,6 +1911,17 @@ const handleKeyboardShortcuts = (e: KeyboardEvent) => {
 
   if (isMod && key === "c" && copySelectedFeature()) {
     e.preventDefault();
+    return;
+  }
+
+  if (isMod && key === "x" && cutSelectedFeatures()) {
+    e.preventDefault();
+    return;
+  }
+
+  if (isMod && key === "d") {
+    e.preventDefault();
+    duplicateSelectedFeatures();
     return;
   }
 

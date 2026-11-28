@@ -408,6 +408,26 @@ describe("shared word styles and label presentation", () => {
     expect(presentation.formattedText).toBe("Montreal");
   });
 
+  it("shows the city name on the map even if labelText is still empty", () => {
+    const feature: Feature = {
+      type: "Feature",
+      id: "city-unsaved",
+      name: "Test",
+      geometry: { type: "Point", coordinates: [-73.5, 45.5] },
+      properties: {
+        name: "Test",
+        labelText: "",
+        rawType: "city",
+        mapElementType: "point",
+      },
+      createdAt: "2026-01-01",
+      updatedAt: "2026-01-01",
+      projectId: "",
+    };
+
+    expect(getLabelPresentation(feature).formattedText).toBe("Test");
+  });
+
   it("prepareFeatureForEdit and coerceEditedFeature handle form roundtrips", () => {
     const feature: Feature = {
       type: "Feature",

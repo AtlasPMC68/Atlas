@@ -259,6 +259,15 @@ export function getSelectedTargetFeatures<T extends { id?: string | number }>(
   return allFeatures.filter((f) => f.id != null && idSet.has(String(f.id)));
 }
 
+export function removeFeaturesByIds<T extends { id?: string | number }>(
+  allFeatures: T[],
+  ids: (string | number)[],
+): T[] {
+  if (ids.length === 0) return allFeatures;
+  const idSet = new Set(ids.map(String));
+  return allFeatures.filter((f) => f.id == null || !idSet.has(String(f.id)));
+}
+
 export function getNudgeDelta(
   key: string,
   isShift: boolean,
