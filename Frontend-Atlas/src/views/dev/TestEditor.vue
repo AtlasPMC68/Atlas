@@ -274,6 +274,12 @@ async function loadTestZones(currentMapId: string) {
       }
 
       console.error("Failed to fetch test zones GeoJSON", res.status);
+      showAlert(
+        "error",
+        res.status === 403
+          ? "Vous n'avez pas l'autorisation de charger les zones de ce test."
+          : "Impossible de charger les zones de ce test.",
+      );
       return;
     }
 
@@ -294,6 +300,7 @@ async function loadTestZones(currentMapId: string) {
     featureVisibility.value = vis;
   } catch (err) {
     console.error("Error loading test zones:", err);
+    showAlert("error", "Impossible de charger les zones de ce test.");
   }
 }
 

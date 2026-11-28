@@ -6,6 +6,7 @@ import type { MapWithPm } from "../typescript/mapDrawing";
 import type { PendingCity } from "../typescript/addCityMode";
 import { upsertFeature } from "../utils/featureHelpers";
 import { applyWordStyleToFeature, formatWordText } from "../utils/wordStyles";
+import { showAlert } from "../composables/useAlert";
 
 export class AddCityModeService {
   public addCityMode = ref(false);
@@ -41,6 +42,11 @@ export class AddCityModeService {
     const map = this.getMap();
     if (!this.pendingCity.value || !map) return;
     const rawName = this.cityInputName.value.trim();
+    if (!rawName) {
+      showAlert("error", "Donnez un nom à la ville avant de valider.");
+      this.cancel();
+      return;
+    }
     const name = formatWordText(rawName, "city");
     const { latlng, marker } = this.pendingCity.value;
     marker.remove();
@@ -52,7 +58,7 @@ export class AddCityModeService {
         id,
         type: "Feature",
         projectId: this.getProjectId(),
-        mapId: "",
+        mapId: null,
         geometry: {
           type: "Point",
           coordinates: [latlng.lng, latlng.lat] as [number, number],

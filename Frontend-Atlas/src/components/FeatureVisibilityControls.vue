@@ -486,12 +486,20 @@ const selectMapValidationDialogRef = ref<HTMLDialogElement | undefined>(undefine
 const activeGroupType = ref<FeatureVisibilityGroupType | undefined>(undefined);
 
 function isFeatureNameMissing(feature: Feature): boolean {
-  const name = feature.properties?.name?.trim().toLowerCase();
+  const name = (
+    feature.properties?.name?.trim() ||
+    feature.properties?.labelText?.trim() ||
+    feature.name?.trim() ||
+    ""
+  ).toLowerCase();
   return !name || name === "nom manquant" || name === "! nom manquant";
 }
 
 function getFeatureDisplayName(feature: Feature): string {
-  const name = feature.properties?.name?.trim();
+  const name =
+    feature.properties?.name?.trim() ||
+    feature.properties?.labelText?.trim() ||
+    feature.name?.trim();
   if (!name || isFeatureNameMissing(feature)) {
     return "Nom manquant";
   }

@@ -1,6 +1,11 @@
 import { describe, it, expect } from "vitest";
 import L from "leaflet";
-import { circleToPolygon, layerToFeature } from "../../src/utils/mapDrawingFeature";
+import {
+  circleToPolygon,
+  extractFeatureFromLayer,
+  layerToFeature,
+} from "../../src/utils/mapDrawingFeature";
+import type { Feature } from "../../src/typescript/feature";
 
 describe("mapDrawingFeature - circleToPolygon", () => {
   it("converts a circle into a closed polygon ring with the specified steps", () => {
@@ -53,5 +58,31 @@ describe("mapDrawingFeature - circleToPolygon", () => {
     expect(feature?.properties.mapElementType).toBe("shape");
     expect(feature?.properties.shapeKind).toBe("circle");
     expect(feature?.geometry.type).toBe("Polygon");
+  });
+
+  it("keeps an existing city labelText when syncing a point marker layer", () => {
+    const feature: Feature = {
+      type: "Feature",
+      id: "city-1",
+      projectId: "p1",
+      name: "Québec",
+      createdAt: "2026-01-01T00:00:00Z",
+      updatedAt: "2026-01-01T00:00:00Z",
+      geometry: { type: "Point", coordinates: [-71.2, 46.8] },
+      properties: {
+        name: "Québec",
+        labelText: "Québec",
+        mapElementType: "point",
+        rawType: "city",
+      },
+    };
+
+    const marker = L.marker([46.8, -71.2]);
+    (marker as L.Marker & { feature?: Feature }).feature = feature;
+
+    const extracted = extractFeatureFromLayer(marker, 1608, "p1");
+    expect(extracted?.properties.labelText).toBe("Québec");
+    expect(extracted?.properties.name).toBe("Québec");
+    expect(extracted?.name).toBe("Québec");
   });
 });

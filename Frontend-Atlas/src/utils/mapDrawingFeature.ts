@@ -180,6 +180,13 @@ export function layerToFeature(
   const type: MapElementType = existingType ?? inferredType;
 
   const now = new Date().toISOString();
+  const resolvedName =
+    baseFeature?.properties?.name ||
+    labelText ||
+    baseFeature?.name ||
+    "";
+  const resolvedLabelText =
+    labelText || baseFeature?.properties?.labelText || undefined;
 
   return {
     id: getStableLayerFeatureId(layer),
@@ -188,8 +195,8 @@ export function layerToFeature(
     mapId: baseFeature?.mapId ?? null,
     geometry,
     properties: {
-      name: baseFeature?.properties?.name ?? "",
-      labelText,
+      name: resolvedName,
+      labelText: resolvedLabelText,
       sizePx,
       colorName: baseFeature?.properties?.colorName ?? "black",
       colorRgb: baseFeature?.properties?.colorRgb ?? [0, 0, 0],
@@ -209,8 +216,22 @@ export function layerToFeature(
     },
     createdAt: baseFeature?.createdAt ?? now,
     updatedAt: now,
-    name: baseFeature?.name ?? "",
+    name: resolvedName || baseFeature?.name || "",
   };
+}
+
+function mergeProperties(
+  base: Feature["properties"] | undefined,
+  overlay: Feature["properties"],
+): Feature["properties"] {
+  const merged: Feature["properties"] = { ...(base || {}) };
+  (Object.keys(overlay) as (keyof Feature["properties"])[]).forEach((key) => {
+    const value = overlay[key];
+    if (value !== undefined && value !== null) {
+      (merged as Record<string, unknown>)[key as string] = value;
+    }
+  });
+  return merged;
 }
 
 export function featureToLayer(feature: Feature): L.Layer | null {
@@ -321,10 +342,10 @@ export function extractFeatureFromLayer(
       extracted.createdAt = baseFeature.createdAt;
       extracted.name = baseFeature.name;
       extracted.properties.fillOpacity = baseFeature.properties.fillOpacity;
-      extracted.properties = {
-        ...(baseFeature.properties || {}),
-        ...(extracted.properties || {}),
-      };
+      extracted.properties = mergeProperties(
+        baseFeature.properties,
+        extracted.properties,
+      );
     }
 
     extracted.updatedAt = new Date().toISOString();

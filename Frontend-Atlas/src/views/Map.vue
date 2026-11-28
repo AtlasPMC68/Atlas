@@ -211,7 +211,11 @@ import {
   getFeatureMapId,
   getFeatureMapIds,
 } from "../utils/featureHelpers";
-import { isSupportedFeatureImage } from "../utils/featureImageFile";
+import {
+  isFeatureImageTooLarge,
+  isSupportedFeatureImage,
+  userMessageForFeatureImageUploadFailure,
+} from "../utils/featureImageFile";
 import { nudgeFeatureByPixels } from "../utils/mapDragUtils";
 import {
   getNudgeDelta,
@@ -467,6 +471,10 @@ function copySelectedFeature(): boolean {
     if (label && navigator.clipboard?.writeText) {
       void navigator.clipboard.writeText(label).catch((error: unknown) => {
         console.error("Could not copy feature label to clipboard:", error);
+        showAlert(
+          "error",
+          "Le nom n'a pas pu être copié dans le presse-papiers. L'élément est tout de même copié dans Atlas.",
+        );
       });
     }
   }
@@ -741,17 +749,21 @@ function onRedo() {
 
 function getImageNaturalSize(
   file: File,
-): Promise<{ width: number; height: number }> {
+): Promise<{ width: number; height: number } | null> {
   return new Promise((resolve) => {
     const url = URL.createObjectURL(file);
     const img = new Image();
     img.onload = () => {
       URL.revokeObjectURL(url);
+      if (!img.naturalWidth || !img.naturalHeight) {
+        resolve(null);
+        return;
+      }
       resolve({ width: img.naturalWidth, height: img.naturalHeight });
     };
     img.onerror = () => {
       URL.revokeObjectURL(url);
-      resolve({ width: 1, height: 1 });
+      resolve(null);
     };
     img.src = url;
   });
@@ -763,6 +775,11 @@ async function onAddFeatureImage(file: File) {
       "error",
       "Ce format n'est pas pris en charge. Utilisez une image JPG ou PNG.",
     );
+    return;
+  }
+
+  if (isFeatureImageTooLarge(file)) {
+    showAlert("error", "L'image est trop lourde. La taille maximale est de 10 Mo.");
     return;
   }
 
@@ -785,8 +802,13 @@ async function onAddFeatureImage(file: File) {
     formData.append("image", file);
 
     if (leafletMap.value) {
+      const size = await getImageNaturalSize(file);
+      if (!size) {
+        showAlert("error", "Ce fichier image est illisible. Utilisez un JPG ou un PNG valide.");
+        return;
+      }
       const LAT_SPAN = 16.0;
-      const { width, height } = await getImageNaturalSize(file);
+      const { width, height } = size;
       const center = leafletMap.value.getCenter();
       const latRad = center.lat * (Math.PI / 180);
       const lngSpan = (LAT_SPAN * (width / height)) / Math.cos(latRad);
@@ -804,11 +826,9 @@ async function onAddFeatureImage(file: File) {
     });
 
     if (!res.ok) {
+      const detail = await apiErrorMessage(res, "");
       throw new Error(
-        await apiErrorMessage(
-          res,
-          "Ce format n'est pas pris en charge. Utilisez une image JPG ou PNG.",
-        ),
+        userMessageForFeatureImageUploadFailure(res.status, detail),
       );
     }
 
@@ -820,7 +840,7 @@ async function onAddFeatureImage(file: File) {
       "error",
       e instanceof Error
         ? e.message
-        : "Impossible d'ajouter l'image. Vérifiez le format (JPG ou PNG) et réessayez.",
+        : "Impossible d'ajouter l'image. Réessayez.",
     );
   } finally {
     isAdding.value = false;
@@ -935,6 +955,7 @@ async function loadProjectMapsForTimeline() {
   } catch (e) {
     console.error("Failed to load map periods for timeline:", e);
     mapPeriods.value = [];
+    showAlert("error", "Impossible de charger les cartes du projet.");
   }
 }
 
