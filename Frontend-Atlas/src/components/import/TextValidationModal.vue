@@ -9,10 +9,10 @@
     aria-labelledby="text-validation-title"
     data-testid="text-validation-modal"
   >
-    <div class="modal-box w-11/12 max-w-7xl h-[90vh] max-h-[90vh] flex flex-col gap-4">
+    <div class="modal-box w-11/12 max-w-[96vw] xl:max-w-[92vw] 2xl:max-w-[88vw] h-[95vh] max-h-[95vh] flex flex-col gap-4 relative">
       <button
         type="button"
-        class="btn btn-sm btn-circle btn-ghost absolute right-2 top-2"
+        class="btn btn-sm btn-circle btn-ghost absolute right-4 top-4 z-10"
         aria-label="Fermer"
         :disabled="isSubmitting"
         @click="emit('cancel')"
@@ -20,7 +20,7 @@
         ✕
       </button>
 
-      <h2 id="text-validation-title" class="text-xl font-semibold flex items-center gap-2">
+      <h2 id="text-validation-title" class="text-xl font-bold pr-10 flex items-center gap-2">
         Validation des textes non reconnus
         <GuideLink guide="importation" :page="IMPORT_GUIDE_PAGES.validation" tooltip-position="right" />
       </h2>
@@ -36,6 +36,7 @@
           <ValidationImageViewer
             :display-image-url="displayImageUrl"
             :is-updating-reference-image="isUpdatingReferenceImage"
+            :is-newly-chosen="isNewlyChosen"
             :regions="textRegions"
             :highlighted-id="highlightedId"
             @select-image="onLocalImageSelected"
@@ -121,13 +122,6 @@
                 </button>
               </div>
 
-              <!-- What the OCR read, once the text has been changed -->
-              <p
-                v-if="item.originalText && item.originalText !== item.text"
-                class="text-xs text-base-content/60"
-              >
-                Texte détecté : « {{ item.originalText }} »
-              </p>
 
               <!-- Word type -->
               <div
@@ -136,29 +130,13 @@
                 @click.stop
               >
                 <span class="text-xs text-base-content/70 shrink-0">Type de mot</span>
-                <select
+                <LabelStyleSelect
                   v-model="item.labelStyleSelection"
-                  class="select select-sm select-bordered flex-1 min-w-0"
-                  data-testid="item-word-type-select"
+                  :custom-styles="availableCustomLabelStyles"
+                  compact
+                  test-id="item-word-type-select"
                   @change="onItemLabelStyleChange(item)"
-                >
-                  <option
-                    v-for="style in availableCustomLabelStyles"
-                    :key="style.id"
-                    :value="`custom:${style.id}`"
-                    :style="getCustomStyleObject(style)"
-                  >
-                    {{ style.name }}
-                  </option>
-                  <option
-                    v-for="(_, typeKey) in WORD_TYPE_STYLES"
-                    :key="typeKey"
-                    :value="typeKey"
-                    :style="getWordTypeOptionStyle(typeKey)"
-                  >
-                    {{ getWordTypeOptionLabel(typeKey) }}
-                  </option>
-                </select>
+                />
                 <button
                   type="button"
                   class="btn btn-sm btn-outline shrink-0"
@@ -200,7 +178,7 @@
         <div class="flex items-center gap-2 shrink-0">
           <button
             type="button"
-            class="btn btn-ghost"
+            class="modal-secondary-btn w-32"
             :disabled="isSubmitting"
             @click="emit('cancel')"
           >
@@ -208,7 +186,7 @@
           </button>
           <button
             type="button"
-            class="btn btn-primary"
+            class="btn btn-primary rounded-lg"
             :disabled="isSubmitting"
             @click="onConfirm"
           >
@@ -233,18 +211,15 @@ import type { CSSProperties } from "vue";
 import CustomLabelStyleManager from "../CustomLabelStyleManager.vue";
 import ValidationImageViewer from "./ValidationImageViewer.vue";
 import {
-  getCustomStyleObject,
   getEntryTypography,
-  getWordTypeOptionLabel,
-  getWordTypeOptionStyle,
   type CustomLabelStyle,
 } from "../../utils/labelPresentation";
+import LabelStyleSelect from "../LabelStyleSelect.vue";
 import { TrashIcon } from "@heroicons/vue/24/outline";
 import GuideLink from "../GuideLink.vue";
 import { IMPORT_GUIDE_PAGES } from "../../utils/guides";
 import { toTextRegions, type TextValidationEntry } from "../../utils/textValidation";
 import {
-  WORD_TYPE_STYLES,
   formatWordText,
   normalizeWordType,
 } from "../../utils/wordStyles";
@@ -324,17 +299,41 @@ function applyUpdatedCustomStylesToItems(styles: CustomLabelStyle[]) {
 }
 
 function onSaveCustomLabelStyles(styles: CustomLabelStyle[]) {
+  const previousIds = new Set(localCustomStyles.value.map((s) => s.id));
   localCustomStyles.value = [...styles];
   applyUpdatedCustomStylesToItems(styles);
+
+  // If a new style was added and items are selected, automatically adopt it
+  const newlyCreatedStyle = styles.find((s) => !previousIds.has(s.id));
+  if (newlyCreatedStyle) {
+    for (const item of allItems.value) {
+      if (item.selected) {
+        item.labelStyleSelection = `custom:${newlyCreatedStyle.id}`;
+        item.customLabelStyleId = newlyCreatedStyle.id;
+        item.customLabelStyle = newlyCreatedStyle;
+        if (newlyCreatedStyle.textTransform === "uppercase" && item.text) {
+          item.text = item.text.toUpperCase();
+        }
+      }
+    }
+  }
+
   emit("save-label-styles", styles);
 }
 
 const localImageMap = ref<Record<string, string>>({});
 const removedImageMap = ref<Record<string, boolean>>({});
+const existingReferenceImageFound = ref<Record<string, boolean>>({});
 const loadedReferenceImageMap = new Set<string>();
 const { fetchReferenceImage, saveReferenceImage, deleteReferenceImage } =
   useMapReferenceImage();
 const isUpdatingReferenceImage = ref(false);
+
+const isNewlyChosen = computed(() => {
+  const currentKey = props.mapId ?? "_default";
+  const hasExisting = Boolean(props.imageUrl || existingReferenceImageFound.value[currentKey]);
+  return !hasExisting && Boolean(localImageMap.value[currentKey]);
+});
 
 const displayImageUrl = computed(() => {
   const currentKey = props.mapId ?? "_default";
@@ -618,6 +617,10 @@ watch(
 
     loadedReferenceImageMap.add(mapId);
     if (result.success) {
+      existingReferenceImageFound.value = {
+        ...existingReferenceImageFound.value,
+        [mapId]: true,
+      };
       localImageMap.value = { ...localImageMap.value, [mapId]: result.data };
     } else if (result.status !== 404) {
       showAlert("error", result.error);

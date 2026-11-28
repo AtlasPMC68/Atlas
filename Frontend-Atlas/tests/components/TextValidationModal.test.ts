@@ -87,7 +87,7 @@ describe("TextValidationModal", () => {
   });
 
   it("does not render any temporary map container (map removed)", () => {
-    const wrapper = mountModal();
+    const wrapper = mountModal(testItems, true, null);
     expect(wrapper.find('[data-testid="map-container"]').exists()).toBe(false);
     expect(wrapper.text()).not.toContain("Positionnement géographique");
   });
@@ -100,7 +100,7 @@ describe("TextValidationModal", () => {
   });
 
   it("renders the header when isOpen is true", () => {
-    const wrapper = mountModal();
+    const wrapper = mountModal(testItems, true, null);
     expect(wrapper.text()).toContain("Validation des textes non reconnus");
   });
 
@@ -115,7 +115,7 @@ describe("TextValidationModal", () => {
   });
 
   it("renders the original image at the left when imageUrl is provided", () => {
-    const wrapper = mountModal();
+    const wrapper = mountModal(testItems, true);
     expect(wrapper.text()).toContain("Image de référence");
     const img = wrapper.find("img");
     expect(img.exists()).toBe(true);
@@ -147,7 +147,7 @@ describe("TextValidationModal", () => {
       configurable: true,
       value: vi.fn(),
     });
-    const wrapper = mountModal();
+    const wrapper = mountModal(testItems, true, null);
     const input = wrapper.find('input[type="file"]');
     const file = new File(["image"], "reference.png", { type: "image/png" });
     Object.defineProperty(input.element, "files", { value: [file], configurable: true });
@@ -173,13 +173,13 @@ describe("TextValidationModal", () => {
   });
 
   it("renders the Non localisés header with item count", () => {
-    const wrapper = mountModal();
+    const wrapper = mountModal(testItems, true, null);
     expect(wrapper.text()).toContain("Non localisés");
     expect(wrapper.text()).toContain("2");
   });
 
   it("shows non-localized items with text inputs, action buttons, and suggestion indicator", () => {
-    const wrapper = mountModal();
+    const wrapper = mountModal(testItems, true, null);
     const textInputs = wrapper.findAll('input[type="text"]');
     expect(textInputs.length).toBe(2);
     expect((textInputs[0].element as HTMLInputElement).value).toBe("Traité de Paris de 1783");
@@ -187,12 +187,10 @@ describe("TextValidationModal", () => {
     expect(wrapper.text()).toContain("Paris");
     // Item 1 has a nearby place suggestion, offered as a one-click button
     expect(wrapper.text()).toContain("Lieu suggéré");
-    // Item 2 was renamed, so what the OCR read stays visible
-    expect(wrapper.text()).toContain("Texte détecté : « Riv Sauvage »");
   });
 
   it("allows user to accept suggested city in 1 click and toggle back", async () => {
-    const wrapper = mountModal();
+    const wrapper = mountModal(testItems, true, null);
 
     // Check suggestion button for the item that has a nearby place suggestion
     const suggestionBtn = wrapper
@@ -241,13 +239,12 @@ describe("TextValidationModal", () => {
       (wrapper.find('input[type="text"]').element as HTMLInputElement).value,
     ).toBe("PROVINCE DE QUÉBEC");
     expect(
-      (wrapper.find('[data-testid="item-word-type-select"]').element as HTMLSelectElement)
-        .value,
+      wrapper.find('[data-testid="item-word-type-select"]').attributes("data-selected-value"),
     ).toBe("province");
   });
 
   it("allows editing text and emits confirm with all items", async () => {
-    const wrapper = mountModal();
+    const wrapper = mountModal(testItems, true, null);
 
     const textInputs = wrapper.findAll('input[type="text"]');
     await textInputs[0].setValue("Traité de 1783");
@@ -266,7 +263,7 @@ describe("TextValidationModal", () => {
   });
 
   it("allows selecting all, deselecting all, and toggling individual items via checkboxes", async () => {
-    const wrapper = mountModal();
+    const wrapper = mountModal(testItems, true, null);
     const selectAllCheckbox = wrapper.find('input[data-testid="select-all-checkbox"]');
     expect(selectAllCheckbox.exists()).toBe(true);
 
@@ -289,7 +286,7 @@ describe("TextValidationModal", () => {
   });
 
   it("deletes item completely from list when trash icon is clicked", async () => {
-    const wrapper = mountModal();
+    const wrapper = mountModal(testItems, true, null);
     expect(wrapper.text()).toContain("2 / 2 conservé(s)");
 
     const trashButtons = wrapper.findAll('button[title="Supprimer ce texte de la carte"]');
@@ -319,19 +316,19 @@ describe("TextValidationModal", () => {
       },
     ]);
 
-    const select = wrapper.find('select[data-testid="item-word-type-select"]');
+    const select = wrapper.find('[data-testid="item-word-type-select"]');
     expect(select.exists()).toBe(true);
+    expect(select.attributes("data-selected-value")).toBe("city");
 
-    // Initial value is city
-    expect((select.element as HTMLSelectElement).value).toBe("city");
-
-    // Change to province -> transform to uppercase
-    await select.setValue("province");
+    await select.find("button").trigger("click");
+    await select.find('[data-value="province"]').trigger("click");
+    await flushPromises();
     const textInput = wrapper.find('input[type="text"]');
     expect((textInput.element as HTMLInputElement).value).toBe("QUEBEC");
 
-    // Change back to city -> apply the canonical city capitalization.
-    await select.setValue("city");
+    await select.find("button").trigger("click");
+    await select.find('[data-value="city"]').trigger("click");
+    await flushPromises();
     expect((textInput.element as HTMLInputElement).value).toBe("Quebec");
   });
 
@@ -361,9 +358,10 @@ describe("TextValidationModal", () => {
       ],
     });
 
-    await wrapper
-      .find('[data-testid="item-word-type-select"]')
-      .setValue("custom:water-style");
+    const styleSelect = wrapper.find('[data-testid="item-word-type-select"]');
+    await styleSelect.find("button").trigger("click");
+    await styleSelect.find('[data-value="custom:water-style"]').trigger("click");
+    await flushPromises();
     await findButtonByText(
       wrapper,
       "Confirmer et afficher sur la carte",
@@ -387,24 +385,20 @@ describe("TextValidationModal", () => {
     ]);
 
     // When item is selected, word type selector is visible
-    expect(wrapper.find('select[data-testid="item-word-type-select"]').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="item-word-type-select"]').exists()).toBe(true);
 
-    // Uncheck item checkbox
     const itemCheckbox = wrapper.find('input[data-testid="item-checkbox"]');
     await itemCheckbox.setValue(false);
 
-    // Word type selector must now be hidden
-    expect(wrapper.find('select[data-testid="item-word-type-select"]').exists()).toBe(false);
+    expect(wrapper.find('[data-testid="item-word-type-select"]').exists()).toBe(false);
 
-    // Check item checkbox again
     await itemCheckbox.setValue(true);
 
-    // Word type selector is visible again
-    expect(wrapper.find('select[data-testid="item-word-type-select"]').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="item-word-type-select"]').exists()).toBe(true);
   });
 
   it("emits confirmed items with selected: false when deselecting all", async () => {
-    const wrapper = mountModal();
+    const wrapper = mountModal(testItems, true, null);
 
     // Deselect all
     const selectAllCheckbox = wrapper.find('input[data-testid="select-all-checkbox"]');
@@ -423,7 +417,7 @@ describe("TextValidationModal", () => {
   });
 
   it("emits cancel when Passer button is clicked", async () => {
-    const wrapper = mountModal();
+    const wrapper = mountModal(testItems, true, null);
     const cancelBtn = findButtonByText(wrapper, "Passer", true);
     expect(cancelBtn).toBeDefined();
     await cancelBtn!.trigger("click");

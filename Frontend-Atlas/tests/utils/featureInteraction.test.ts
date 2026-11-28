@@ -140,4 +140,27 @@ describe("createFeatureDoubleClickHandler", () => {
     handler.handleDblClick(featureA); // native dblclick right after -> should be deduplicated
     expect(onEdit).toHaveBeenCalledTimes(1);
   });
+
+  it("ignores duplicate click events within 80ms (echo/bubbling from leaf to group) and does not trigger onEdit", () => {
+    const onSelect = vi.fn();
+    const onEdit = vi.fn();
+
+    const handler = createFeatureDoubleClickHandler({
+      thresholdMs: 400,
+      onSelect,
+      onEdit,
+    });
+
+    handler.handleClick(featureA);
+    expect(onSelect).toHaveBeenCalledTimes(1);
+    expect(onEdit).not.toHaveBeenCalled();
+
+    // Leaflet leaf + parent layer group fire clicks 5ms apart on a single user click
+    vi.advanceTimersByTime(5);
+    handler.handleClick(featureA);
+
+    // Still only 1 select, and 0 edit
+    expect(onSelect).toHaveBeenCalledTimes(1);
+    expect(onEdit).not.toHaveBeenCalled();
+  });
 });

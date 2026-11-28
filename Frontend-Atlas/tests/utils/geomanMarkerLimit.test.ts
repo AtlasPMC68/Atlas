@@ -3,6 +3,19 @@ import L from "leaflet";
 import "@geoman-io/leaflet-geoman-free";
 import { anchorMarkerLimitToCursor } from "../../src/utils/geomanMarkerLimit";
 
+if (typeof PointerEvent === "undefined") {
+  class PointerEventPolyfill extends MouseEvent {
+    constructor(type: string, init?: MouseEventInit) {
+      super(type, init);
+    }
+  }
+  Object.defineProperty(globalThis, "PointerEvent", {
+    value: PointerEventPolyfill,
+    writable: true,
+    configurable: true,
+  });
+}
+
 type PmLayer = L.Polygon & {
   pm: {
     enable: (options: Record<string, unknown>) => void;
@@ -41,6 +54,34 @@ describe("anchorMarkerLimitToCursor", () => {
     container.remove();
   });
 
+  it("keeps the handles around the pointer when Leaflet mousemove does not fire", () => {
+    const layer = L.polygon(denseRing()).addTo(map) as PmLayer;
+    const start = L.latLng(22, -10);
+    map.fire("mousemove", { latlng: start });
+    layer.pm.enable({ limitMarkersToCount: 10 });
+
+    const end = L.latLng(22, 20);
+    const point = map.latLngToContainerPoint(end);
+    const rect = map.getContainer().getBoundingClientRect();
+    document.dispatchEvent(
+      new PointerEvent("pointermove", {
+        clientX: rect.left + point.x,
+        clientY: rect.top + point.y,
+        bubbles: true,
+      }),
+    );
+    (layer.pm as unknown as { applyLimitFilters: (args: object) => void }).applyLimitFilters(
+      {},
+    );
+
+    const shown = shownVertices(layer);
+    expect(shown.length).toBeGreaterThan(0);
+    for (const marker of shown) {
+      expect(marker.getLatLng().distanceTo(end)).toBeLessThan(1_000_000);
+    }
+    layer.pm.disable();
+  });
+
   it("keeps the handles around the cursor after a vertex is removed", () => {
     const layer = L.polygon(denseRing()).addTo(map) as PmLayer;
     // The western tip of the ring, where the user is working.
@@ -56,6 +97,36 @@ describe("anchorMarkerLimitToCursor", () => {
     for (const marker of shown) {
       expect(marker.getLatLng().distanceTo(cursor)).toBeLessThan(1_000_000);
     }
+    layer.pm.disable();
+  });
+
+  it("does not hide the dragged vertex when the limit filter runs mid-drag", () => {
+    const layer = L.polygon(denseRing()).addTo(map) as PmLayer;
+    const start = L.latLng(22, -10);
+    map.fire("mousemove", { latlng: start });
+    layer.pm.enable({ limitMarkersToCount: 10 });
+
+    const before = shownVertices(layer).map((m) => m.getLatLng().toString());
+    map.fire("pm:markerdragstart");
+
+    const far = L.latLng(22, 20);
+    const point = map.latLngToContainerPoint(far);
+    const rect = map.getContainer().getBoundingClientRect();
+    document.dispatchEvent(
+      new PointerEvent("pointermove", {
+        clientX: rect.left + point.x,
+        clientY: rect.top + point.y,
+        bubbles: true,
+      }),
+    );
+    (layer.pm as unknown as { applyLimitFilters: (args: object) => void }).applyLimitFilters(
+      {},
+    );
+
+    const during = shownVertices(layer).map((m) => m.getLatLng().toString());
+    expect(during).toEqual(before);
+
+    map.fire("pm:markerdragend");
     layer.pm.disable();
   });
 });

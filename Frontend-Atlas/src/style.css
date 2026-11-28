@@ -70,15 +70,138 @@
 
 @layer components {
   .btn-secondary {
-    @apply btn bg-white text-gray-700 border border-gray-300 hover:bg-gray-50 focus:ring-primary-500 shadow-sm hover:shadow-md;
+    @apply btn bg-white text-gray-700 border border-gray-400 hover:bg-gray-50 focus:ring-primary-500 shadow-sm hover:shadow-md;
   }
 
   .card {
-    @apply bg-white rounded-xl shadow-sm border border-gray-200 p-6 transition-shadow hover:shadow-md;
+    @apply bg-white rounded-xl shadow-sm border border-gray-300 p-6 transition-shadow hover:shadow-md;
   }
 
   .input {
-    @apply block w-full px-3 py-2 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-primary-500 sm:text-sm;
+    @apply block w-full px-3 py-2 border border-gray-400 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-primary-500 sm:text-sm;
+  }
+
+  /* Titres de sections et libellés d'éditeur */
+  .section-title {
+    display: block;
+    padding: 0;
+    font-size: 1rem;
+    line-height: 1.5rem;
+    font-weight: 600;
+    color: var(--color-base-content);
+  }
+
+  .field-label {
+    @apply block py-0 text-sm font-medium text-base-content opacity-70;
+  }
+
+  .field-hint {
+    @apply text-xs text-base-content opacity-60;
+  }
+
+  /* Blocs de section séparés */
+  .editor-section {
+    @apply flex flex-col gap-2.5 pt-2 border-t border-gray-300 min-w-0;
+  }
+
+  .editor-section-compact {
+    @apply flex flex-col gap-1.5 pt-1 border-t border-gray-300 min-w-0;
+  }
+
+  /* Cartes de réglages uniformes avec contour légèrement plus foncé */
+  .setting-card {
+    @apply flex items-center justify-between gap-2 border border-gray-400 rounded-lg px-3 py-2 bg-base-100 min-h-[50px] min-w-0 w-full;
+  }
+
+  .setting-preview-card {
+    @apply grid grid-cols-2 items-center border border-gray-400 rounded-lg bg-base-100 min-h-[50px] min-w-0 w-full overflow-hidden;
+  }
+
+  .setting-card-label {
+    @apply text-sm font-medium text-base-content opacity-80 truncate cursor-pointer min-w-0;
+  }
+
+  .setting-number-input {
+    @apply w-16 text-center text-sm font-semibold bg-base-200 rounded border border-gray-400 focus:outline-none shrink-0 py-1;
+  }
+
+  .setting-number-input:focus {
+    border-color: var(--color-primary);
+  }
+
+  /* Sélecteurs de couleur arrondis */
+  .setting-color-input {
+    @apply h-8 w-8 cursor-pointer rounded-lg border border-gray-400 bg-base-100 p-0.5 shrink-0 overflow-hidden;
+  }
+
+  .setting-color-input::-webkit-color-swatch-wrapper {
+    padding: 0;
+    border-radius: 6px;
+  }
+
+  .setting-color-input::-webkit-color-swatch {
+    border: none;
+    border-radius: 6px;
+  }
+
+  /* Encadré dédié à l'aperçu */
+  .preview-frame {
+    @apply rounded-xl border-2 border-gray-300 bg-gray-100 p-3 min-w-0 overflow-hidden;
+  }
+
+  .preview-box {
+    @apply h-full w-full flex items-center gap-2 px-3 rounded-lg bg-base-100 border border-gray-300 overflow-hidden;
+  }
+
+  /* Tooltip à fond blanc uniformisé */
+  .tooltip-light::before,
+  .tooltip::before {
+    @apply bg-white text-gray-800 border border-gray-300 shadow-md text-xs font-normal rounded-md px-2 py-1;
+  }
+
+  .tooltip-light::after,
+  .tooltip::after {
+    @apply border-gray-300;
+  }
+
+  .tooltip.tooltip-bottom::after,
+  .tooltip-bottom.tooltip-light::after {
+    border-bottom-color: #cbd5e1 !important;
+  }
+
+  .tooltip.tooltip-top::after,
+  .tooltip-top.tooltip-light::after {
+    border-top-color: #cbd5e1 !important;
+  }
+
+  .tooltip.tooltip-left::after,
+  .tooltip-left.tooltip-light::after {
+    border-left-color: #cbd5e1 !important;
+  }
+
+  .tooltip.tooltip-right::after,
+  .tooltip-right.tooltip-light::after {
+    border-right-color: #cbd5e1 !important;
+  }
+
+.tooltip-light::before,
+.tooltip::before,
+.tooltip-light::after,
+.tooltip::after {
+  z-index: 50;
+}
+  /* Boutons d'action */
+  .modal-secondary-btn {
+    @apply btn btn-outline border-gray-400 rounded-lg w-32 shrink-0 text-sm hover:bg-base-200 hover:text-base-content;
+  }
+
+  .modal-secondary-btn:hover {
+    border-color: var(--color-base-content);
+  }
+
+  .icon-action-btn,
+  .icon-action-btn-sm {
+    @apply flex h-5 w-5 items-center justify-center rounded hover:bg-base-200;
   }
 }
 
@@ -93,10 +216,8 @@
 }
 
 /* ── Leaflet Tile Seams / White Lines Fix ──────────────────────────────────── */
-/* Prevents white hairline seams/grid lines between tiles under fractional zoom,
-   browser zoom, and OS display scaling (e.g. 125%/150% on Windows). */
 .leaflet-container {
-  background-color: #d4dadc !important; /* Matches CARTO basemap ocean background */
+  background-color: #d4dadc !important;
 }
 
 #map {
@@ -105,7 +226,6 @@
 
 .leaflet-container img.leaflet-tile,
 .leaflet-tile {
-  /* Prevent additive color blending (plus-lighter in Leaflet 1.9.4) turning overlapping edges white */
   mix-blend-mode: normal !important;
   outline: 1px solid transparent;
 }
@@ -115,7 +235,6 @@
 }
 
 /* ── Shape scaling handles ─────────────────────────────────────────────────── */
-/* Size and cursor are set inline by ShapeScalingService (iconSize / el.style.cursor). */
 .shape-resize-handle {
   box-sizing: border-box;
   background: var(--shape-handle-bg);
@@ -145,7 +264,6 @@
   pointer-events: none;
 }
 
-/* Legacy single-handle used by the image overlay resize */
 .image-resize-handle {
   width: 12px !important;
   height: 12px !important;
@@ -275,10 +393,10 @@
   border-bottom-right-radius: 4px !important;
 }
 
+/* ── Timeline ──────────────────────────────────────────────────────────────── */
 .timeline-container {
   position: relative;
-  z-index: 1000;
-  isolation: isolate;
+  overflow: visible;
   display: flex;
   align-items: flex-start;
   gap: 1rem;
@@ -292,6 +410,7 @@
 
 .slider-wrap {
   position: relative;
+  overflow: visible;
   z-index: 1000;
   flex: 1;
 }
@@ -351,38 +470,128 @@
 
 .period-tracks {
   position: relative;
-  margin-bottom: 0.4rem;
+  margin-bottom: 0.3rem;
   border-radius: 0.25rem;
   background: #ffffff;
   overflow: visible;
-  z-index: 1000;
+  z-index: 10;
+}
+
+.period-tracks:has(.period-track:hover),
+.period-tracks:hover {
+  z-index: 50;
 }
 
 .period-track {
   position: absolute;
   border-radius: 999px;
   opacity: 0.95;
-  z-index: 1000;
-  --tooltip-color: #ffffff;
-  --tooltip-text-color: #111827;
+  z-index: 10;
 }
 
-.period-track .tooltip-content {
-  z-index: 2000;
-  background: #ffffff;
-  color: #111827;
+.period-track:hover {
+  z-index: 50;
 }
 
-.period-track.tooltip::before,
-.period-track.tooltip::after {
-  background-color: #ffffff !important;
-  border-color: #ffffff !important;
-  color: #ffffff !important;
+.period-track .period-track-popover {
+  pointer-events: none !important;
+  z-index: 100;
+}
+
+/* Unified selected feature style across the application (sidebar list, popover, map) */
+.app-feature-selected {
+  border: 2px solid #2563eb !important;
+  background-color: rgba(37, 99, 235, 0.08) !important;
 }
 
 .timeline-year-range,
 .timeline-day-range {
   display: block;
+}
+
+/* Refined timeline slider track and thumb */
+.timeline-range {
+  -webkit-appearance: none;
+  appearance: none;
+  height: 0.625rem;
+  border-radius: 9999px;
+  outline: none;
+  cursor: pointer;
+  background: #e2e8f0;
+}
+
+.timeline-range::-webkit-slider-runnable-track {
+  height: 0.625rem;
+  border-radius: 9999px;
+  background: inherit;
+}
+
+.timeline-range::-moz-range-track {
+  height: 0.625rem;
+  border-radius: 9999px;
+  background: inherit;
+}
+
+.timeline-range--unfilled {
+  background: #e2e8f0;
+}
+
+.timeline-range--unfilled::-webkit-slider-runnable-track {
+  background: #e2e8f0;
+}
+
+.timeline-range--unfilled::-moz-range-track {
+  background: #e2e8f0;
+}
+
+.timeline-range--filled {
+  background: var(--color-primary);
+}
+
+.timeline-range--filled::-webkit-slider-runnable-track {
+  background: var(--color-primary);
+}
+
+.timeline-range--filled::-moz-range-track {
+  background: var(--color-primary);
+}
+
+.timeline-range::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 1.15rem;
+  height: 1.15rem;
+  border-radius: 9999px;
+  background: #ffffff;
+  border: 2.5px solid var(--color-primary);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+  cursor: pointer;
+  margin-top: calc(0.625rem / 2 - 1.15rem / 2);
+  transition: transform 0.12s ease;
+}
+
+.timeline-range::-webkit-slider-thumb:hover {
+  transform: scale(1.15);
+}
+
+.timeline-range::-moz-range-thumb {
+  width: 1.15rem;
+  height: 1.15rem;
+  border-radius: 9999px;
+  background: #ffffff;
+  border: 2.5px solid var(--color-primary);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+  cursor: pointer;
+}
+
+.timeline-range--specific::-webkit-slider-thumb {
+  border-width: 3.5px;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.25);
+}
+
+.timeline-range--specific::-moz-range-thumb {
+  border-width: 3.5px;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.25);
 }
 
 .arrow-head {
@@ -433,4 +642,15 @@
 .timeline-filter-toggle:focus-visible {
   outline: 2px solid var(--color-primary);
   outline-offset: 2px;
+}
+
+.leaflet-container,
+.city-label-text,
+.label-wrapper,
+.label-content,
+.label-content * {
+  -webkit-user-select: none !important;
+  -moz-user-select: none !important;
+  -ms-user-select: none !important;
+  user-select: none !important;
 }

@@ -16,6 +16,12 @@ class LabelStyle(BaseModel):
     color: str = Field(pattern=r"^#[0-9A-Fa-f]{6}$")
     priority: int = Field(default=30, ge=0, le=100)
     min_zoom: float = Field(default=1.0, ge=0, le=20)
+    has_point: bool = False
+    point_color: str | None = Field(default=None, pattern=r"^#[0-9A-Fa-f]{6}$")
+    point_stroke_color: str | None = Field(default=None, pattern=r"^#[0-9A-Fa-f]{6}$")
+    point_fill_opacity: float | None = Field(default=None, ge=0.0, le=1.0)
+    point_stroke_opacity: float | None = Field(default=None, ge=0.0, le=1.0)
+    point_stroke_width: float | None = Field(default=None, ge=0.0, le=20.0)
 
 
 class LabelStylesRequest(BaseModel):

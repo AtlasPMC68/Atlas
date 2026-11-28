@@ -142,10 +142,18 @@ defineExpose({
 
 <template>
   <dialog ref="dialogRef" class="modal" @close="onDialogClose">
-    <div class="modal-box p-0">
+    <div class="modal-box p-0 relative">
+      <button
+        type="button"
+        class="btn btn-sm btn-circle btn-ghost absolute right-4 top-4 z-10"
+        :disabled="isCreating"
+        @click="dialogRef?.close()"
+      >
+        ✕
+      </button>
       <form @submit.prevent="createProject">
         <div class="card-body">
-          <h3 class="text-lg font-bold">Créer une nouvelle carte</h3>
+          <h3 class="text-xl font-bold">Créer un nouveau projet</h3>
 
           <fieldset class="fieldset" :disabled="isCreating">
             <label class="label">Titre</label>
@@ -169,7 +177,7 @@ defineExpose({
               <div class="flex items-center gap-1">
                 <span class="fieldset-legend">Accès au projet</span>
                 <div
-                  class="tooltip tooltip-right items-center"
+                  class="tooltip tooltip-light tooltip-right items-center"
                   data-tip="Les projets publics sont visibles par tous les utilisateurs, tandis que les projets privés ne sont accessibles que par vous."
                 >
                   <QuestionMarkCircleIcon class="h-4 w-4 text-gray-400" />
@@ -191,19 +199,19 @@ defineExpose({
             </div>
           </fieldset>
 
-          <div class="flex justify-end gap-2 mt-8">
+          <div class="modal-action mt-6 flex justify-end gap-2">
             <button
               type="button"
-              class="btn btn-ghost"
+              class="modal-secondary-btn w-32"
               :disabled="isCreating"
-              @click="dialogRef?.close();"
+              @click="dialogRef?.close()"
             >
               Annuler
             </button>
 
             <button
               type="submit"
-              class="btn btn-primary flex items-center gap-2"
+              class="btn btn-primary rounded-lg w-32 flex items-center justify-center gap-2"
               :disabled="!newProjectTitle?.trim() || isCreating"
             >
               <span>Créer</span>

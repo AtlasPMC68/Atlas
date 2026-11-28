@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { onMounted, ref } from "vue";
 import { useRouter } from "vue-router";
-import keycloak from "../../keycloak";
+import { apiErrorMessage, apiFetch } from "../../utils/api";
 
 interface DevTestSummary {
   mapId: string;
@@ -23,11 +23,9 @@ async function loadTests() {
   isLoading.value = true;
   loadError.value = null;
   try {
-    const res = await fetch(`${import.meta.env.VITE_API_URL}/dev-test-api/tests`, {
-      headers: { Authorization: `Bearer ${keycloak.token}` },
-    });
+    const res = await apiFetch("/dev-test-api/tests");
     if (!res.ok) {
-      throw new Error(`Erreur lors du chargement des tests (${res.status})`);
+      throw new Error(await apiErrorMessage(res, "Erreur lors du chargement des tests"));
     }
     const data = (await res.json()) as DevTestSummary[];
     tests.value = Array.isArray(data) ? data : [];
@@ -54,16 +52,12 @@ async function deleteTest(test: DevTestSummary) {
   deletingId.value = test.mapId;
   loadError.value = null;
   try {
-    const res = await fetch(
-      `${import.meta.env.VITE_API_URL}/dev-test-api/tests/${test.mapId}`,
-      {
-        method: "DELETE",
-        headers: { Authorization: `Bearer ${keycloak.token}` },
-      },
-    );
+    const res = await apiFetch(`/dev-test-api/tests/${test.mapId}`, {
+      method: "DELETE",
+    });
 
     if (!res.ok) {
-      throw new Error(`Erreur lors de la suppression du test (${res.status})`);
+      throw new Error(await apiErrorMessage(res, "Erreur lors de la suppression du test"));
     }
 
     tests.value = tests.value.filter((t) => t.mapId !== test.mapId);

@@ -4837,7 +4837,9 @@
     "lon": -63.6769,
     "aliases": [
       "arctic ocean",
-      "ocean arctique"
+      "ocean arctique",
+      "arctic",
+      "arctique"
     ]
   },
   {
@@ -4848,7 +4850,8 @@
     "lon": 10.2637,
     "aliases": [
       "ocean austral",
-      "southern ocean"
+      "southern ocean",
+      "austral"
     ]
   },
   {
@@ -4859,7 +4862,10 @@
     "lon": -39.0447,
     "aliases": [
       "north atlantic ocean",
-      "ocean atlantique"
+      "ocean atlantique",
+      "atlantic ocean",
+      "atlantic",
+      "atlantique"
     ]
   },
   {
@@ -4872,7 +4878,9 @@
       "north pacific ocean",
       "ocean pacifique",
       "pacific ocean",
-      "pacifique"
+      "pacific",
+      "pacifique",
+      "north pacific"
     ]
   },
   {
@@ -4885,7 +4893,8 @@
       "ocean pacifique",
       "south pacific ocean",
       "pacific ocean",
-      "pacifique"
+      "pacifique",
+      "south pacific"
     ]
   },
   {
@@ -4896,7 +4905,9 @@
     "lon": 88.3913,
     "aliases": [
       "indian ocean",
-      "ocean indien"
+      "ocean indien",
+      "indien",
+      "indian"
     ]
   },
   {
@@ -4907,7 +4918,10 @@
     "lon": -30.9973,
     "aliases": [
       "ocean atlantique",
-      "south atlantic ocean"
+      "south atlantic ocean",
+      "atlantic ocean",
+      "atlantic",
+      "atlantique"
     ]
   },
   {

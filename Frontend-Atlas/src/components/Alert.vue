@@ -11,7 +11,7 @@
       v-if="alert"
       role="alert"
       :class="[
-        'alert fixed bottom-6 right-6 z-[1000] w-auto max-w-sm shadow-lg',
+        'alert fixed bottom-6 right-6 z-[9999] w-auto max-w-sm shadow-lg',
         alert.type === 'success' ? 'alert-success' : 'alert-error',
       ]"
     >

@@ -340,23 +340,31 @@ async function fetchMapsAndRender() {
 
     <!-- Delete confirmation dialog -->
     <dialog ref="deleteConfirmDialogRef" class="modal">
-      <div class="modal-box">
-        <h3 class="text-lg font-bold">Supprimer le projet</h3>
+      <div class="modal-box relative">
+        <button
+          type="button"
+          class="btn btn-sm btn-circle btn-ghost absolute right-4 top-4 z-10"
+          :disabled="isDeleting"
+          @click="deleteConfirmDialogRef?.close()"
+        >
+          ✕
+        </button>
+        <h3 class="text-xl font-bold">Supprimer le projet</h3>
         <p class="py-4">
           Êtes-vous sûr de vouloir supprimer
           <span class="font-semibold">{{ projectToDelete?.title }}</span> ?
           Cette action est irréversible.
         </p>
-        <div class="modal-action">
+        <div class="modal-action mt-6 flex justify-end gap-2">
           <button
-            class="btn"
+            class="modal-secondary-btn w-32"
             :disabled="isDeleting"
             @click="deleteConfirmDialogRef?.close()"
           >
             Annuler
           </button>
           <button
-            class="btn btn-error"
+            class="btn btn-error rounded-lg w-32 text-white"
             :disabled="isDeleting"
             @click="executeDelete"
           >
@@ -375,10 +383,18 @@ async function fetchMapsAndRender() {
 
     <!-- Edit project dialog -->
     <dialog ref="editProjectDialogRef" class="modal">
-      <div class="modal-box p-0">
+      <div class="modal-box p-0 relative">
+        <button
+          type="button"
+          class="btn btn-sm btn-circle btn-ghost absolute right-4 top-4 z-10"
+          :disabled="isEditing"
+          @click="editProjectDialogRef?.close()"
+        >
+          ✕
+        </button>
         <form @submit.prevent="saveProject">
           <div class="card-body">
-            <h3 class="text-lg font-bold">Modifier le projet</h3>
+            <h3 class="text-xl font-bold">Modifier le projet</h3>
 
             <fieldset class="fieldset" :disabled="isEditing">
               <label class="label">Titre</label>
@@ -400,7 +416,7 @@ async function fetchMapsAndRender() {
                 <div class="flex items-center gap-1">
                   <span class="fieldset-legend">Accès au projet</span>
                   <div
-                    class="tooltip tooltip-right"
+                    class="tooltip tooltip-light tooltip-right"
                     data-tip="Les projets publics sont visibles par tous les utilisateurs, tandis que les projets privés ne sont accessibles que par vous."
                   >
                     <QuestionMarkCircleIcon class="h-4 w-4 text-gray-400" />
@@ -422,10 +438,10 @@ async function fetchMapsAndRender() {
               </div>
             </fieldset>
 
-            <div class="flex justify-end gap-2 mt-8">
+            <div class="modal-action mt-6 flex justify-end gap-2">
               <button
                 type="button"
-                class="btn btn-ghost"
+                class="modal-secondary-btn w-32"
                 :disabled="isEditing"
                 @click="editProjectDialogRef?.close()"
               >
@@ -433,7 +449,7 @@ async function fetchMapsAndRender() {
               </button>
               <button
                 type="submit"
-                class="btn btn-primary flex items-center"
+                class="btn btn-primary rounded-lg w-32 flex items-center justify-center"
                 :disabled="!editProjectTitle?.trim() || isEditing"
               >
                 <span

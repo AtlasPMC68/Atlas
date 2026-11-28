@@ -140,8 +140,14 @@ def _mtime_or_none(path: str) -> Optional[float]:
         return None
 
 
+# Minimum line length in degrees to keep in linework (filters out tiny isolated islands like Bermuda ~0.48 deg)
+DEFAULT_MIN_LINE_LENGTH_DEG = 1.0
+
+
 @lru_cache(maxsize=8)
-def _load_linework_cached(path: str, mtime: float) -> Optional[BaseGeometry]:
+def _load_linework_cached(
+    path: str, mtime: float, min_length: float = 0.0
+) -> Optional[BaseGeometry]:
     """Union every feature of a layer down to linework."""
 
     _ = mtime  # in the signature so the cache invalidates when the file changes
@@ -168,6 +174,8 @@ def _load_linework_cached(path: str, mtime: float) -> Optional[BaseGeometry]:
             geom = geom.boundary
         if geom is None or geom.is_empty:
             continue
+        if min_length > 0.0 and geom.length < min_length:
+            continue
         parts.append(geom)
 
     if not parts:
@@ -177,13 +185,15 @@ def _load_linework_cached(path: str, mtime: float) -> Optional[BaseGeometry]:
     return unary_union(parts)
 
 
-def load_reference_linework(filename: str) -> Optional[BaseGeometry]:
+def load_reference_linework(
+    filename: str, min_length: float = 0.0
+) -> Optional[BaseGeometry]:
     path = _layer_path(filename)
     mtime = _mtime_or_none(path)
     if mtime is None:
         logger.warning(f"Reference layer not found: {path}")
         return None
-    return _load_linework_cached(path, mtime)
+    return _load_linework_cached(path, mtime, min_length)
 
 
 @lru_cache(maxsize=4)

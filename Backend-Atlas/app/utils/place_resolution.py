@@ -355,12 +355,21 @@ def find_geo_entity(
         if close:
             candidates: List[Dict[str, Any]] = []
             seen_candidates: Set[Tuple[Any, Any, Any, Any]] = set()
+            q_toks = [t for t in norm.split() if len(t) >= 3 and t not in _IGNORABLE_TOKENS]
             for key in close:
+                # Token guardrail on fuzzy geographic entity matches
+                if q_toks:
+                    k_toks = [t for t in key.split() if len(t) >= 3 and t not in _IGNORABLE_TOKENS]
+                    if not _tokens_compatible(q_toks, k_toks, cutoff):
+                        continue
+
                 for ent in _GEO_INDEX.get(key, []):
                     ekey = (ent.get("type"), ent.get("name"), ent.get("lat"), ent.get("lon"))
                     if ekey not in seen_candidates:
                         seen_candidates.add(ekey)
                         candidates.append(ent)
+            if not candidates:
+                return None
             return resolve_best_candidate(candidates, target_pos=target_pos, bounds=bounds, query=text)
 
     return None
@@ -373,6 +382,47 @@ def _parse_pop(val: Any) -> int:
     except (TypeError, ValueError):
         return 0
 
+
+_GENERIC_ADMIN_TERMS: Set[str] = {
+    "de", "del", "des", "du", "d", "la", "le", "les", "l", "of", "the",
+    "province", "territoire", "territory", "state", "etat", "état",
+    "city", "ville", "town", "township", "village", "county", "comte", "comté",
+    "municipality", "municipalite", "municipalité", "borough",
+}
+
+_IGNORABLE_TOKENS: Set[str] = _GENERIC_ADMIN_TERMS | set(_PREFIX_TYPE_MAP.keys())
+
+
+def _token_score(q_toks: List[str], c_toks: List[str]) -> float | None:
+    """Min bidirectional SequenceMatcher score, or None when either side is empty."""
+    if not q_toks or not c_toks:
+        return None
+    query_to_candidate = min(
+        max((difflib.SequenceMatcher(None, q, k).ratio() for k in c_toks), default=0.0)
+        for q in q_toks
+    )
+    candidate_to_query = min(
+        max((difflib.SequenceMatcher(None, k, q).ratio() for q in q_toks), default=0.0)
+        for k in c_toks
+    )
+    return min(query_to_candidate, candidate_to_query)
+
+
+def _tokens_compatible(q_toks: List[str], c_toks: List[str], cutoff: float) -> bool:
+    """True when query and candidate tokens match in both directions above *cutoff*."""
+    score = _token_score(q_toks, c_toks)
+    return score is not None and score >= cutoff
+
+
+_REPEATED_PREFIX_SPLIT = re.compile(
+    r"(?<=\w)\s+(?=(?:Fort|Cap|Lac|Port|Baie|Ile|Île|Saint|Sainte|Rivière|Riviere|Mont|Mount|New|Nouveau)\b)",
+    re.IGNORECASE,
+)
+
+_CITY_BASE_EXCEPTIONS: Set[str] = {
+    "quebec", "mexico", "panama", "guatemala", "luxembourg", "vatican",
+    "kansas", "oklahoma", "carson", "taipei", "kuwait", "djibouti",
+}
 
 _gc = geonamescache.GeonamesCache()
 _CITY_INDEX: Dict[str, List[Dict[str, Any]]] = {}
@@ -398,7 +448,7 @@ for _info in _gc.get_cities().values():
     _CITY_INDEX.setdefault(_ck, []).append(_city)
     if _ck.endswith(" city"):
         _base = _ck[:-5].strip()
-        if _base:
+        if _base and (_base in _CITY_BASE_EXCEPTIONS or len(_base.split()) >= 2):
             _CITY_INDEX.setdefault(_base, []).append(_city)
 
     _gid = _city.get("geonameid") or (_name, _lat, _lon)
@@ -442,7 +492,47 @@ def _get_spatial_cells(lat: float, lon: float, radius_km: float) -> List[Tuple[i
     return cells
 
 
+def _split_into_potential_subparts(text: str) -> List[str]:
+    """Split text if it contains repeated prefixes (e.g. 'Fort Rupert Fort Moose') or line breaks."""
+    subparts: List[str] = []
+    # 1. Line breaks
+    for line in text.split("\n"):
+        line_clean = line.strip()
+        if not line_clean:
+            continue
+        # 2. Check for repeated prefixes like "Fort ... Fort ...", "Cap ... Cap ...", etc.
+        # Find prefix boundaries using common geographic prefixes
+        pieces = _REPEATED_PREFIX_SPLIT.split(line_clean)
+        for piece in pieces:
+            p_strip = piece.strip()
+            if p_strip and len(p_strip) >= 3:
+                subparts.append(p_strip)
+    return subparts
+
+
 def find_nearby_candidate_place(
+    text: str,
+    coords: List[float],
+    radius_km: float = 75.0,
+    min_similarity: float = 0.80,
+) -> Optional[Dict[str, Any]]:
+    """Find a nearby city or geographic entity matching OCR text for review."""
+    direct_match = _find_single_nearby_candidate_place(text, coords, radius_km, min_similarity)
+    if direct_match:
+        return direct_match
+
+    # Lexical split for merged blocks (e.g. 'Fort Ruidt Fort Moose' or multi-line)
+    subparts = _split_into_potential_subparts(text)
+    if len(subparts) > 1:
+        for subpart in subparts:
+            sub_match = _find_single_nearby_candidate_place(subpart, coords, radius_km, min_similarity)
+            if sub_match:
+                return sub_match
+
+    return None
+
+
+def _find_single_nearby_candidate_place(
     text: str,
     coords: List[float],
     radius_km: float = 75.0,
@@ -464,11 +554,7 @@ def find_nearby_candidate_place(
         token
         for token in normalized_query.split()
         if len(token) >= 3
-        and token
-        not in {
-            "de", "del", "des", "du", "la", "le", "les", "of", "the",
-            "province", "territoire", "territory", "state", "état",
-        }
+        and token not in _IGNORABLE_TOKENS
     ]
 
     cells = _get_spatial_cells(lat, lon, radius_km)
@@ -525,19 +611,20 @@ def find_nearby_candidate_place(
         )
 
         if query_tokens:
-            variant_tokens = {token for variant in variants for token in variant.split()}
-            token_matches = [
-                max(
-                    (
-                        difflib.SequenceMatcher(None, query_token, candidate_token).ratio()
-                        for candidate_token in variant_tokens
-                    ),
-                    default=0.0,
-                )
-                for query_token in query_tokens
-            ]
-            if all(score >= min_similarity for score in token_matches):
-                similarity = max(similarity, min(token_matches))
+            best_token_score = 0.0
+            for variant in variants:
+                var_tokens = [
+                    t for t in variant.split()
+                    if len(t) >= 3 and t not in _IGNORABLE_TOKENS
+                ]
+                token_score = _token_score(query_tokens, var_tokens)
+                if token_score is None or token_score < min_similarity:
+                    continue
+                if token_score > best_token_score:
+                    best_token_score = token_score
+
+            if best_token_score >= min_similarity:
+                similarity = max(similarity, best_token_score)
 
         if similarity >= min_similarity:
             distance = haversine_distance_km(lat, lon, candidate["lat"], candidate["lon"])
@@ -597,6 +684,28 @@ def resolve_place(
             if not close:
                 return None
             cands = [cand for k in close for cand in _CITY_INDEX.get(k, [])]
+            # Ensure candidate names are compatible with the query (avoid matching 'New City' on 'New York')
+            q_toks = [t for t in key.split() if len(t) >= 3 and t not in _IGNORABLE_TOKENS]
+            if q_toks:
+                compatible = []
+                for cand in cands:
+                    c_variants = [
+                        _normalize(v)
+                        for v in (cand.get("name"), cand.get("name_fr"))
+                        if v
+                    ]
+                    matched_variant = False
+                    for c_var in c_variants:
+                        c_toks = [
+                            t for t in c_var.split()
+                            if len(t) >= 3 and t not in _IGNORABLE_TOKENS
+                        ]
+                        if _tokens_compatible(q_toks, c_toks, cutoff):
+                            matched_variant = True
+                            break
+                    if matched_variant:
+                        compatible.append(cand)
+                cands = compatible
 
         best = resolve_best_candidate(
             cands,
@@ -645,6 +754,22 @@ def resolve_place(
 
         valid_geo = geo_f if (geo_f and geo_f is not _BLOCKED) else None
         valid_city = city_f if (city_f and city_f is not _BLOCKED) else None
+
+        # Filter by max_fuzzy_distance_km when target_pos is provided
+        if target_pos is not None:
+            max_dist = MATCHING_CONFIG["max_fuzzy_distance_km"]
+            if valid_city and valid_city.get("lat") is not None and valid_city.get("lon") is not None:
+                d_city = haversine_distance_km(target_pos[0], target_pos[1], float(valid_city["lat"]), float(valid_city["lon"]))
+                if d_city > max_dist:
+                    valid_city = None
+            if valid_geo and valid_geo.get("lat") is not None and valid_geo.get("lon") is not None:
+                d_geo = haversine_distance_km(target_pos[0], target_pos[1], float(valid_geo["lat"]), float(valid_geo["lon"]))
+                is_large_entity = valid_geo.get("type") in {
+                    "ocean", "sea", "bay", "gulf", "continent", "country", "province", "state", "territory", "river", "fleuve"
+                }
+                geo_max_dist = max_dist * 4 if is_large_entity else max_dist
+                if d_geo > geo_max_dist:
+                    valid_geo = None
 
         if valid_geo and valid_city:
             if target_pos is not None and valid_geo.get("lat") is not None and valid_city.get("lat") is not None:
@@ -708,6 +833,16 @@ def match_ocr_label(
         hit = _try(q, MATCHING_CONFIG["ocr_fuzzy_threshold"])
         if hit:
             return hit
+
+    # Stage 3: Subparts splitting (e.g. repeated prefixes like "Fort ... Fort ...")
+    subparts = _split_into_potential_subparts(clean)
+    if len(subparts) > 1:
+        for q in subparts:
+            hit = _try(q, MATCHING_CONFIG["exact_threshold"])
+            if not hit:
+                hit = _try(q, MATCHING_CONFIG["ocr_fuzzy_threshold"])
+            if hit:
+                return hit
 
     return None
 

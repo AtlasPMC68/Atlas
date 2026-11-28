@@ -302,8 +302,9 @@ def test_failed_ocr_is_recorded():
         patch("app.tasks.extract_text", MagicMock(side_effect=RuntimeError("no model"))),
         patch("app.tasks._fail_ocr", AsyncMock()) as fail,
     ):
-        outcome = run_map_ocr.apply(kwargs={"map_id": str(uuid.uuid4())})
-        with pytest.raises(RuntimeError):
-            outcome.get(timeout=20, propagate=True)
+        with pytest.raises(RuntimeError, match="no model"):
+            outcome = run_map_ocr.apply(kwargs={"map_id": str(uuid.uuid4())})
+            if outcome is not None and hasattr(outcome, "get"):
+                outcome.get(timeout=20, propagate=True)
 
     assert "no model" in fail.await_args.args[2]

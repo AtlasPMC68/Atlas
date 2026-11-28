@@ -25,12 +25,13 @@
         Cadres
       </label>
       <label
+        v-if="!displayImageUrl"
         class="btn btn-xs"
         :class="{ 'btn-disabled': isUpdatingReferenceImage }"
-        title="Charger une autre image de référence"
+        title="Choisir une image de référence"
       >
         <ArrowUpTrayIcon class="w-3.5 h-3.5" />
-        <span class="hidden sm:inline">Changer</span>
+        <span class="hidden sm:inline">Choisir une image</span>
         <input
           type="file"
           :accept="ACCEPTED_IMAGE_TYPES"
@@ -39,17 +40,33 @@
           @change="emit('select-image', $event)"
         />
       </label>
-      <button
-        v-if="displayImageUrl"
-        type="button"
-        class="btn btn-xs btn-square"
-        :disabled="isUpdatingReferenceImage"
-        title="Supprimer l'image de référence associée à cette carte"
-        aria-label="Supprimer l'image de référence"
-        @click="emit('remove-image')"
-      >
-        <XMarkIcon class="w-4 h-4" />
-      </button>
+      <template v-else-if="isNewlyChosen">
+        <label
+          class="btn btn-xs"
+          :class="{ 'btn-disabled': isUpdatingReferenceImage }"
+          title="Charger une autre image de référence"
+        >
+          <ArrowUpTrayIcon class="w-3.5 h-3.5" />
+          <span class="hidden sm:inline">Changer</span>
+          <input
+            type="file"
+            :accept="ACCEPTED_IMAGE_TYPES"
+            class="hidden"
+            :disabled="isUpdatingReferenceImage"
+            @change="emit('select-image', $event)"
+          />
+        </label>
+        <button
+          type="button"
+          class="btn btn-xs btn-square"
+          :disabled="isUpdatingReferenceImage"
+          title="Supprimer l'image de référence"
+          aria-label="Supprimer l'image de référence"
+          @click="emit('remove-image')"
+        >
+          <XMarkIcon class="w-4 h-4" />
+        </button>
+      </template>
     </template>
 
     <div
@@ -150,6 +167,7 @@ const props = withDefaults(
   defineProps<{
     displayImageUrl?: string | null;
     isUpdatingReferenceImage?: boolean;
+    isNewlyChosen?: boolean;
     // Texts detected on the image, in the image's own pixel coordinates.
     regions?: TextRegion[];
     highlightedId?: string | null;
@@ -157,6 +175,7 @@ const props = withDefaults(
   {
     displayImageUrl: null,
     isUpdatingReferenceImage: false,
+    isNewlyChosen: false,
     regions: () => [],
     highlightedId: null,
   },

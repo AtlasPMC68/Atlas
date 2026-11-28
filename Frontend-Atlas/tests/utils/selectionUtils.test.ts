@@ -1,0 +1,360 @@
+import { describe, it, expect } from "vitest";
+import {
+  getContinuousRangeSelection,
+  isRangeSelectModifier,
+  isToggleSelectModifier,
+  isMultiSelectModifier,
+  deduplicateFeatures,
+  doesLayerIntersectBounds,
+  applySelectionModifier,
+  getNudgeDelta,
+  getSelectedTargetFeatures,
+  removeFeaturesByIds,
+} from "../../src/utils/selectionUtils";
+
+describe("selectionUtils - getContinuousRangeSelection", () => {
+  const orderedList = ["elem-1", "elem-2", "elem-3", "elem-4", "elem-5"];
+
+  it("returns [targetId] when anchorId is null or undefined", () => {
+    expect(getContinuousRangeSelection(orderedList, null, "elem-3")).toEqual(["elem-3"]);
+    expect(getContinuousRangeSelection(orderedList, undefined, "elem-2")).toEqual(["elem-2"]);
+    expect(getContinuousRangeSelection(orderedList, "", "elem-1")).toEqual(["elem-1"]);
+  });
+
+  it("returns empty array when targetId is null, undefined, or empty", () => {
+    expect(getContinuousRangeSelection(orderedList, "elem-1", null)).toEqual([]);
+    expect(getContinuousRangeSelection(orderedList, "elem-1", undefined)).toEqual([]);
+    expect(getContinuousRangeSelection(orderedList, "elem-1", "")).toEqual([]);
+  });
+
+  it("returns single item when anchorId and targetId are the same", () => {
+    expect(getContinuousRangeSelection(orderedList, "elem-3", "elem-3")).toEqual(["elem-3"]);
+  });
+
+  it("selects range downwards (anchor at lower index, target at higher index)", () => {
+    const result = getContinuousRangeSelection(orderedList, "elem-2", "elem-4");
+    expect(result).toEqual(["elem-2", "elem-3", "elem-4"]);
+  });
+
+  it("selects range upwards (anchor at higher index, target at lower index)", () => {
+    const result = getContinuousRangeSelection(orderedList, "elem-4", "elem-2");
+    expect(result).toEqual(["elem-2", "elem-3", "elem-4"]);
+  });
+
+  it("selects entire list when anchor is first and target is last", () => {
+    const result = getContinuousRangeSelection(orderedList, "elem-1", "elem-5");
+    expect(result).toEqual(orderedList);
+  });
+
+  it("falls back to [targetId] when anchorId is not in orderedIds", () => {
+    const result = getContinuousRangeSelection(orderedList, "non-existent-anchor", "elem-3");
+    expect(result).toEqual(["elem-3"]);
+  });
+
+  it("falls back to [targetId] when targetId is not in orderedIds", () => {
+    const result = getContinuousRangeSelection(orderedList, "elem-2", "non-existent-target");
+    expect(result).toEqual(["non-existent-target"]);
+  });
+
+  it("handles whitespace in IDs and number types gracefully", () => {
+    const numericList = [10, 20, 30, 40];
+    expect(getContinuousRangeSelection(numericList, 20, 40)).toEqual(["20", "30", "40"]);
+
+    const untrimmedList = ["  a ", " b ", " c "];
+    expect(getContinuousRangeSelection(untrimmedList, "a", "c")).toEqual(["a", "b", "c"]);
+  });
+
+  it("returns [targetId] when orderedList is empty", () => {
+    expect(getContinuousRangeSelection([], "elem-1", "elem-2")).toEqual(["elem-2"]);
+  });
+});
+
+describe("selectionUtils - modifier helpers", () => {
+  it("isRangeSelectModifier checks Shift key only", () => {
+    expect(isRangeSelectModifier({ shiftKey: true })).toBe(true);
+    expect(isRangeSelectModifier({ ctrlKey: true })).toBe(false);
+    expect(isRangeSelectModifier({ metaKey: true })).toBe(false);
+    expect(isRangeSelectModifier(null)).toBe(false);
+  });
+
+  it("isToggleSelectModifier checks Ctrl and Meta keys", () => {
+    expect(isToggleSelectModifier({ ctrlKey: true })).toBe(true);
+    expect(isToggleSelectModifier({ metaKey: true })).toBe(true);
+    expect(isToggleSelectModifier({ shiftKey: true })).toBe(false);
+    expect(isToggleSelectModifier(null)).toBe(false);
+  });
+
+  it("isMultiSelectModifier checks any modifier", () => {
+    expect(isMultiSelectModifier({ ctrlKey: true })).toBe(true);
+    expect(isMultiSelectModifier({ metaKey: true })).toBe(true);
+    expect(isMultiSelectModifier({ shiftKey: true })).toBe(true);
+    expect(isMultiSelectModifier({})).toBe(false);
+  });
+});
+
+describe("selectionUtils - deduplicateFeatures", () => {
+  it("deduplicates features with identical IDs keeping the first occurrence", () => {
+    const list = [
+      { id: "feat-1", geometry: { type: "Point", coordinates: [10, 20] } },
+      { id: "feat-1", geometry: { type: "Point", coordinates: [10, 20] } },
+      { id: "feat-2", geometry: { type: "Point", coordinates: [30, 40] } },
+    ];
+    const res = deduplicateFeatures(list);
+    expect(res).toHaveLength(2);
+    expect(res.map((f) => f.id)).toEqual(["feat-1", "feat-2"]);
+  });
+
+  it("preserves distinct features even if they share identical geometry or coordinates", () => {
+    const list = [
+      { id: "f1", geometry: { type: "Polygon", coordinates: [[[0, 0], [1, 1], [0, 1], [0, 0]]] }, properties: { mapElementType: "zone" } },
+      { id: "f2", geometry: { type: "Polygon", coordinates: [[[0, 0], [1, 1], [0, 1], [0, 0]]] }, properties: { mapElementType: "zone" } },
+      { id: "f3", geometry: { type: "Polygon", coordinates: [[[5, 5], [6, 6], [5, 6], [5, 5]]] }, properties: { mapElementType: "zone" } },
+    ];
+    const res = deduplicateFeatures(list);
+    expect(res).toHaveLength(3);
+    expect(res.map((f) => f.id)).toEqual(["f1", "f2", "f3"]);
+  });
+
+  it("supports ID located in properties if direct ID is omitted", () => {
+    const list = [
+      { properties: { id: "p-1" } },
+      { properties: { id: "p-1" } },
+      { properties: { id: "p-2" } },
+    ];
+    const res = deduplicateFeatures(list);
+    expect(res).toHaveLength(2);
+  });
+});
+
+describe("selectionUtils - doesLayerIntersectBounds", () => {
+  // Mock bounding box with contains and intersects methods
+  const mockBounds = {
+    contains: (latLng: { lat: number; lng: number }) => {
+      return latLng.lat >= 45 && latLng.lat <= 50 && latLng.lng >= -75 && latLng.lng <= -70;
+    },
+    intersects: (otherBounds: { minLat: number; maxLat: number; minLng: number; maxLng: number }) => {
+      const noOverlap =
+        otherBounds.maxLat < 45 ||
+        otherBounds.minLat > 50 ||
+        otherBounds.maxLng < -75 ||
+        otherBounds.minLng > -70;
+      return !noOverlap;
+    },
+  };
+
+  it("returns false for null or undefined layer or bounds", () => {
+    expect(doesLayerIntersectBounds(null, mockBounds)).toBe(false);
+    expect(doesLayerIntersectBounds(undefined, mockBounds)).toBe(false);
+    expect(doesLayerIntersectBounds({}, null)).toBe(false);
+    expect(doesLayerIntersectBounds({}, undefined)).toBe(false);
+  });
+
+  it("detects points/markers inside selection bounds via getLatLng", () => {
+    const insideMarker = {
+      getLatLng: () => ({ lat: 46.8, lng: -71.2 }),
+    };
+    const outsideMarker = {
+      getLatLng: () => ({ lat: 20.0, lng: 10.0 }),
+    };
+
+    expect(doesLayerIntersectBounds(insideMarker, mockBounds)).toBe(true);
+    expect(doesLayerIntersectBounds(outsideMarker, mockBounds)).toBe(false);
+  });
+
+  it("detects paths/shapes via getBounds", () => {
+    const intersectingShape = {
+      getBounds: () => ({ minLat: 46.0, maxLat: 48.0, minLng: -72.0, maxLng: -71.0 }),
+    };
+    const nonIntersectingShape = {
+      getBounds: () => ({ minLat: 10.0, maxLat: 15.0, minLng: 0.0, maxLng: 5.0 }),
+    };
+
+    expect(doesLayerIntersectBounds(intersectingShape, mockBounds)).toBe(true);
+    expect(doesLayerIntersectBounds(nonIntersectingShape, mockBounds)).toBe(false);
+  });
+
+  it("recursively inspects L.LayerGroup (points and cities with labels)", () => {
+    const groupWithInsideMarker = {
+      getLayers: () => [
+        { getLatLng: () => ({ lat: 10.0, lng: 10.0 }) }, // outside
+        { getLatLng: () => ({ lat: 46.8, lng: -71.2 }) }, // inside!
+      ],
+    };
+    const groupWithOnlyOutsideMarkers = {
+      getLayers: () => [
+        { getLatLng: () => ({ lat: 10.0, lng: 10.0 }) },
+        { getLatLng: () => ({ lat: 20.0, lng: 20.0 }) },
+      ],
+    };
+    const emptyGroup = {
+      getLayers: () => [],
+    };
+
+    expect(doesLayerIntersectBounds(groupWithInsideMarker, mockBounds)).toBe(true);
+    expect(doesLayerIntersectBounds(groupWithOnlyOutsideMarkers, mockBounds)).toBe(false);
+    expect(doesLayerIntersectBounds(emptyGroup, mockBounds)).toBe(false);
+  });
+
+  it("supports deeply nested LayerGroups", () => {
+    const nestedGroup = {
+      getLayers: () => [
+        {
+          getLayers: () => [
+            {
+              getLayers: () => [
+                { getLatLng: () => ({ lat: 47.0, lng: -72.0 }) },
+              ],
+            },
+          ],
+        },
+      ],
+    };
+
+    expect(doesLayerIntersectBounds(nestedGroup, mockBounds)).toBe(true);
+  });
+});
+
+describe("selectionUtils - applySelectionModifier", () => {
+  const orderedIds = ["id-1", "id-2", "id-3", "id-4", "id-5"];
+
+  it("handles normal click: sets selectedId, clears multi-selection, updates anchor", () => {
+    const res = applySelectionModifier("id-3", false, false, {
+      selectedId: "id-1",
+      multiSelectedIds: ["id-1", "id-2"],
+      lastAnchorId: "id-1",
+      orderedIds,
+    });
+
+    expect(res.selectedId).toBe("id-3");
+    expect(res.multiSelectedIds).toEqual([]);
+    expect(res.newAnchorId).toBe("id-3");
+    expect(res.isModified).toBe(false);
+  });
+
+  it("handles Ctrl/Cmd modifier (toggle selection): adds to multi-selection and clears single selectedId", () => {
+    const res = applySelectionModifier("id-3", true, false, {
+      selectedId: "id-1",
+      multiSelectedIds: [],
+      lastAnchorId: "id-1",
+      orderedIds,
+    });
+
+    expect(res.selectedId).toBeNull();
+    expect(res.multiSelectedIds).toEqual(["id-1", "id-3"]);
+    expect(res.newAnchorId).toBe("id-3");
+    expect(res.isModified).toBe(true);
+  });
+
+  it("handles Ctrl/Cmd modifier toggle off: removes already selected item from multiSelectedIds", () => {
+    const res = applySelectionModifier("id-2", true, false, {
+      selectedId: null,
+      multiSelectedIds: ["id-1", "id-2", "id-3"],
+      lastAnchorId: "id-1",
+      orderedIds,
+    });
+
+    expect(res.selectedId).toBeNull();
+    expect(res.multiSelectedIds).toEqual(["id-1", "id-3"]);
+    expect(res.newAnchorId).toBe("id-2");
+    expect(res.isModified).toBe(true);
+  });
+
+  it("handles Shift modifier (continuous range): selects range from anchor to clicked target", () => {
+    const res = applySelectionModifier("id-4", false, true, {
+      selectedId: "id-2",
+      multiSelectedIds: [],
+      lastAnchorId: "id-2",
+      orderedIds,
+    });
+
+    expect(res.selectedId).toBeNull();
+    expect(res.multiSelectedIds).toEqual(["id-2", "id-3", "id-4"]);
+    expect(res.newAnchorId).toBe("id-2");
+    expect(res.isModified).toBe(true);
+  });
+
+  it("uses the first selected item in display order as Shift anchor when no selectedId or lastAnchorId", () => {
+    const res = applySelectionModifier("id-5", false, true, {
+      selectedId: null,
+      multiSelectedIds: ["id-4", "id-2"],
+      lastAnchorId: null,
+      orderedIds,
+    });
+
+    expect(res.selectedId).toBeNull();
+    expect(res.multiSelectedIds).toEqual(["id-2", "id-3", "id-4", "id-5"]);
+    expect(res.newAnchorId).toBe("id-2");
+    expect(res.isModified).toBe(true);
+  });
+});
+
+describe("selectionUtils - getNudgeDelta & Escape interaction", () => {
+  it("getNudgeDelta returns 1px by default and 10px with Shift", () => {
+    expect(getNudgeDelta("ArrowRight", false)).toEqual({ dx: 1, dy: 0 });
+    expect(getNudgeDelta("ArrowLeft", false)).toEqual({ dx: -1, dy: 0 });
+    expect(getNudgeDelta("ArrowDown", false)).toEqual({ dx: 0, dy: 1 });
+    expect(getNudgeDelta("ArrowUp", false)).toEqual({ dx: 0, dy: -1 });
+
+    expect(getNudgeDelta("ArrowRight", true)).toEqual({ dx: 10, dy: 0 });
+    expect(getNudgeDelta("ArrowLeft", true)).toEqual({ dx: -10, dy: 0 });
+    expect(getNudgeDelta("ArrowDown", true)).toEqual({ dx: 0, dy: 10 });
+    expect(getNudgeDelta("ArrowUp", true)).toEqual({ dx: 0, dy: -10 });
+
+    expect(getNudgeDelta("Enter", false)).toBeNull();
+  });
+
+  it("Escape key interaction resets multi-selection and single selection", () => {
+    let selectedFeatureId: string | null = "feat-1";
+    let multiSelectedFeatureIds: string[] = ["feat-1", "feat-2", "feat-3"];
+
+    const handleKey = (key: string) => {
+      if (key.toLowerCase() === "escape") {
+        if (selectedFeatureId || multiSelectedFeatureIds.length > 0) {
+          selectedFeatureId = null;
+          multiSelectedFeatureIds = [];
+        }
+      }
+    };
+
+    handleKey("Escape");
+    expect(selectedFeatureId).toBeNull();
+    expect(multiSelectedFeatureIds).toEqual([]);
+  });
+});
+
+describe("selectionUtils - cut and duplicate selection helpers", () => {
+  const features = [
+    { id: "a", name: "A" },
+    { id: "b", name: "B" },
+    { id: "c", name: "C" },
+  ];
+
+  it("removeFeaturesByIds drops the cut selection and keeps the rest", () => {
+    expect(removeFeaturesByIds(features, ["b"])).toEqual([
+      { id: "a", name: "A" },
+      { id: "c", name: "C" },
+    ]);
+    expect(removeFeaturesByIds(features, ["a", "c"])).toEqual([
+      { id: "b", name: "B" },
+    ]);
+    expect(removeFeaturesByIds(features, [])).toEqual(features);
+  });
+
+  it("Ctrl+X cut copies the selection then removes those ids", () => {
+    const selectedId = "a";
+    const multiSelectedIds = ["a", "c"];
+    const clipboard = getSelectedTargetFeatures(
+      features,
+      selectedId,
+      multiSelectedIds,
+    );
+    expect(clipboard.map((f) => f.id)).toEqual(["a", "c"]);
+
+    const remaining = removeFeaturesByIds(
+      features,
+      clipboard.map((f) => String(f.id)),
+    );
+    expect(remaining.map((f) => f.id)).toEqual(["b"]);
+  });
+});
+

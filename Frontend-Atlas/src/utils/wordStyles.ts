@@ -56,7 +56,7 @@ function applyTextTransform(
     : capitalizeWords(text);
 }
 
-export function capitalizeSegment(segment: string): string {
+function capitalizeSegment(segment: string): string {
   if (!segment) return segment;
   return segment.charAt(0).toUpperCase() + segment.slice(1).toLowerCase();
 }
@@ -136,15 +136,22 @@ export function isTextFeature(
   feature?: Feature | Record<string, unknown> | null,
 ): boolean {
   if (!feature) return false;
+  const geomType = (feature as Feature).geometry?.type;
+  if (geomType && geomType !== "Point") {
+    return false;
+  }
   const props = (feature.properties || {}) as Record<string, unknown>;
   const elemType = getMapElementType(feature as Feature);
+  if (elemType === "image") {
+    return false;
+  }
   return (
     elemType === "label" ||
     elemType === "point" ||
     Boolean(props.isOcrText) ||
     props.labelText !== undefined ||
     props.rawType !== undefined ||
-    (feature as Feature).geometry?.type === "Point"
+    geomType === "Point"
   );
 }
 

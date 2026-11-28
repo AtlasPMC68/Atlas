@@ -8,6 +8,7 @@ export default {
       },
       colors: {
         primary: {
+          DEFAULT: "#2563eb",
           50: "#eff6ff",
           100: "#dbeafe",
           200: "#bfdbfe",
@@ -20,6 +21,7 @@ export default {
           900: "#1e3a8a",
         },
         secondary: {
+          DEFAULT: "#0d9488",
           50: "#f0fdfa",
           100: "#ccfbf1",
           200: "#99f6e4",
@@ -32,6 +34,7 @@ export default {
           900: "#134e4a",
         },
         accent: {
+          DEFAULT: "#ea580c",
           50: "#fff7ed",
           100: "#ffedd5",
           200: "#fed7aa",

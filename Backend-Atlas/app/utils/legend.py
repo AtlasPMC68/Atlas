@@ -70,6 +70,29 @@ def polygon_center_in_legend(
     return point_in_legend(sum(xs) / len(xs), sum(ys) / len(ys), bounds)
 
 
+def point_in_any_bounds(
+    x: float, y: float, bounds_list: Optional[Sequence[LegendBounds]]
+) -> bool:
+    """Whether a point lies in any of the rectangles in bounds_list."""
+    if not bounds_list:
+        return False
+    return any(point_in_legend(x, y, b) for b in bounds_list)
+
+
+def polygon_center_in_ignored_areas(
+    points: Sequence[Sequence[float]], bounds_list: Optional[Sequence[LegendBounds]]
+) -> bool:
+    """Whether the centre of an OCR box (or any polygon) lies in any of the ignored areas."""
+    if not bounds_list or not points:
+        return False
+    try:
+        xs = [float(p[0]) for p in points]
+        ys = [float(p[1]) for p in points]
+    except (TypeError, ValueError, IndexError):
+        return False
+    return point_in_any_bounds(sum(xs) / len(xs), sum(ys) / len(ys), bounds_list)
+
+
 def legend_mask(
     shape_hw: Tuple[int, int], bounds: Optional[LegendBounds]
 ) -> np.ndarray:

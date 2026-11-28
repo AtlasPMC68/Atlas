@@ -10,6 +10,7 @@ from shapely.ops import nearest_points
 
 from app.utils.georeferencing.reference import (
     COASTLINE_FILE,
+    DEFAULT_MIN_LINE_LENGTH_DEG,
     LAKES_FILE,
     ReferenceGrid,
     load_reference_linework,
@@ -181,7 +182,11 @@ def find_coastline_keypoints(bounds: dict, width: int = 1024, height: int = 768)
     lines = {}
     candidates = {}
     for feature, filename in ((COASTLINE, COASTLINE_FILE), (LAKE, LAKES_FILE)):
-        renders[feature], lines[feature] = render_linework(load_reference_linework(filename), grid)
+        # Filter out tiny isolated islands (< 1.0 deg total perimeter) on coastline
+        min_len = DEFAULT_MIN_LINE_LENGTH_DEG if feature == COASTLINE else 0.0
+        renders[feature], lines[feature] = render_linework(
+            load_reference_linework(filename, min_length=min_len), grid
+        )
         candidates[feature] = detect_sift_candidates(renders[feature], apply_edge_detection=True)
 
     selected = select_spread_keypoints(

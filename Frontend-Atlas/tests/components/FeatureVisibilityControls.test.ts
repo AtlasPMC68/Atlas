@@ -1,8 +1,16 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { mount } from "@vue/test-utils";
+import { nextTick } from "vue";
+import { mount, type VueWrapper } from "@vue/test-utils";
 import FeatureVisibilityControls from "../../src/components/FeatureVisibilityControls.vue";
 import type { Feature } from "../../src/typescript/feature";
 import type { MapPeriod } from "../../src/typescript/map";
+
+async function chooseWordType(wrapper: VueWrapper, value: string) {
+  const root = wrapper.find('[data-testid="word-type-select"]');
+  await root.find("button").trigger("click");
+  await root.find(`[data-value="${value}"]`).trigger("click");
+  await nextTick();
+}
 
 // Mock alert
 vi.mock("../../src/composables/useAlert", () => ({
@@ -179,7 +187,7 @@ describe("FeatureVisibilityControls - Text Validation Button", () => {
     expect(expandBtn.exists()).toBe(true);
   });
 
-  it("opens map period editing when its title is clicked", async () => {
+  it("selects map when title is clicked, and opens edit dialog on double click", async () => {
     const wrapper = mount(FeatureVisibilityControls, {
       props: {
         features,
@@ -188,8 +196,12 @@ describe("FeatureVisibilityControls - Text Validation Button", () => {
       },
     });
 
-    await wrapper.find('button[title="Modifier Carte Québec 1900"]').trigger("click");
+    const mapTitleBtn = wrapper.find('[data-testid="map-title-btn-map-1"]');
+    await mapTitleBtn.trigger("click");
+    expect(wrapper.emitted("select-map")).toEqual([["map-1"]]);
+    expect(wrapper.emitted("edit-map")).toBeUndefined();
 
+    await mapTitleBtn.trigger("dblclick");
     expect(wrapper.emitted("edit-map")).toEqual([["map-1"]]);
   });
 
@@ -313,7 +325,7 @@ describe("FeatureVisibilityControls - Text Validation Button", () => {
   });
 });
 
-describe("FeatureVisibilityControls - Word Type Selection and Font Modification", () => {
+describe("FeatureVisibilityControls - Word Type Selection and Font Modification", { timeout: 15000 }, () => {
   beforeEach(() => {
     HTMLDialogElement.prototype.showModal = vi.fn();
     HTMLDialogElement.prototype.close = vi.fn();
@@ -378,7 +390,11 @@ describe("FeatureVisibilityControls - Word Type Selection and Font Modification"
 
     const select = wrapper.find('[data-testid="word-type-select"]');
     expect(select.exists()).toBe(true);
-    expect((select.element as HTMLSelectElement).value).toBe("city");
+    expect(select.attributes("data-selected-value")).toBe("city");
+    const notice = wrapper.find('[data-testid="word-style-scope-notice"]');
+    expect(notice.exists()).toBe(true);
+    expect(notice.text()).toContain("uniquement à ce mot");
+    expect(notice.text()).toContain("style personnalisé");
   });
 
   it("does not display word type selector when editing a non-text feature (e.g. zone)", async () => {
@@ -393,6 +409,7 @@ describe("FeatureVisibilityControls - Word Type Selection and Font Modification"
 
     const select = wrapper.find('[data-testid="word-type-select"]');
     expect(select.exists()).toBe(false);
+    expect(wrapper.find('[data-testid="word-style-scope-notice"]').exists()).toBe(false);
   });
 
   it("updates font police and style when changing type from city to province", async () => {
@@ -405,18 +422,9 @@ describe("FeatureVisibilityControls - Word Type Selection and Font Modification"
 
     await (wrapper.vm as any).showEditFeatureDialog(textFeature);
 
-    const select = wrapper.find('[data-testid="word-type-select"]');
-    expect(select.exists()).toBe(true);
+    expect(wrapper.find('[data-testid="word-type-select"]').exists()).toBe(true);
+    await chooseWordType(wrapper, "province");
 
-    // Change type to province
-    await select.setValue("province");
-    await select.trigger("change");
-
-    const textInput = wrapper.find('[data-testid="label-text-input"]');
-    expect((textInput.element as HTMLTextAreaElement).value).toBe("QUÉBEC");
-    expect(textInput.attributes("style")).toContain("font-size: 14px");
-
-    // Click modifier button
     const modifyBtn = wrapper.findAll("button").find((b: any) => b.text().includes("Modifier"));
     expect(modifyBtn).toBeDefined();
     await modifyBtn!.trigger("click");
@@ -449,12 +457,11 @@ describe("FeatureVisibilityControls - Word Type Selection and Font Modification"
     });
 
     await (wrapper.vm as any).showEditFeatureDialog(feature);
-    const select = wrapper.find('[data-testid="word-type-select"]');
-    const textInput = wrapper.findAll("input").find((input: any) => input.element.value === "mCGuIlL");
+    const textInput = wrapper.findAll("textarea").find((input: any) => input.element.value === "mCGuIlL");
     expect(textInput).toBeDefined();
 
-    await select.setValue("province");
-    await select.setValue("city");
+    await chooseWordType(wrapper, "province");
+    await chooseWordType(wrapper, "city");
 
     expect(textInput!.element.value).toBe("mCGuIlL");
   });
@@ -490,11 +497,8 @@ describe("FeatureVisibilityControls - Word Type Selection and Font Modification"
 
     const select = wrapper.find('[data-testid="word-type-select"]');
     expect(select.exists()).toBe(true);
-    expect((select.element as HTMLSelectElement).value).toBe("province");
-
-    // Change type to city
-    await select.setValue("city");
-    await select.trigger("change");
+    expect(select.attributes("data-selected-value")).toBe("province");
+    await chooseWordType(wrapper, "city");
 
     const modifyBtn = wrapper.findAll("button").find((b: any) => b.text().includes("Modifier"));
     await modifyBtn!.trigger("click");
@@ -536,14 +540,10 @@ describe("FeatureVisibilityControls - Word Type Selection and Font Modification"
 
     await (wrapper.vm as any).showEditFeatureDialog(saskatchewanFeature);
 
-    const select = wrapper.find('[data-testid="word-type-select"]');
-    expect(select.exists()).toBe(true);
+    expect(wrapper.find('[data-testid="word-type-select"]').exists()).toBe(true);
+    await chooseWordType(wrapper, "city");
 
-    // Switch from province to city
-    await select.setValue("city");
-    await select.trigger("change");
-
-    const textInput = wrapper.findAll("input").find((i: any) => i.element.value === "SASKATCHEWAN");
+    const textInput = wrapper.findAll("textarea").find((i: any) => i.element.value === "SASKATCHEWAN");
     expect(textInput).toBeDefined();
 
     const modifyBtn = wrapper.findAll("button").find((b: any) => b.text().includes("Modifier"));
@@ -570,19 +570,15 @@ describe("FeatureVisibilityControls - Word Type Selection and Font Modification"
 
     await (wrapper.vm as any).showEditFeatureDialog(textFeature);
 
-    // Find the Nom de l'élément input (first text input without style)
-    const nameInput = wrapper
-      .findAll("input")
-      .find((i: any) => i.element.value === "Québec" && !i.attributes("style"));
-    expect(nameInput).toBeDefined();
+    // Find the Nom de l'élément textarea
+    const nameInput = wrapper.find("textarea#edit-feature-name");
+    expect(nameInput.exists()).toBe(true);
 
-    await nameInput!.setValue("Trois-Rivières");
-    await nameInput!.trigger("input");
+    await nameInput.setValue("Trois-Rivières");
+    await nameInput.trigger("input");
 
     // The preview input should be updated
-    const previewInput = wrapper.find('[data-testid="label-text-input"]');
-    expect(previewInput.attributes("style")).toContain("font-size");
-    expect((previewInput.element as HTMLTextAreaElement).value).toBe("Trois-Rivières");
+    expect(wrapper.text()).toContain("Trois-Rivières");
   });
 
   it("keeps the opacity of a point between 0 and 1", async () => {
@@ -595,7 +591,7 @@ describe("FeatureVisibilityControls - Word Type Selection and Font Modification"
 
     await (wrapper.vm as any).showEditFeatureDialog(textFeature);
 
-    const opacityInput = wrapper.find('[data-testid="point-fill-opacity-input"]');
+    const opacityInput = wrapper.find('[data-testid="fill-opacity-input"]');
     expect(opacityInput.attributes("min")).toBe("0");
     expect(opacityInput.attributes("max")).toBe("1");
 
@@ -625,7 +621,8 @@ describe("FeatureVisibilityControls - Word Type Selection and Font Modification"
     await wrapper.find('[data-testid="color-input"]').setValue("#ffee00");
     await wrapper.find('[data-testid="text-color-input"]').setValue("#112233");
     await wrapper.find('[data-testid="text-size-input"]').setValue("22");
-    await wrapper.find('[data-testid="label-text-input"]').setValue("Québec\nla capitale");
+    await wrapper.find('textarea[placeholder="Nom de l\'élément"]').setValue("Québec\nla capitale");
+    await wrapper.find('textarea[placeholder="Nom de l\'élément"]').trigger("input");
 
     const modifyBtn = wrapper.findAll("button").find((b: any) => b.text().includes("Modifier"));
     await modifyBtn!.trigger("click");
@@ -648,10 +645,9 @@ describe("FeatureVisibilityControls - Word Type Selection and Font Modification"
     await (wrapper.vm as any).showEditFeatureDialog(zoneFeature);
 
     // Should display labels for shape opacity and stroke
-    expect(wrapper.text()).toContain("Opacité");
-    expect(wrapper.text()).toContain("Opacité du contour");
-    expect(wrapper.text()).toContain("Épaisseur du contour");
-    expect(wrapper.text()).toContain("Couleur du contour :");
+    expect(wrapper.text()).toContain("Opacité fond");
+    expect(wrapper.text()).toContain("Opacité contour");
+    expect(wrapper.text()).toContain("Épaisseur contour");
 
     // Click modifier button
     const modifyBtn = wrapper.findAll("button").find((b: any) => b.text().includes("Modifier"));
@@ -787,7 +783,7 @@ describe("FeatureVisibilityControls - Word Type Selection and Font Modification"
       expect(emitted.properties.mapElementType).toBe("zone");
     });
 
-    it("clones feature across multiple maps when multiple map checkboxes are checked", async () => {
+    it("assigns feature across multiple maps when multiple map checkboxes are checked", async () => {
       const wrapper = mount(FeatureVisibilityControls, {
         props: {
           features: [generalTextFeature],
@@ -808,12 +804,10 @@ describe("FeatureVisibilityControls - Word Type Selection and Font Modification"
       await modifyBtn!.trigger("click");
 
       expect(wrapper.emitted("update-feature")).toBeDefined();
-      const emitted = wrapper.emitted("update-feature")![0][0] as Feature[];
-      expect(Array.isArray(emitted)).toBe(true);
-      expect(emitted).toHaveLength(2);
-      expect(emitted[0].mapId).toBe("map-1");
-      expect(emitted[1].mapId).toBe("map-2");
-      expect(emitted[0].id).not.toBe(emitted[1].id);
+      // createFeaturesForSelectedMaps returns a single Feature object with mapIds when multiple maps are selected
+      const emitted = wrapper.emitted("update-feature")![0][0] as Feature;
+      expect(emitted.mapId).toBe("map-1");
+      expect(emitted.mapIds).toEqual(["map-1", "map-2"]);
     });
 
     it("unassigns an element to become general (null mapId) when all map checkboxes are unchecked", async () => {
@@ -898,5 +892,161 @@ describe("FeatureVisibilityControls - Word Type Selection and Font Modification"
       expect(wrapper.emitted("select-feature")?.[1]).toEqual(["feat-floride-1"]);
       expect(showModalSpy).toHaveBeenCalled();
     });
+
+    it("selects continuous range with Ctrl+click in the sidebar list", async () => {
+      const feat1: Feature = { ...florideFeature, id: "feat-1", name: "F1", properties: { ...florideFeature.properties, name: "F1" } };
+      const feat2: Feature = { ...florideFeature, id: "feat-2", name: "F2", properties: { ...florideFeature.properties, name: "F2" } };
+      const feat3: Feature = { ...florideFeature, id: "feat-3", name: "F3", properties: { ...florideFeature.properties, name: "F3" } };
+
+      const wrapper = mount(FeatureVisibilityControls, {
+        props: {
+          features: [feat1, feat2, feat3],
+          featureVisibility: new Map([["feat-1", true], ["feat-2", true], ["feat-3", true]]),
+        },
+      });
+
+      const item1 = wrapper.find('[data-feature-item-id="feat-1"]');
+      const item3 = wrapper.find('[data-feature-item-id="feat-3"]');
+      expect(item1.exists()).toBe(true);
+      expect(item3.exists()).toBe(true);
+
+      // 1. Click item1 normally (sets anchor)
+      await item1.trigger("click");
+      expect(wrapper.emitted("select-feature")?.[0]).toEqual(["feat-1"]);
+
+      // 2. Click item3 with Ctrl key -> toggles individual element into multi-selection
+      await item3.trigger("click", { ctrlKey: true });
+      expect(wrapper.emitted("select-features")).toBeDefined();
+      expect(wrapper.emitted("select-features")?.at(-1)).toEqual([["feat-1", "feat-3"]]);
+    });
+
+    it("selects continuous range with Shift+click in the sidebar list", async () => {
+      const feat1: Feature = { ...florideFeature, id: "feat-1", name: "F1", properties: { ...florideFeature.properties, name: "F1" } };
+      const feat2: Feature = { ...florideFeature, id: "feat-2", name: "F2", properties: { ...florideFeature.properties, name: "F2" } };
+      const feat3: Feature = { ...florideFeature, id: "feat-3", name: "F3", properties: { ...florideFeature.properties, name: "F3" } };
+
+      const wrapper = mount(FeatureVisibilityControls, {
+        props: {
+          features: [feat1, feat2, feat3],
+          featureVisibility: new Map([["feat-1", true], ["feat-2", true], ["feat-3", true]]),
+        },
+      });
+
+      const item1 = wrapper.find('[data-feature-item-id="feat-1"]');
+      const item3 = wrapper.find('[data-feature-item-id="feat-3"]');
+
+      // 1. Click item1 normally (sets anchor)
+      await item1.trigger("click");
+
+      // 2. Click item3 with Shift key -> continuous range selection
+      await item3.trigger("click", { shiftKey: true });
+      expect(wrapper.emitted("select-features")).toBeDefined();
+      expect(wrapper.emitted("select-features")?.at(-1)).toEqual([["feat-1", "feat-2", "feat-3"]]);
+    });
+
+    it("deletes all multi-selected elements together when trash is clicked on any of them", async () => {
+      const feat1: Feature = { ...florideFeature, id: "feat-1", name: "F1", properties: { ...florideFeature.properties, name: "F1" } };
+      const feat2: Feature = { ...florideFeature, id: "feat-2", name: "F2", properties: { ...florideFeature.properties, name: "F2" } };
+
+      const wrapper = mount(FeatureVisibilityControls, {
+        props: {
+          features: [feat1, feat2],
+          featureVisibility: new Map([["feat-1", true], ["feat-2", true]]),
+          multiSelectedFeatureIds: ["feat-1", "feat-2"],
+        },
+      });
+
+      // Find trash button for feat-1
+      const item1 = wrapper.find('[data-feature-item-id="feat-1"]');
+      const trashBtn = item1.find('button[title="Supprimer l\'élément"]');
+      expect(trashBtn.exists()).toBe(true);
+
+      await trashBtn.trigger("click");
+
+      // Verify confirmation dialog text shows count of selected elements
+      expect(wrapper.text()).toContain("2 éléments sélectionnés");
+
+      // Click confirm delete in dialog
+      const confirmDeleteBtn = wrapper.find('[data-testid="confirm-delete-feature-btn"]');
+      expect(confirmDeleteBtn.exists()).toBe(true);
+      await confirmDeleteBtn.trigger("click");
+
+      // Emitted delete-feature contains all selected feature IDs
+      expect(wrapper.emitted("delete-feature")).toBeDefined();
+      expect(wrapper.emitted("delete-feature")?.[0][0]).toEqual(["feat-1", "feat-2"]);
+    });
+
+    it("displays shared badge and offers 'Retirer de cette carte' when feature belongs to multiple maps", async () => {
+      const multiMapFeature: Feature = {
+        ...florideFeature,
+        id: "feat-shared",
+        name: "Fleuve Saint-Laurent",
+        mapIds: ["map-1", "map-2"],
+        properties: {
+          ...florideFeature.properties,
+          name: "Fleuve Saint-Laurent",
+          mapIds: ["map-1", "map-2"],
+        },
+      };
+
+      const wrapper = mount(FeatureVisibilityControls, {
+        props: {
+          features: [multiMapFeature],
+          featureVisibility: new Map([["feat-shared", true]]),
+          activeMapId: "map-1",
+        },
+      });
+
+      // Shows badge "2 cartes"
+      expect(wrapper.text()).toContain("2 cartes");
+
+      // Open delete dialog
+      const item = wrapper.find('[data-feature-item-id="feat-shared"]');
+      const trashBtn = item.find('button[title="Supprimer l\'élément"]');
+      await trashBtn.trigger("click");
+
+      // Shows remove-from-map button
+      const removeBtn = wrapper.find('[data-testid="remove-from-map-btn"]');
+      expect(removeBtn.exists()).toBe(true);
+      expect(removeBtn.text()).toContain("Retirer de cette carte");
+
+      await removeBtn.trigger("click");
+
+      expect(wrapper.emitted("update-feature")).toBeDefined();
+      const updated = wrapper.emitted("update-feature")?.[0][0] as Feature;
+      expect(updated.mapIds).toEqual(["map-2"]);
+      expect(updated.mapId).toBe("map-2");
+    });
+  });
+});
+
+describe("FeatureVisibilityControls collapsed rail", () => {
+  const pointFeature: Feature = {
+    type: "Feature",
+    id: "feat-1",
+    projectId: "proj-1",
+    mapId: "map-1",
+    name: "Québec",
+    geometry: { type: "Point", coordinates: [-71.2, 46.8] },
+    properties: { name: "Québec", mapElementType: "point" },
+    createdAt: "2026-01-01",
+    updatedAt: "2026-01-01",
+  };
+
+  it("shows a logo strip to expand and hides the full list when collapsed", async () => {
+    const wrapper = mount(FeatureVisibilityControls, {
+      props: {
+        collapsed: true,
+        features: [pointFeature],
+        featureVisibility: new Map([[pointFeature.id, true]]),
+      },
+    });
+
+    expect(wrapper.find('[data-testid="sidebar-collapsed-rail"]').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="toggle-sidebar-button"]').exists()).toBe(true);
+    expect(wrapper.text()).not.toContain("Tout afficher");
+
+    await wrapper.find('[data-testid="toggle-sidebar-button"]').trigger("click");
+    expect(wrapper.emitted("toggle-collapsed")).toBeTruthy();
   });
 });

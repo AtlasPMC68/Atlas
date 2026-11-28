@@ -4,9 +4,9 @@ export interface FeatureInteractionOptions<T = Feature> {
   /** Maximum delay between two clicks to be considered a double-click (in ms). Default: 400 */
   thresholdMs?: number;
   /** Callback fired on a single click or selection */
-  onSelect?: (item: T) => void;
+  onSelect?: (item: T, event?: unknown) => void;
   /** Callback fired on double click / edit request */
-  onEdit?: (item: T) => void;
+  onEdit?: (item: T, event?: unknown) => void;
   /** Function to extract a unique ID from the item. Defaults to item.id */
   getId?: (item: T) => string | number | null | undefined;
 }
@@ -40,7 +40,7 @@ export function createFeatureDoubleClickHandler<T = Feature>(
     return anyItem?.id != null ? String(anyItem.id) : null;
   };
 
-  const handleEdit = (item: T) => {
+  const handleEdit = (item: T, event?: unknown) => {
     const id = getId(item);
     const now = Date.now();
     // Guard against duplicated edit triggers within 300ms (e.g. if consecutive clicks and native dblclick both fire)
@@ -52,26 +52,40 @@ export function createFeatureDoubleClickHandler<T = Feature>(
     lastClickTime = 0;
     lastClickId = null;
 
-    options.onSelect?.(item);
-    options.onEdit?.(item);
-  };
-
-  const handleClick = (item: T) => {
-    const id = getId(item);
-    const now = Date.now();
-
-    if (id != null && lastClickId === id && now - lastClickTime <= thresholdMs) {
-      // Consecutive clicks on the same item within threshold -> trigger double-click/edit
-      handleEdit(item);
+    if (event !== undefined) {
+      options.onSelect?.(item, event);
+      options.onEdit?.(item, event);
     } else {
-      lastClickTime = now;
-      lastClickId = id;
       options.onSelect?.(item);
+      options.onEdit?.(item);
     }
   };
 
-  const handleDblClick = (item: T) => {
-    handleEdit(item);
+  const handleClick = (item: T, event?: unknown) => {
+    const id = getId(item);
+    const now = Date.now();
+
+    // Guard against echo/duplicate click events from bubbling or parent group layers (< 80ms)
+    if (id != null && lastClickId === id && now - lastClickTime < 80) {
+      return;
+    }
+
+    if (id != null && lastClickId === id && now - lastClickTime <= thresholdMs) {
+      // Consecutive clicks on the same item within threshold (80ms - thresholdMs) -> trigger double-click/edit
+      handleEdit(item, event);
+    } else {
+      lastClickTime = now;
+      lastClickId = id;
+      if (event !== undefined) {
+        options.onSelect?.(item, event);
+      } else {
+        options.onSelect?.(item);
+      }
+    }
+  };
+
+  const handleDblClick = (item: T, event?: unknown) => {
+    handleEdit(item, event);
   };
 
   const reset = () => {

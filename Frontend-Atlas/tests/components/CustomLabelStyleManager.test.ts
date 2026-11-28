@@ -2,10 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { mount } from "@vue/test-utils";
 import { nextTick } from "vue";
 import CustomLabelStyleManager from "../../src/components/CustomLabelStyleManager.vue";
-import {
-  formatCustomStyleOptionLabel,
-  type CustomLabelStyle,
-} from "../../src/utils/labelPresentation";
+import type { CustomLabelStyle } from "../../src/utils/labelPresentation";
 
 describe("CustomLabelStyleManager", () => {
   beforeEach(() => {
@@ -68,35 +65,67 @@ describe("CustomLabelStyleManager", () => {
     ]);
   });
 
-  it("formats custom style options with color and gras / italique in parentheses", () => {
-    const boldStyle: CustomLabelStyle = {
-      id: "s1",
-      name: "Fort",
-      sizePx: 16,
-      fontStyle: "normal",
-      fontWeight: "bold",
-      bold: true,
-      textTransform: "uppercase",
-      color: "#9333ea",
-      priority: 30,
-      minZoom: 1,
-    };
-    expect(formatCustomStyleOptionLabel(boldStyle)).toBe(
-      "Fort (#9333ea, gras, majuscules)",
-    );
+  it("toggles hasPoint and shows point customization controls", async () => {
+    const styles: CustomLabelStyle[] = [
+      {
+        id: "style-point",
+        name: "Capitale",
+        sizePx: 16,
+        fontStyle: "normal",
+        textTransform: "none",
+        color: "#000000",
+        priority: 40,
+        minZoom: 1,
+        hasPoint: false,
+      },
+    ];
+    const wrapper = mount(CustomLabelStyleManager, { props: { styles } });
+    (wrapper.vm as { open: () => void }).open();
+    await nextTick();
 
-    const italicStyle: CustomLabelStyle = {
-      id: "s2",
-      name: "Rivière",
-      sizePx: 12,
-      fontStyle: "italic",
-      textTransform: "none",
-      color: "#ff0000",
-      priority: 20,
-      minZoom: 1,
-    };
-    expect(formatCustomStyleOptionLabel(italicStyle)).toBe(
-      "Rivière (#ff0000, italique)",
+    const pointCheckbox = wrapper.find('[data-testid="custom-style-has-point-checkbox"]');
+    expect(pointCheckbox.exists()).toBe(true);
+    expect((pointCheckbox.element as HTMLInputElement).checked).toBe(false);
+    expect(wrapper.find('[data-testid="custom-style-point-settings"]').exists()).toBe(false);
+
+    await pointCheckbox.setValue(true);
+    await nextTick();
+
+    expect(wrapper.find('[data-testid="custom-style-point-settings"]').exists()).toBe(true);
+    expect(wrapper.text()).toContain("Mise en forme");
+    expect(wrapper.text()).toContain("Réglages du point");
+  });
+
+  it("warns that an over-max point stroke will be clamped", async () => {
+    const styles: CustomLabelStyle[] = [
+      {
+        id: "style-point",
+        name: "Capitale",
+        sizePx: 16,
+        fontStyle: "normal",
+        textTransform: "none",
+        color: "#000000",
+        priority: 40,
+        minZoom: 1,
+        hasPoint: true,
+        pointStrokeWidth: 1,
+      },
+    ];
+    const wrapper = mount(CustomLabelStyleManager, { props: { styles } });
+    (wrapper.vm as { open: () => void }).open();
+    await nextTick();
+    await wrapper.find('[aria-label="Modifier le style Capitale"]').trigger("click");
+    await nextTick();
+
+    const widthInput = wrapper.find("#custom-style-point-stroke-width");
+    expect(widthInput.exists()).toBe(true);
+    (widthInput.element as HTMLInputElement).value = "20";
+    await widthInput.trigger("input");
+    await nextTick();
+
+    expect(wrapper.find('[data-testid="custom-point-stroke-width-max-warning"]').exists()).toBe(
+      true,
     );
+    expect(wrapper.text()).toContain("sera plafonnée");
   });
 });

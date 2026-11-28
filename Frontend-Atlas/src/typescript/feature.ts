@@ -5,6 +5,8 @@ export interface Feature {
   id: string;
   projectId: string;
   mapId?: string | null;
+  map_id?: string | null;
+  mapIds?: string[];
   geometry: Geometry;
   properties: FeatureProperties;
   createdAt: string;
@@ -54,7 +56,9 @@ export interface SuggestedPlace {
 }
 
 export interface FeatureProperties {
-  name: string;
+  name?: string;
+  mapId?: string | null;
+  mapIds?: string[];
   isVisible?: boolean;
   show?: boolean; // set by the backend extraction (tasks.py); false hides the feature initially
   labelText?: string;
@@ -91,6 +95,8 @@ export interface FeatureProperties {
   customLabelStyleId?: string | null;
   customLabelStyle?: any;
   customLabelStyleFallbackWordType?: string;
+  startYear?: number | null;
+  endYear?: number | null;
   [key: string]: any;
   fontStyle?: "normal" | "italic" |"uppercase"| string;
 }

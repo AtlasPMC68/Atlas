@@ -72,8 +72,8 @@
           >
             Aucune ville de ce nom dans la zone choisie.
           </p>
-          <p v-if="searchError" class="text-xs text-error">{{ searchError }}</p>
-          <p v-if="notice" class="text-xs text-warning">{{ notice }}</p>
+          <p v-if="searchError" class="text-xs text-red-700 bg-white border border-red-500 rounded px-2 py-1 mt-1">{{ searchError }}</p>
+          <p v-if="notice" class="text-xs text-red-700 bg-white border border-red-500 rounded px-2 py-1 mt-1">{{ notice }}</p>
         </div>
 
         <!-- Chosen cities -->

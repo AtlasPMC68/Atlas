@@ -6,6 +6,7 @@ import {
   yearToIsoStart,
   yearToIsoEnd,
   isPeriodActiveAt,
+  syncEndFromStart,
 } from "../../src/utils/dateUtils";
 
 describe("dateUtils", () => {
@@ -15,7 +16,12 @@ describe("dateUtils", () => {
       expect(toYear(undefined)).toBeNull();
       expect(toYear("")).toBeNull();
       expect(toYear("invalid")).toBeNull();
-      expect(toYear("1750")).toBeNull();
+    });
+
+    it("parses standalone YYYY strings and numbers", () => {
+      expect(toYear("1750")).toBe(1750);
+      expect(toYear(1750)).toBe(1750);
+      expect(toYear("800")).toBe(800);
     });
 
     it("parses YYYY-MM-DD strings", () => {
@@ -26,6 +32,14 @@ describe("dateUtils", () => {
     it("parses ISO strings containing a time component", () => {
       expect(toYear("1750-01-01T00:00:00Z")).toBe(1750);
       expect(toYear("2026-05-15T14:30:00.000Z")).toBe(2026);
+    });
+
+    it("parses year 0 and negative years (BCE)", () => {
+      expect(toYear(0)).toBe(0);
+      expect(toYear("0")).toBe(0);
+      expect(toYear("-44")).toBe(-44);
+      expect(toYear("-500")).toBe(-500);
+      expect(toYear("-44-03-15")).toBe(-44);
     });
   });
 
@@ -103,6 +117,21 @@ describe("dateUtils", () => {
       expect(isPeriodActiveAt("2000-01-12", "2026-04-15", "2026-04-14", dateStarts)).toBe(true);
       expect(isPeriodActiveAt("2000-01-12", "2026-04-15", "2026-04-15", dateStarts)).toBe(false);
       expect(isPeriodActiveAt("2026-04-15", "2026-06-01", "2026-04-15", dateStarts)).toBe(true);
+    });
+  });
+
+  describe("syncEndFromStart", () => {
+    it("synchronizes end when end is empty or null", () => {
+      expect(syncEndFromStart(1800, null)).toBe(1800);
+      expect(syncEndFromStart("1800-01-01", "")).toBe("1800-01-01");
+    });
+
+    it("synchronizes end when end matches previous start", () => {
+      expect(syncEndFromStart(1850, 1800, 1800)).toBe(1850);
+    });
+
+    it("preserves custom end when end differs from previous start", () => {
+      expect(syncEndFromStart(1850, 1900, 1800)).toBe(1900);
     });
   });
 });

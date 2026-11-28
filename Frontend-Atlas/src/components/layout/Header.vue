@@ -46,28 +46,43 @@
           </RouterLink>
         </nav>
 
-        <!-- Desktop CTA -->
-        <div class="hidden md:flex items-center space-x-4 relative">
+        <!-- Authentication Actions (Always visible) -->
+        <div class="flex items-center space-x-3">
           <template v-if="isAuthenticated">
-            <div
-              class="relative group"
-              @mouseenter="openDropdown"
-              @mouseleave="closeDropdown"
+            <RouterLink
+              to="/profil"
+              class="text-gray-700 hover:text-primary-600 px-2 py-1 text-sm font-medium rounded-lg hover:bg-gray-100 transition-colors flex items-center"
+              title="Mon compte / Profil"
             >
-              <RouterLink
-                to="/profil"
-                class="text-gray-700 hover:text-primary-600 px-3 py-2 text-sm font-medium transition-colors"
-              >
-                <UserCircleIcon class="h-8 w-8" />
-              </RouterLink>
-            </div>
+              <UserCircleIcon class="h-8 w-8" />
+            </RouterLink>
+
+            <button
+              type="button"
+              @click="logout"
+              class="text-gray-700 hover:text-red-600 p-1.5 rounded-lg hover:bg-gray-100 transition-colors flex items-center"
+              title="Déconnexion"
+              aria-label="Déconnexion"
+            >
+              <ArrowRightOnRectangleIcon class="h-7 w-7" />
+            </button>
           </template>
 
           <template v-else>
-            <button @click="login" class="btn-secondary text-sm">
+            <button
+              type="button"
+              @click="login"
+              class="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg shadow-sm hover:bg-gray-50 hover:text-gray-900 transition-colors"
+              title="Se connecter"
+            >
               Connexion
             </button>
-            <button @click="register" class="btn-primary text-sm">
+            <button
+              type="button"
+              @click="register"
+              class="px-4 py-2 text-sm font-medium text-white bg-primary-600 border border-transparent rounded-lg shadow-sm hover:bg-primary-700 transition-colors"
+              title="Créer un compte"
+            >
               S'inscrire
             </button>
           </template>
@@ -78,30 +93,21 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed } from "vue";
-import { MapIcon, UserCircleIcon } from "@heroicons/vue/24/outline";
+import { onMounted } from "vue";
+import {
+  MapIcon,
+  UserCircleIcon,
+  ArrowRightOnRectangleIcon,
+} from "@heroicons/vue/24/outline";
 import keycloak from "../../keycloak";
+import { useCurrentUser } from "../../composables/useCurrentUser";
 
-const isDropdownOpen = ref(false);
+const { isAuthenticated, fetchCurrentUser } = useCurrentUser();
 
-let closeTimeout: ReturnType<typeof setTimeout> | null = null;
-
-const openDropdown = () => {
-  if (closeTimeout) {
-    clearTimeout(closeTimeout);
-    closeTimeout = null;
+onMounted(() => {
+  if (keycloak.authenticated) {
+    void fetchCurrentUser();
   }
-  isDropdownOpen.value = true;
-};
-
-const closeDropdown = () => {
-  closeTimeout = setTimeout(() => {
-    isDropdownOpen.value = false;
-  }, 100);
-};
-
-const isAuthenticated = computed(() => {
-  return keycloak.authenticated;
 });
 
 const login = () => {
@@ -112,6 +118,12 @@ const login = () => {
 
 const register = () => {
   keycloak.register({
+    redirectUri: window.location.origin,
+  });
+};
+
+const logout = async () => {
+  await keycloak.logout({
     redirectUri: window.location.origin,
   });
 };

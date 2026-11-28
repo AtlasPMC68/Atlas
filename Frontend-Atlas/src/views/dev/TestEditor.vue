@@ -172,7 +172,7 @@ import type { Feature } from "../../typescript/feature";
 import type { LoadedBorderZone, ZoneGeometry } from "../../typescript/devTest";
 import { useDevTestCases } from "../../composables/useDevTestCases";
 import { showAlert } from "../../composables/useAlert";
-import keycloak from "../../keycloak";
+import { apiFetch } from "../../utils/api";
 
 const route = useRoute();
 const router = useRouter();
@@ -227,12 +227,9 @@ async function deleteTestCase(testCase: string) {
   deletingTestCase.value = testCase;
   testCaseError.value = null;
   try {
-    const res = await fetch(
-      `${import.meta.env.VITE_API_URL}/dev-test-api/test-cases/${mapId.value}/${encodeURIComponent(testCase)}`,
-      {
-        method: "DELETE",
-        headers: { Authorization: `Bearer ${keycloak.token}` },
-      },
+    const res = await apiFetch(
+      `/dev-test-api/test-cases/${mapId.value}/${encodeURIComponent(testCase)}`,
+      { method: "DELETE" },
     );
 
     if (!res.ok) {
@@ -251,9 +248,7 @@ async function deleteTestCase(testCase: string) {
 
 async function loadTestKind(currentMapId: string) {
   try {
-    const res = await fetch(`${import.meta.env.VITE_API_URL}/dev-test-api/tests`, {
-      headers: { Authorization: `Bearer ${keycloak.token}` },
-    });
+    const res = await apiFetch("/dev-test-api/tests");
     if (!res.ok) return;
     const data = await res.json();
     const entry = Array.isArray(data)
@@ -267,9 +262,8 @@ async function loadTestKind(currentMapId: string) {
 
 async function loadTestZones(currentMapId: string) {
   try {
-    const res = await fetch(
-      `${import.meta.env.VITE_API_URL}/dev-test-api/georef_zones/${currentMapId}`,
-      { headers: { Authorization: `Bearer ${keycloak.token}` } },
+    const res = await apiFetch(
+      `/dev-test-api/georef_zones/${currentMapId}`,
     );
     if (!res.ok) {
       // For a brand-new test map, it's normal to have no zones yet.
@@ -280,6 +274,12 @@ async function loadTestZones(currentMapId: string) {
       }
 
       console.error("Failed to fetch test zones GeoJSON", res.status);
+      showAlert(
+        "error",
+        res.status === 403
+          ? "Vous n'avez pas l'autorisation de charger les zones de ce test."
+          : "Impossible de charger les zones de ce test.",
+      );
       return;
     }
 
@@ -300,6 +300,7 @@ async function loadTestZones(currentMapId: string) {
     featureVisibility.value = vis;
   } catch (err) {
     console.error("Error loading test zones:", err);
+    showAlert("error", "Impossible de charger les zones de ce test.");
   }
 }
 
@@ -410,14 +411,11 @@ async function persistZonesToBackend() {
   };
 
   try {
-    const res = await fetch(
-      `${import.meta.env.VITE_API_URL}/dev-test-api/georef_zones/${mapId.value}`,
+    const res = await apiFetch(
+      `/dev-test-api/georef_zones/${mapId.value}`,
       {
         method: "PUT",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${keycloak.token}`,
-        },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
       },
     );

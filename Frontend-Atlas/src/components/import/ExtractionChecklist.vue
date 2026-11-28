@@ -51,7 +51,7 @@
       />
     </ChecklistGroup>
 
-    <!-- Points de contrôle -->
+    <!-- Control points -->
     <ChecklistGroup
       title="Points de contrôle"
       :tone="pointsLocked ? 'locked' : steps.sift.status === 'done' ? 'progress' : 'pending'"
@@ -85,7 +85,7 @@
       />
     </ChecklistGroup>
 
-    <!-- Points de vérification (dev-test only): held out of every fit, they
+    <!-- Check points (dev-test only): held out of every fit, they
          are what the test plan measures placement with. -->
     <ChecklistGroup
       v-if="showChecks"
@@ -315,8 +315,17 @@ const zoneColors = computed(() => (props.inputs.colors ?? []).filter((c) => c.ki
 
 const legendDescription = computed(() => {
   const legend = props.inputs.legend;
-  if (!legend) return "Zone ignorée par l'extraction, ou aucune légende";
-  return legend.present ? "Légende délimitée" : "Aucune légende sur la carte";
+  const ignoredCount = props.inputs.ignoredAreas?.length ?? 0;
+  const ignoredText =
+    ignoredCount > 0
+      ? ` (+${ignoredCount} zone${ignoredCount > 1 ? "s" : ""} exclue${ignoredCount > 1 ? "s" : ""})`
+      : "";
+  if (!legend) {
+    return ignoredCount > 0
+      ? `${ignoredCount} zone${ignoredCount > 1 ? "s" : ""} d'exclusion`
+      : "Zone ignorée par l'extraction, ou aucune légende";
+  }
+  return (legend.present ? "Légende délimitée" : "Aucune légende sur la carte") + ignoredText;
 });
 
 const ocrLabel = computed<{ text: string; tone: string } | null>(() => {

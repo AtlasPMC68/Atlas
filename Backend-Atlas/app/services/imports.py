@@ -37,14 +37,27 @@ from app.utils.imposed_colors import (
     parse_imposed_colors_entries,
     split_imposed_colors_by_kind,
 )
-from app.utils.legend import LegendBounds, parse_legend_entry
+from app.utils.legend import LegendBounds, parse_legend_bounds, parse_legend_entry
 
-INPUT_KEYS = ("frameBounds", "legend", "controlPoints", "colors", "shapes", "options")
+INPUT_KEYS = (
+    "frameBounds",
+    "legend",
+    "controlPoints",
+    "colors",
+    "shapes",
+    "options",
+    "ignoredAreas",
+    # exclusionZones is a legacy alias for ignoredAreas
+    "exclusionZones",
+)
 
 DEFAULT_OPTIONS = {"textExtraction": False}
 
 #: Shape clicks one import may carry; each one is a flood fill.
 MAX_SHAPE_CLICKS = 50
+
+#: Ignored-area rectangles one import may carry; each OCR block is tested against each.
+MAX_IGNORED_AREAS = 50
 
 #: An import untouched this long is abandoned; the next import sweeps it.
 STALE_IMPORT_AGE = timedelta(days=7)
@@ -108,6 +121,16 @@ def _validate_options(entry: Any) -> Dict[str, bool]:
     return options
 
 
+def _validate_ignored_areas(entries: Any) -> List[Dict[str, float]]:
+    if not entries:
+        return []
+    if not isinstance(entries, list):
+        raise ValueError("ignoredAreas must be a list of rectangles")
+    if len(entries) > MAX_IGNORED_AREAS:
+        raise ValueError(f"at most {MAX_IGNORED_AREAS} ignoredAreas")
+    return [parse_legend_bounds(entry) for entry in entries]
+
+
 def apply_inputs_patch(
     current: Dict[str, Any], patch: Dict[str, Any]
 ) -> Dict[str, Any]:
@@ -136,6 +159,10 @@ def apply_inputs_patch(
             merged[key] = _validate_shapes(value)
         elif key == "options":
             merged[key] = _validate_options(value)
+        elif key in ("ignoredAreas", "exclusionZones"):
+            # exclusionZones is treated as a legacy alias for ignoredAreas
+            validated = _validate_ignored_areas(value)
+            merged["ignoredAreas"] = validated
 
     previous_frame = (current or {}).get("frameBounds")
     frame_changed = (
@@ -160,6 +187,7 @@ class ImportInputs:
     all_colors: List[Dict[str, Any]] = field(default_factory=list)
     shapes: List[Dict[str, Any]] = field(default_factory=list)
     options: Dict[str, bool] = field(default_factory=lambda: dict(DEFAULT_OPTIONS))
+    ignored_areas: List[LegendBounds] = field(default_factory=list)
 
     @property
     def enable_text_extraction(self) -> bool:
@@ -185,6 +213,8 @@ def parse_import_inputs(inputs: Optional[Dict[str, Any]]) -> ImportInputs:
     options.update(
         {k: v for k, v in (inputs.get("options") or {}).items() if k in DEFAULT_OPTIONS}
     )
+    raw_ignored = inputs.get("ignoredAreas") or inputs.get("exclusionZones") or []
+    ignored_areas = _validate_ignored_areas(raw_ignored)
 
     return ImportInputs(
         frame_bounds=parse_frame_bounds_entry(inputs.get("frameBounds")),
@@ -200,6 +230,7 @@ def parse_import_inputs(inputs: Optional[Dict[str, Any]]) -> ImportInputs:
         all_colors=colors,
         shapes=inputs.get("shapes") or [],
         options=options,
+        ignored_areas=ignored_areas,
     )
 
 

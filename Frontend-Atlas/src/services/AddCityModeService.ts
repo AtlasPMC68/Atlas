@@ -5,7 +5,8 @@ import type { Feature } from "../typescript/feature";
 import type { MapWithPm } from "../typescript/mapDrawing";
 import type { PendingCity } from "../typescript/addCityMode";
 import { upsertFeature } from "../utils/featureHelpers";
-import { formatWordText } from "../utils/wordStyles";
+import { applyWordStyleToFeature, formatWordText } from "../utils/wordStyles";
+import { showAlert } from "../composables/useAlert";
 
 export class AddCityModeService {
   public addCityMode = ref(false);
@@ -41,35 +42,45 @@ export class AddCityModeService {
     const map = this.getMap();
     if (!this.pendingCity.value || !map) return;
     const rawName = this.cityInputName.value.trim();
+    if (!rawName) {
+      showAlert("error", "Donnez un nom à la ville avant de valider.");
+      this.cancel();
+      return;
+    }
     const name = formatWordText(rawName, "city");
     const { latlng, marker } = this.pendingCity.value;
     marker.remove();
     this.resetState();
     const now = new Date().toISOString();
     const id = `tmp_${Math.random().toString(36).slice(2, 9)}`;
-    const feature: Feature = {
-      id,
-      type: "Feature",
-      projectId: this.getProjectId(),
-      mapId: "",
-      geometry: {
-        type: "Point",
-        coordinates: [latlng.lng, latlng.lat] as [number, number],
-      },
-      properties: {
+    const feature = applyWordStyleToFeature(
+      {
+        id,
+        type: "Feature",
+        projectId: this.getProjectId(),
+        mapId: null,
+        geometry: {
+          type: "Point",
+          coordinates: [latlng.lng, latlng.lat] as [number, number],
+        },
+        properties: {
+          name,
+          labelText: name,
+          colorName: "black",
+          colorRgb: [0, 0, 0] as [number, number, number],
+          strokeColor: [0, 0, 0] as [number, number, number],
+          strokeWidth: 1,
+          strokeOpacity: 1,
+          mapElementType: "point",
+        },
+        createdAt: now,
+        updatedAt: now,
         name,
-        labelText: "",
-        colorName: "black",
-        colorRgb: [0, 0, 0] as [number, number, number],
-        strokeColor: [0, 0, 0] as [number, number, number],
-        strokeWidth: 1,
-        strokeOpacity: 1,
-        mapElementType: "point",
       },
-      createdAt: now,
-      updatedAt: now,
+      "city",
       name,
-    };
+      name,
+    );
     const next = upsertFeature(this.localFeaturesSnapshot.value, feature);
     this.localFeaturesSnapshot.value = next;
     this.onAfterCreate();

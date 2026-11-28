@@ -9,7 +9,11 @@ import wordTaxonomy from "../../../shared/word-taxonomy.json";
 
 export function upsertFeature(features: Feature[], feature: Feature): Feature[] {
   const next = [...features];
-  const index = next.findIndex((f) => f.id === feature.id);
+  const targetId = String(feature.id ?? (feature as any).properties?.id ?? "");
+  const index = next.findIndex((f) => {
+    const fId = String(f.id ?? (f as any).properties?.id ?? "");
+    return Boolean(targetId) && fId === targetId;
+  });
   if (index >= 0) {
     next[index] = feature;
     return next;
@@ -27,7 +31,47 @@ export function getMapElementType(
     : featureOrProperties;
 
   const geometry = hasProperties ? featureOrProperties.geometry : undefined;
-  const rawMapElementType = properties?.mapElementType;
+  const rawMapElementType =
+    properties?.mapElementType ??
+    (properties as { map_element_type?: MapElementType } | undefined)
+      ?.map_element_type;
+  if (rawMapElementType === "image") {
+    return "image";
+  }
+  if (
+    !rawMapElementType &&
+    hasProperties &&
+    Boolean((featureOrProperties as Feature).image)
+  ) {
+    return "image";
+  }
+
+  // Geometry constraints: Polygons can ONLY be zone or shape, NEVER point or label
+  if (geometry?.type === "Polygon" || geometry?.type === "MultiPolygon") {
+    if (rawMapElementType === "zone" || rawMapElementType === "shape") {
+      return rawMapElementType;
+    }
+    return properties?.shapeKind ? "shape" : "shape";
+  }
+
+  // Geometry constraints: LineStrings can ONLY be polyline or arrow
+  if (geometry?.type === "LineString") {
+    if (rawMapElementType === "polyline" || rawMapElementType === "arrow") {
+      return rawMapElementType;
+    }
+    return "polyline";
+  }
+
+  const customLabelStyle = properties?.customLabelStyle as Record<string, unknown> | undefined;
+  if (customLabelStyle) {
+    if (customLabelStyle.hasPoint === true || customLabelStyle.mapElementType === "point") {
+      return "point";
+    }
+    if (customLabelStyle.hasPoint === false || customLabelStyle.mapElementType === "label") {
+      return "label";
+    }
+  }
+
   const rawWordType = String(properties?.rawType || properties?.type || "")
     .toLowerCase();
   const isTextElement =
@@ -100,6 +144,37 @@ export function getFeatureMapId(
 
   const rawMapId = directMapId ?? snakeMapId ?? propCamelMapId ?? propSnakeMapId ?? null;
   return rawMapId ? String(rawMapId).trim() : null;
+}
+
+/**
+ * Safely extracts all associated map IDs from a feature or its properties as an array of strings.
+ */
+export function getFeatureMapIds(
+  feature: Feature | Record<string, unknown> | null | undefined,
+): string[] {
+  if (!feature) return [];
+  const directMapIds =
+    "mapIds" in feature && Array.isArray((feature as any).mapIds)
+      ? (feature as any).mapIds
+      : undefined;
+  const props = "properties" in feature ? (feature as Feature).properties : undefined;
+  const propMapIds =
+    props && Array.isArray((props as any).mapIds)
+      ? (props as any).mapIds
+      : undefined;
+  const idsList = directMapIds ?? propMapIds;
+  if (idsList && idsList.length > 0) {
+    return Array.from(
+      new Set(
+        idsList
+          .map(String)
+          .map((s: string) => s.trim())
+          .filter(Boolean),
+      ),
+    );
+  }
+  const single = getFeatureMapId(feature);
+  return single ? [single] : [];
 }
 
 export function getDefaultLayer(type: MapElementType | string | null): number {
@@ -250,32 +325,54 @@ export function cloneFeatureWithOffset(
   }
 
   const newGeometry = offsetGeometry(source.geometry, deltaLng, deltaLat);
-  const label =
-    source.properties?.labelText || source.properties?.name || source.name;
 
-  const isZone =
-    getMapElementType(source) === "zone" ||
-    source.properties?.mapElementType === "zone";
+  // Preserve the exact element type
+  const targetType =
+    getMapElementType(source) ||
+    source.properties?.mapElementType ||
+    (source.geometry?.type === "Point" ? "point" : "shape");
 
-  const targetMapId = isZone ? null : (source.mapId ?? null);
+  // Clear map association (becomes general project element)
+  clonedProps.mapId = null;
+  clonedProps.map_id = null;
+  clonedProps.mapIds = [];
+  delete clonedProps.mapTitle;
 
-  if (isZone) {
-    clonedProps.mapId = null;
-    clonedProps.map_id = null;
-    delete clonedProps.mapTitle;
+  // Preserve feature name, labelText and typography styles for duplicated elements
+  const baseName = source.properties?.name || source.name || "";
+  const baseLabel = source.properties?.labelText || baseName;
+  clonedProps.name = baseName;
+  if (baseLabel) {
+    clonedProps.labelText = baseLabel;
   }
+  if (source.properties?.wordType) {
+    clonedProps.wordType = source.properties.wordType;
+  }
+  if (source.properties?.rawType) {
+    clonedProps.rawType = source.properties.rawType;
+  }
+  if (source.properties?.customLabelStyleId) {
+    clonedProps.customLabelStyleId = source.properties.customLabelStyleId;
+  }
+  if (source.properties?.customLabelStyle) {
+    clonedProps.customLabelStyle = source.properties.customLabelStyle;
+  }
+
+  clonedProps.mapElementType = targetType;
 
   return {
     ...source,
     id: newId,
-    mapId: targetMapId,
-    ...(isZone ? { map_id: null } : {}),
-    name: label,
+    mapId: null,
+    mapIds: [],
+    ...(("map_id" in source || "map_id" in clonedProps) ? { map_id: null } : {}),
+    name: baseName,
     geometry: newGeometry,
     properties: {
       ...clonedProps,
-      name: label,
-      ...(source.properties?.labelText ? { labelText: label } : {}),
+      name: baseName,
+      mapElementType: targetType,
+      ...(baseLabel ? { labelText: baseLabel } : {}),
     },
     createdAt: now,
     updatedAt: now,

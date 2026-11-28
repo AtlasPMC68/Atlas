@@ -103,7 +103,7 @@ import { useRouter } from "vue-router";
 import FileDropZone from "../../components/import/FileDropZone.vue";
 import ImportPreview from "../../components/import/ImportPreview.vue";
 import { useFileUpload } from "../../composables/useFileUpload";
-import keycloak from "../../keycloak";
+import { apiFetch } from "../../utils/api";
 
 const router = useRouter();
 
@@ -138,16 +138,10 @@ async function createTest() {
   formData.append("kind", kind.value);
 
   try {
-    const res = await fetch(
-      `${import.meta.env.VITE_API_URL}/dev-test-api/tests/upload`,
-      {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${keycloak.token}`,
-        },
-        body: formData,
-      },
-    );
+    const res = await apiFetch("/dev-test-api/tests/upload", {
+      method: "POST",
+      body: formData,
+    });
 
     if (res.status === 401 || res.status === 403) {
       throw new Error(`Accès refusé (${res.status}) — vérifiez que vous êtes bien connecté.`);

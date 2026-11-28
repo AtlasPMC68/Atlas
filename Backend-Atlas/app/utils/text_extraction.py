@@ -8,6 +8,7 @@ from uuid import UUID, uuid4
 from celery import current_task
 
 from app.celery_app import celery_app
+from app.utils.place_nomenclature import _find_geographic_prefix, _normalize
 
 logger = logging.getLogger(__name__)
 
@@ -72,7 +73,245 @@ def ocr_blocks_to_payload(blocks: list[dict[str, Any]]) -> list[list]:
                 prob,
             ]
         )
-    return payload
+    return merge_multiline_ocr_blocks(payload)
+
+
+_KNOWN_MULTILINE_PREFIX_WORDS = {
+    "province",
+    "territoire",
+    "district",
+    "etat",
+    "ocean",
+    "mer",
+    "lac",
+    "fleuve",
+    "riviere",
+    "baie",
+    "golfe",
+    "detroit",
+    "ile",
+    "iles",
+    "saint",
+    "sainte",
+    "ste",
+    "st",
+    "cap",
+    "grand",
+    "grande",
+    "haut",
+    "haute",
+    "bas",
+    "basse",
+    "nouveau",
+    "nouvelle",
+    "mount",
+    "mt",
+    "fort",
+    "port",
+    "north",
+    "south",
+    "east",
+    "west",
+}
+_LINKING_PARTICLES = {"de", "du", "des", "d", "l", "del", "of", "da", "do"}
+
+
+def _has_multiline_prefix(top_text: str, bottom_text: str = "") -> bool:
+    """Return True if the top block (or the combined text) starts with a recognized geographic prefix or linking particle."""
+    if not top_text:
+        return False
+    raw_top = str(top_text).strip()
+    if not raw_top:
+        return False
+    # Hyphen continuation at the end (e.g. 'NOUVEAU-', 'CAP-')
+    if raw_top.endswith(("-", "—", "–")):
+        return True
+
+    norm_top = _normalize(raw_top)
+    if not norm_top:
+        return False
+    if _find_geographic_prefix(norm_top) is not None:
+        return True
+    if bottom_text:
+        norm_combined = _normalize(f"{raw_top} {bottom_text}")
+        if _find_geographic_prefix(norm_combined) is not None:
+            return True
+
+    words = norm_top.split()
+    if not words:
+        return False
+    if words[0] in _KNOWN_MULTILINE_PREFIX_WORDS:
+        return True
+    if words[-1] in _LINKING_PARTICLES:
+        return True
+
+    return False
+
+
+def merge_multiline_ocr_blocks(blocks: list[list]) -> list[list]:
+    """Merge OCR text blocks that belong to the same multi-line label (e.g. 'Mer de' + 'Baffin').
+
+    Heuristic:
+    - MUST have a recognized geographic prefix or hyphen continuation.
+    - Font sizes must be identical (height ratio within [0.85, 1.30] and delta <= max(2.5, 0.15 * min_h)).
+    - Very close to the right or underneath.
+    - Top-to-bottom / left-to-right reading order when combining text.
+    """
+    if not blocks or len(blocks) < 2:
+        return blocks
+
+    # Parse each block into a structured representation: (coords, text, prob, bbox)
+    items = []
+    for b in blocks:
+        if not isinstance(b, (list, tuple)) or len(b) < 2:
+            continue
+        coords = b[0]
+        text = str(b[1]).strip()
+        prob = float(b[2]) if len(b) > 2 and b[2] is not None else 1.0
+        if not coords or not text:
+            continue
+        xs = [float(pt[0]) for pt in coords]
+        ys = [float(pt[1]) for pt in coords]
+        min_x, max_x = min(xs), max(xs)
+        min_y, max_y = min(ys), max(ys)
+        h = max(1.0, max_y - min_y)
+        w = max(1.0, max_x - min_x)
+        items.append({
+            "coords": coords,
+            "text": text,
+            "prob": prob,
+            "min_x": min_x,
+            "max_x": max_x,
+            "min_y": min_y,
+            "max_y": max_y,
+            "w": w,
+            "h": h,
+            "cx": (min_x + max_x) / 2.0,
+            "cy": (min_y + max_y) / 2.0,
+            "has_prefix": _has_multiline_prefix(text),
+        })
+
+    if len(items) < 2:
+        return blocks
+
+    merged = True
+    while merged:
+        merged = False
+        n = len(items)
+        best_pair = None
+        best_dist = float("inf")
+
+        for i in range(n):
+            for j in range(i + 1, n):
+                a = items[i]
+                b = items[j]
+
+                # Strict identical font size check: height ratio must be <= 1.30 (no horizontal merge if ratio > 1.3 - 1.5)
+                min_h = min(a["h"], b["h"])
+                max_h = max(a["h"], b["h"])
+                if min_h <= 0 or (max_h / min_h) > 1.30 or abs(a["h"] - b["h"]) > max(2.5, 0.15 * min_h):
+                    continue
+
+                max_v_gap = max(6.0, 0.6 * min_h)
+                max_x_gap = max(6.0, 0.45 * min_h)
+                too_far_vertically = (
+                    b["min_y"] - a["max_y"] > max_v_gap
+                    or a["min_y"] - b["max_y"] > max_v_gap
+                )
+                too_far_horizontally = (
+                    b["min_x"] - a["max_x"] > max_x_gap
+                    or a["min_x"] - b["max_x"] > max_x_gap
+                )
+                if too_far_vertically and too_far_horizontally:
+                    continue
+
+                # 1. Vertical candidate (en dessous)
+                if a["min_y"] <= b["min_y"]:
+                    top, bot = a, b
+                    t_idx, b_idx = i, j
+                else:
+                    top, bot = b, a
+                    t_idx, b_idx = j, i
+
+                v_gap = bot["min_y"] - top["max_y"]
+                has_prefix = top["has_prefix"] or _has_multiline_prefix(top["text"], bot["text"])
+                if has_prefix and (-0.25 * min_h <= v_gap <= max_v_gap):
+                    h_overlap = min(top["max_x"], bot["max_x"]) - max(top["min_x"], bot["min_x"])
+                    min_w = min(top["w"], bot["w"])
+                    center_diff = abs(top["cx"] - bot["cx"])
+                    left_diff = abs(top["min_x"] - bot["min_x"])
+                    if (h_overlap >= 0.25 * min_w) or (center_diff <= max(8.0, 0.3 * min_w)) or (left_diff <= max(8.0, 0.25 * min_w)):
+                        dist = max(0.0, v_gap) + center_diff * 0.5
+                        if dist < best_dist:
+                            best_dist = dist
+                            best_pair = (t_idx, b_idx, top, bot)
+
+                # 2. Horizontal candidate (a droit)
+                if a["min_x"] <= b["min_x"]:
+                    left, right = a, b
+                    l_idx, r_idx = i, j
+                else:
+                    left, right = b, a
+                    l_idx, r_idx = j, i
+
+                x_gap = right["min_x"] - left["max_x"]
+                has_h_prefix = left["has_prefix"] or _has_multiline_prefix(left["text"], right["text"])
+                if has_h_prefix and (-0.15 * min_h <= x_gap <= max_x_gap):
+                    y_diff = abs(left["cy"] - right["cy"])
+                    if y_diff <= 0.25 * min_h:
+                        dist = max(0.0, x_gap) + y_diff * 0.5
+                        if dist < best_dist:
+                            best_dist = dist
+                            best_pair = (l_idx, r_idx, left, right)
+
+        if best_pair:
+            first_idx, second_idx, first, second = best_pair
+            first_text = first["text"].strip()
+            second_text = second["text"].strip()
+            if first_text.endswith(("-", "—", "–")):
+                combined_text = f"{first_text}{second_text}"
+            else:
+                combined_text = f"{first_text} {second_text}"
+
+            new_min_x = min(first["min_x"], second["min_x"])
+            new_max_x = max(first["max_x"], second["max_x"])
+            new_min_y = min(first["min_y"], second["min_y"])
+            new_max_y = max(first["max_y"], second["max_y"])
+            new_quad = [
+                [int(round(new_min_x)), int(round(new_min_y))],
+                [int(round(new_max_x)), int(round(new_min_y))],
+                [int(round(new_max_x)), int(round(new_max_y))],
+                [int(round(new_min_x)), int(round(new_max_y))],
+            ]
+            combined_prob = (first["prob"] + second["prob"]) / 2.0
+            new_item = {
+                "coords": new_quad,
+                "text": combined_text,
+                "prob": combined_prob,
+                "min_x": new_min_x,
+                "max_x": new_max_x,
+                "min_y": new_min_y,
+                "max_y": new_max_y,
+                "w": new_max_x - new_min_x,
+                "h": new_max_y - new_min_y,
+                "cx": (new_min_x + new_max_x) / 2.0,
+                "cy": (new_min_y + new_max_y) / 2.0,
+                "has_prefix": _has_multiline_prefix(combined_text),
+            }
+            # Remove indices from highest to lowest to preserve positions
+            del items[max(first_idx, second_idx)]
+            del items[min(first_idx, second_idx)]
+            items.append(new_item)
+            merged = True
+
+    return [
+        [
+            [[int(round(pt[0])), int(round(pt[1]))] for pt in it["coords"]],
+            it["text"],
+            it["prob"],
+        ]
+        for it in items
+    ]
 
 
 def process_candidate_text(text_val: str, quad: list[list[int]]) -> dict[str, Any] | None:

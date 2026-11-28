@@ -127,6 +127,7 @@ export class MapDrawingService {
         name: labelText,
         labelText,
         mapElementType: "label",
+        rawType: feature.properties.rawType || "city",
       },
     };
 
@@ -386,7 +387,7 @@ export class MapDrawingService {
   private getLayersInsideBounds(map: L.Map, bounds: L.LatLngBounds): L.Layer[] {
     const selected: L.Layer[] = [];
 
-    map.eachLayer((layer) => {
+    map.eachLayer((layer: L.Layer) => {
       const candidate = layer as L.Layer & {
         pm?: {
           options?: { allowRemoval?: boolean };
@@ -530,9 +531,9 @@ export class MapDrawingService {
   }
 
   private setupDrawingListeners(map: L.Map) {
-    map.on("pm:create", (e) => {
-      const layer = (e as PmLayerEvent).layer as FeatureBearingLayer;
-      const shape = (e as PmLayerEvent).shape;
+    map.on("pm:create", (e: PmLayerEvent) => {
+      const layer = e.layer as FeatureBearingLayer;
+      const shape = e.shape;
 
       // Geoman fires pm:create for the cut polygon itself. Treat it as internal
       // — the actual result is handled via pm:cut events on the affected layers.
@@ -561,8 +562,8 @@ export class MapDrawingService {
       }, 0);
     });
 
-    map.on("pm:cut", (e) => {
-      const { originalLayer, layer } = e as PmCutEvent;
+    map.on("pm:cut", (e: PmCutEvent) => {
+      const { originalLayer, layer } = e;
       const sourceLayer = originalLayer as FeatureBearingLayer | undefined;
       const resultLayer = layer as FeatureBearingLayer | undefined;
 
@@ -621,8 +622,8 @@ export class MapDrawingService {
       }, 0);
     });
 
-    map.on("pm:remove", (e) => {
-      const layer = (e as PmLayerEvent).layer as FeatureBearingLayer;
+    map.on("pm:remove", (e: PmLayerEvent) => {
+      const layer = e.layer as FeatureBearingLayer;
       const featureId = layer.feature?.id;
 
       if (featureId) {
@@ -630,11 +631,10 @@ export class MapDrawingService {
       }
     });
 
-    map.on("pm:globalremovalmodetoggled", (e) => {
-      const removalEvent = e as unknown as PmRemovalToggleEvent;
-      this.setBoxZoomForRemovalMode(map, removalEvent.enabled);
+    map.on("pm:globalremovalmodetoggled", (e: PmRemovalToggleEvent) => {
+      this.setBoxZoomForRemovalMode(map, e.enabled);
 
-      if (removalEvent.enabled) {
+      if (e.enabled) {
         if (this.freehandActive) {
           this.stopFreehandDrawing(map);
         }
@@ -651,20 +651,19 @@ export class MapDrawingService {
       Boolean((map as MapWithPm).pm?.globalRemovalModeEnabled?.()),
     );
 
-    map.on("pm:lasso-select", (e) => {
+    map.on("pm:lasso-select", (e: PmLassoSelectEvent) => {
       if (!(map as MapWithPm).pm?.globalRemovalModeEnabled?.()) {
         return;
       }
 
-      const lassoEvent = e as PmLassoSelectEvent;
-      this.deleteLassoSelectedLayers(lassoEvent.selectedLayers || []);
+      this.deleteLassoSelectedLayers(e.selectedLayers || []);
     });
 
-    map.on("pm:drawstart", (e) => {
+    map.on("pm:drawstart", (e: PmDrawStartEvent) => {
       if (this.freehandActive) {
         this.stopFreehandDrawing(map);
       }
-      const shape = (e as unknown as PmDrawStartEvent).shape;
+      const shape = e.shape;
       if (shape === "Cut") {
         this.isCuttingActive = true;
         this.emit("cut-started");
@@ -685,7 +684,7 @@ export class MapDrawingService {
           // Signal MapGeoJSON to finalise the cut: detect any zones that geoman
           // silently removed from the map (fully enclosed by the cut polygon)
           // and delete them, then re-render intersected zones with their new
-          // geometry. Deferred so the Vue watcher echo cycle (suppressNextPropsRender)
+          // geometry. Deferred so the Vue watcher echo cycle (holdFeaturePropRenders)
           // has already flushed before we call renderAllFeatures.
           this.emit("cut-complete");
         }, 0);
@@ -788,7 +787,7 @@ export class MapDrawingService {
     const features: Feature[] = [];
 
     if (this.drawnItems.value) {
-      this.drawnItems.value.eachLayer((layer) => {
+      this.drawnItems.value.eachLayer((layer: L.Layer) => {
         const featureLayer = layer as FeatureBearingLayer;
         if (featureLayer.feature) {
           features.push(featureLayer.feature);

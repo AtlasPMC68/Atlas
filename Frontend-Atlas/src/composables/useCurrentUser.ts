@@ -28,6 +28,11 @@ export function useCurrentUser() {
       });
 
       if (!res.ok) {
+        if (res.status === 401) {
+          currentUser.value = null;
+          error.value = "Session expirée. Veuillez vous reconnecter.";
+          return null;
+        }
         throw new Error(`Error fetching user: ${res.status}`);
       }
 

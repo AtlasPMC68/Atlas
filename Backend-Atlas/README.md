@@ -19,4 +19,4 @@ Le backend se lance avec le reste d'Atlas, dans Docker : voir le [guide de déve
 
 ## Outil de test du géoréférencement
 
-L'outil de création et d'évaluation des cas de test est décrit dans [`dev-docs/dev-test-tool.md`](../dev-docs/dev-test-tool.md). Pour remplacer volontairement le meilleur résultat (`best`) d'un cas par sa dernière exécution, même moins bonne, voir la section 5 de ce document (`scripts/force_promote_georef_best.py`).
+L'outil de création et d'évaluation des cas de test est décrit dans [`dev-docs/dev-test-tool.md`](../dev-docs/dev-test-tool.md). Pour remplacer volontairement le meilleur résultat (`best`) d'un cas par sa dernière exécution, même moins bonne, voir la section 5 de ce document (`scripts/force_promote_georef_best.py`)

@@ -4,6 +4,9 @@ import {
   getGeometryAnchor,
   offsetGeometry,
   cloneFeatureWithOffset,
+  getFeatureMapId,
+  getFeatureMapIds,
+  getMapElementType,
 } from "../../src/utils/featureHelpers";
 import type { Feature } from "../../src/typescript/feature";
 
@@ -169,7 +172,7 @@ describe("featureHelpers - copy / paste functionality", () => {
   });
 
   describe("cloneFeatureWithOffset", () => {
-    it("creates a new feature with new ID and translated geometry", () => {
+    it("creates a new feature with new ID, preserved name, and translated geometry", () => {
       const newId = "new-uuid-999";
       const now = "2026-05-01T12:00:00Z";
       const clone = cloneFeatureWithOffset(zoneFeature, 0.5, 1.0, newId, now);
@@ -177,9 +180,14 @@ describe("featureHelpers - copy / paste functionality", () => {
       expect(clone.id).toBe(newId);
       expect(clone.createdAt).toBe(now);
       expect(clone.updatedAt).toBe(now);
+      // Preserved name
       expect(clone.name).toBe("Zone 1");
+      expect(clone.properties.name).toBe("Zone 1");
+      // Preserves element type
+      expect(clone.properties.mapElementType).toBe("zone");
+      // Preserves styles
       expect(clone.properties.colorRgb).toEqual([255, 0, 0]);
-      // Zones must always be added to general elements (mapId: null)
+      // No associated map
       expect(clone.mapId).toBeNull();
       expect(clone.properties.mapId).toBeNull();
 
@@ -189,10 +197,13 @@ describe("featureHelpers - copy / paste functionality", () => {
       }
     });
 
-    it("translates properties.bounds for image features", () => {
+    it("translates properties.bounds for image features while preserving image type and clearing mapId", () => {
       const clone = cloneFeatureWithOffset(imageFeature, 0.5, 1.0, "new-img", "2026-05-01T12:00:00Z");
 
       expect(clone.image).toBe("data:image/png;base64,abc");
+      expect(clone.properties.mapElementType).toBe("image");
+      expect(clone.mapId).toBeNull();
+      expect(clone.name).toBe("carte.png");
       expect(clone.properties.bounds).toBeDefined();
       const bounds = clone.properties.bounds!;
       // south, west
@@ -203,7 +214,59 @@ describe("featureHelpers - copy / paste functionality", () => {
       expect(bounds[1][1]).toBeCloseTo(-69.5); // -70.0 + 0.5
     });
 
-    it("assigns mapId: null to cloned zones to add them to general elements, while preserving mapId for others", () => {
+    it("preserves label/text element type with empty labelText and mapId null", () => {
+      const textFeature: Feature = {
+        id: "text-1",
+        type: "Feature",
+        name: "Nouvelle-France",
+        mapId: "map-123",
+        geometry: {
+          type: "Point",
+          coordinates: [-71.2, 46.8],
+        },
+        properties: {
+          name: "Nouvelle-France",
+          labelText: "Nouvelle-France",
+          mapElementType: "label",
+          sizePx: 16,
+          colorRgb: [0, 0, 0],
+        },
+      };
+
+      const clonedText = cloneFeatureWithOffset(textFeature, 0.1, 0.1);
+      expect(clonedText.name).toBe("Nouvelle-France");
+      expect(clonedText.properties.name).toBe("Nouvelle-France");
+      expect(clonedText.properties.labelText).toBe("Nouvelle-France");
+      expect(clonedText.properties.mapElementType).toBe("label");
+      expect(clonedText.properties.sizePx).toBe(16);
+      expect(clonedText.mapId).toBeNull();
+      expect(clonedText.properties.mapId).toBeNull();
+    });
+
+    it("preserves empty name (name: '') without injecting any default fallback name", () => {
+      const sourceWithEmptyName: Feature = {
+        id: "feat-empty-name",
+        type: "Feature",
+        name: "",
+        mapId: "map-123",
+        geometry: {
+          type: "Point",
+          coordinates: [-71.2, 46.8],
+        },
+        properties: {
+          name: "",
+          labelText: "",
+          mapElementType: "label",
+        },
+      };
+
+      const clone = cloneFeatureWithOffset(sourceWithEmptyName, 0.1, 0.2, "clone-123", "2026-05-01T12:00:00Z");
+
+      expect(clone.name).toBe("");
+      expect(clone.properties.name).toBe("");
+    });
+
+    it("assigns mapId: null to all cloned elements (zones, lines, shapes)", () => {
       const sourceZoneWithMap: Feature = {
         ...zoneFeature,
         mapId: "map-quebec-1900",
@@ -224,7 +287,99 @@ describe("featureHelpers - copy / paste functionality", () => {
         mapId: "map-quebec-1900",
       };
       const clonedLine = cloneFeatureWithOffset(sourceLineWithMap, 0.1, 0.1);
-      expect(clonedLine.mapId).toBe("map-quebec-1900");
+      expect(clonedLine.mapId).toBeNull();
+      expect(clonedLine.properties.mapId).toBeNull();
+      expect(clonedLine.properties.mapElementType).toBe("polyline");
+    });
+    it("clears mapIds array when source feature belongs to multiple maps", () => {
+      const multiMapFeature: Feature = {
+        ...zoneFeature,
+        mapId: "map-1",
+        mapIds: ["map-1", "map-2", "map-3"],
+        properties: {
+          ...zoneFeature.properties,
+          mapId: "map-1",
+          mapIds: ["map-1", "map-2", "map-3"],
+        },
+      };
+
+      const cloned = cloneFeatureWithOffset(multiMapFeature, 0.1, 0.1);
+      expect(cloned.mapId).toBeNull();
+      expect(cloned.properties.mapId).toBeNull();
+      expect(cloned.properties.mapIds).toEqual([]);
+    });
+  });
+
+  describe("getFeatureMapId and getFeatureMapIds", () => {
+    it("returns correct mapId and mapIds", () => {
+      const feat: Feature = {
+        ...zoneFeature,
+        mapId: "carte-1",
+        mapIds: ["carte-1", "carte-2"],
+        properties: {
+          ...zoneFeature.properties,
+          mapId: "carte-1",
+          mapIds: ["carte-1", "carte-2"],
+        },
+      };
+      expect(getFeatureMapId(feat)).toBe("carte-1");
+      expect(getFeatureMapIds(feat)).toEqual(["carte-1", "carte-2"]);
+    });
+
+    it("returns mapId from properties when not directly on feature", () => {
+      const feat: Feature = {
+        ...textFeature,
+        properties: {
+          ...textFeature.properties,
+          mapId: "carte-2",
+        },
+      };
+      expect(getFeatureMapId(feat)).toBe("carte-2");
+      expect(getFeatureMapIds(feat)).toEqual(["carte-2"]);
+    });
+  });
+
+  describe("getMapElementType for images", () => {
+    it("classifies a feature with mapElementType image as image", () => {
+      expect(getMapElementType(imageFeature)).toBe("image");
+    });
+
+    it("classifies snake_case map_element_type image as image", () => {
+      expect(
+        getMapElementType({
+          ...imageFeature,
+          properties: {
+            ...imageFeature.properties,
+            mapElementType: undefined,
+            map_element_type: "image",
+          } as Feature["properties"],
+        }),
+      ).toBe("image");
+    });
+
+    it("does not treat a point as an image just because it has an image field", () => {
+      expect(
+        getMapElementType({
+          ...textFeature,
+          image: "data:image/png;base64,abc",
+          properties: {
+            ...textFeature.properties,
+            mapElementType: "point",
+          },
+        }),
+      ).toBe("point");
+    });
+
+    it("falls back to image when the type is missing but the feature has image bytes", () => {
+      expect(
+        getMapElementType({
+          ...imageFeature,
+          properties: {
+            name: "carte.png",
+            bounds: imageFeature.properties.bounds,
+          },
+        }),
+      ).toBe("image");
     });
   });
 });

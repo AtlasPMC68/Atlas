@@ -35,6 +35,7 @@ def build_georef_inputs(
     frame_bounds: Optional[FrameBounds] = None,
     imposed_colors: Optional[List[dict]] = None,
     legend: Optional[Dict[str, Any]] = None,
+    ignored_areas: Optional[List[dict]] = None,
 ) -> Optional[Dict[str, Any]]:
     """Assemble the payload stored on ``maps.georef_inputs``."""
     
@@ -50,6 +51,7 @@ def build_georef_inputs(
             ),
             "frameBounds": frame_bounds_to_config_entry(frame_bounds),
             "legend": legend,
+            "ignoredAreas": ignored_areas or None,
         },
         "colors": {
             "imposed": imposed_colors or None,

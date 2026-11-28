@@ -1,6 +1,6 @@
 import type { Feature } from "../typescript/feature";
 import { normalizeTextSizePx, type CustomLabelStyle } from "./labelPresentation";
-import { getFeatureMapId, getMapElementType } from "./featureHelpers";
+import { getFeatureMapIds, getMapElementType } from "./featureHelpers";
 import { hexToRgb, rgbToHex } from "./utils";
 import {
   applyWordStyleToFeature,
@@ -35,7 +35,29 @@ export interface FeatureEditSubmitPayload {
   selectedMapIds?: string[];
 }
 
+function storedFillAndStroke(
+  fillHex: string,
+  isPoint: boolean,
+  strokeHex?: string,
+): {
+  color: string;
+  colorRgb: [number, number, number] | undefined;
+  pointColor: string | undefined;
+  pointStrokeColor: string | undefined;
+  strokeColor: [number, number, number] | undefined;
+} {
+  return {
+    color: fillHex,
+    colorRgb: hexToRgb(fillHex),
+    pointColor: isPoint ? fillHex : undefined,
+    pointStrokeColor: isPoint ? (strokeHex ?? "#000000") : undefined,
+    strokeColor: isPoint && strokeHex ? hexToRgb(strokeHex) : undefined,
+  };
+}
+
 export const MAX_STROKE_WIDTH_PX = 50;
+export const MAX_POINT_STROKE_WIDTH_PX = 12;
+export const MAX_PREVIEW_POINT_STROKE_WIDTH_PX = 6;
 export const DEFAULT_POINT_STROKE_OPACITY = 1;
 
 /**
@@ -56,34 +78,82 @@ export function normalizeStrokeWidth(value: unknown): number | undefined {
   return Math.max(0, Math.min(MAX_STROKE_WIDTH_PX, width));
 }
 
+export function preventNumericShortcutKeys(event: KeyboardEvent): void {
+  if (event.key === "-" || event.key === "+" || event.key === "e" || event.key === "E") {
+    event.preventDefault();
+  }
+}
+
+export function parseClampedOpacityFromInput(raw: string): number | undefined {
+  if (raw === "" || raw === null) return undefined;
+  const num = parseFloat(raw.replace(",", "."));
+  if (Number.isNaN(num)) return undefined;
+  return Math.max(0, Math.min(1, num));
+}
+
+export function normalizePointStrokeWidth(value: unknown): number | undefined {
+  if (value === null || value === undefined || value === "") return undefined;
+  const width = Number(value);
+  if (!Number.isFinite(width)) return undefined;
+  return Math.max(0, Math.min(MAX_POINT_STROKE_WIDTH_PX, width));
+}
+
 export function getDefaultTextSizePx(wordType: string | undefined): number {
   return WORD_TYPE_TAXONOMY[normalizeWordType(wordType)].sizePx;
+}
+
+function resolveEditCustomStyle(
+  originalFeature: Feature,
+  payload: FeatureEditSubmitPayload,
+): CustomLabelStyle | null {
+  if (payload.customLabelStyle) return payload.customLabelStyle;
+  if (!payload.customLabelStyleId) return null;
+  const embedded = originalFeature.properties.customLabelStyle as CustomLabelStyle | null | undefined;
+  return embedded ?? null;
 }
 
 export function applyCustomLabelStyleToFeature(
   feature: Feature,
   style: CustomLabelStyle,
-  wordType: WordType,
-  name: string,
-  labelText: string,
+  wordType: WordType = "city",
+  name?: string,
+  labelText?: string,
 ): Feature {
+  const resolvedName =
+    name && name.trim().length > 0
+      ? name
+      : (feature.properties.name && feature.properties.name.trim().length > 0
+        ? feature.properties.name
+        : (labelText ?? feature.properties.labelText ?? ""));
+  const resolvedLabelText =
+    labelText ?? feature.properties.labelText ?? resolvedName;
   const formattedText =
-    style.textTransform === "uppercase" ? labelText.toUpperCase() : labelText;
+    style.textTransform === "uppercase"
+      ? (resolvedLabelText || "").toUpperCase()
+      : (resolvedLabelText || "");
   const styledFeature = applyWordStyleToFeature(
     feature,
     wordType,
-    name,
+    resolvedName,
     formattedText,
   );
   const isBold = Boolean(style.bold || style.fontWeight === "bold");
   const targetElementType =
-    style.mapElementType ?? styledFeature.properties.mapElementType ?? "point";
+    style.mapElementType === "point" || style.hasPoint === true
+      ? "point"
+      : style.mapElementType === "label" || style.hasPoint === false
+        ? "label"
+        : (styledFeature.properties.mapElementType ?? "point");
+
+  const pointColor = style.pointColor || style.color || "#000000";
+  const pointStroke = style.pointStrokeColor || "#000000";
+
   return {
     ...styledFeature,
-    name,
+    name: resolvedName,
     properties: {
       ...styledFeature.properties,
-      name,
+      name: resolvedName,
       labelText: formattedText,
       mapElementType: targetElementType,
       rawType: "custom",
@@ -95,11 +165,15 @@ export function applyCustomLabelStyleToFeature(
       fontStyle: style.fontStyle || "normal",
       fontWeight: isBold ? "bold" : "normal",
       bold: isBold,
-      colorRgb: hexToRgb(style.color),
-      strokeColor: targetElementType === "label" ? undefined : styledFeature.properties.strokeColor,
-      fillOpacity: targetElementType === "label" ? undefined : styledFeature.properties.fillOpacity,
-      strokeOpacity: targetElementType === "label" ? undefined : styledFeature.properties.strokeOpacity,
-      strokeWidth: targetElementType === "label" ? undefined : styledFeature.properties.strokeWidth,
+      ...storedFillAndStroke(
+        targetElementType === "point" ? pointColor : (style.color || "#000000"),
+        targetElementType === "point",
+        targetElementType === "point" ? pointStroke : undefined,
+      ),
+      textColorRgb: hexToRgb(style.color),
+      fillOpacity: targetElementType === "point" ? (style.pointFillOpacity ?? 1) : undefined,
+      strokeOpacity: targetElementType === "point" ? (style.pointStrokeOpacity ?? 1) : undefined,
+      strokeWidth: targetElementType === "point" ? (style.pointStrokeWidth ?? 1) : undefined,
     },
   };
 }
@@ -134,38 +208,70 @@ export function prepareFeatureForEdit(feature: Feature): FeatureEditState {
   const rawLabel =
     feature.properties.labelText ?? (isText ? feature.properties.name : undefined);
 
-  const mapId = getFeatureMapId(feature);
-  const initialMapIds = mapId ? [mapId] : [];
-  const colorHex =
-    rgbToHex(feature.properties.colorRgb) ??
-    (elementType === "label" || elementType === "point" ? "#000000" : undefined);
+  const initialMapIds = getFeatureMapIds(feature);
+  const customStyle = feature.properties.customLabelStyle;
+  const customStyleId =
+    feature.properties.customLabelStyleId ||
+    (customStyle && typeof customStyle.id === "string" ? customStyle.id : undefined);
+  const hasCustomStyle = Boolean(customStyleId || customStyle);
+
+  const rawColorHex =
+    (typeof feature.properties.pointColor === "string" ? feature.properties.pointColor : undefined) ||
+    rgbToHex(feature.properties.colorRgb) ||
+    (typeof feature.properties.color === "string" ? feature.properties.color : undefined);
+  const rawTextColorHex = rgbToHex(feature.properties.textColorRgb);
+  const rawStrokeColorHex =
+    (typeof feature.properties.pointStrokeColor === "string" ? feature.properties.pointStrokeColor : undefined) ||
+    rgbToHex(feature.properties.strokeColor);
+
+  let colorHex: string | undefined;
+  let textColorHex: string | undefined;
+  let strokeColorHex: string | undefined;
+
+  if (hasCustomStyle && customStyle) {
+    colorHex = customStyle.pointColor || customStyle.color || rawColorHex || "#000000";
+    textColorHex = customStyle.color || rawTextColorHex || "#000000";
+    strokeColorHex = customStyle.pointStrokeColor || rawStrokeColorHex || "#000000";
+  } else {
+    colorHex =
+      rawColorHex ??
+      (elementType === "label" || elementType === "point" ? "#000000" : undefined);
+    textColorHex =
+      rawTextColorHex ??
+      (elementType === "label" || elementType === "point" ? (colorHex || "#000000") : "#000000");
+    strokeColorHex =
+      rawStrokeColorHex ??
+      (elementType === "point" || elementType === "image" ? "#000000" : undefined);
+  }
 
   return {
     feature,
     draft: {
-      name: feature.properties.name,
+      name: feature.properties?.name || feature.name || "",
       labelText: rawLabel,
       wordType,
       selectedMapIds: initialMapIds,
-      labelStyleSelection: feature.properties.customLabelStyleId
-        ? `custom:${feature.properties.customLabelStyleId}`
-        : wordType,
-      customLabelStyleId: feature.properties.customLabelStyleId,
-      customLabelStyle: feature.properties.customLabelStyle,
+      labelStyleSelection: customStyleId ? `custom:${customStyleId}` : wordType,
+      customLabelStyleId: customStyleId,
+      customLabelStyle: customStyle,
       colorHex,
-      textColorHex: rgbToHex(feature.properties.textColorRgb) ?? colorHex,
+      textColorHex,
       textSizePx: isText
         ? normalizeTextSizePx(feature.properties.textSizePx) ??
           getDefaultTextSizePx(wordType)
         : undefined,
-      strokeColorHex: rgbToHex(feature.properties.strokeColor),
-      fillOpacity: normalizeOpacity(feature.properties.fillOpacity),
+      strokeColorHex,
+      fillOpacity:
+        normalizeOpacity(feature.properties.fillOpacity) ??
+        (elementType === "point" ? 1 : undefined),
       // A point's outline is drawn opaque unless told otherwise; show that
       // value rather than an empty field.
       strokeOpacity:
         normalizeOpacity(feature.properties.strokeOpacity) ??
         (elementType === "point" ? DEFAULT_POINT_STROKE_OPACITY : undefined),
-      strokeWidth: normalizeStrokeWidth(feature.properties.strokeWidth),
+      strokeWidth:
+        normalizeStrokeWidth(feature.properties.strokeWidth) ??
+        (elementType === "point" ? 1 : undefined),
     },
   };
 }
@@ -174,25 +280,59 @@ export function coerceEditedFeature(
   originalFeature: Feature,
   payload: FeatureEditSubmitPayload,
 ): Feature {
-  const chosenMapId =
+  const chosenMapIds =
     payload.selectedMapIds && payload.selectedMapIds.length > 0
-      ? payload.selectedMapIds[0]
-      : null;
+      ? [...payload.selectedMapIds]
+      : [];
+  const chosenMapId = chosenMapIds.length > 0 ? chosenMapIds[0] : null;
 
-  if (!isTextFeature(originalFeature)) {
+  if (getMapElementType(originalFeature) === "image") {
     return {
       ...originalFeature,
       mapId: chosenMapId,
+      mapIds: chosenMapIds,
+      map_id: chosenMapId,
       name: payload.name,
       properties: {
         ...originalFeature.properties,
         mapId: chosenMapId,
+        mapIds: chosenMapIds,
+        map_id: chosenMapId,
+        name: payload.name,
+        mapElementType: "image",
+        strokeColor: hexToRgb(payload.strokeColorHex),
+      },
+    };
+  }
+
+  if (!isTextFeature(originalFeature)) {
+    const cleanedProps = { ...originalFeature.properties };
+    delete cleanedProps.labelText;
+    delete cleanedProps.wordType;
+    delete cleanedProps.rawType;
+    if (cleanedProps.mapElementType === "point" || cleanedProps.mapElementType === "label") {
+      cleanedProps.mapElementType = "shape";
+    }
+
+    return {
+      ...originalFeature,
+      mapId: chosenMapId,
+      mapIds: chosenMapIds,
+      map_id: chosenMapId,
+      name: payload.name,
+      properties: {
+        ...cleanedProps,
+        mapId: chosenMapId,
+        mapIds: chosenMapIds,
+        map_id: chosenMapId,
+        mapTitle: cleanedProps.mapTitle ?? null,
         name: payload.name,
         colorRgb: hexToRgb(payload.colorHex),
         strokeColor: hexToRgb(payload.strokeColorHex),
         fillOpacity: normalizeOpacity(payload.fillOpacity),
         strokeOpacity: normalizeOpacity(payload.strokeOpacity),
         strokeWidth: normalizeStrokeWidth(payload.strokeWidth),
+        mapElementType: cleanedProps.mapElementType || "shape",
       },
     };
   }
@@ -203,26 +343,55 @@ export function coerceEditedFeature(
     payload.name,
     payload.labelText ?? payload.name,
   );
-  if (payload.customLabelStyleId && payload.customLabelStyle) {
-    const custom = applyCustomLabelStyleToFeature(
-      originalFeature,
-      payload.customLabelStyle,
-      payload.wordType,
-      payload.name,
-      payload.labelText ?? payload.name,
-    );
-    return {
-      ...custom,
-      mapId: chosenMapId,
-      properties: {
-        ...custom.properties,
+  const resolvedCustomStyle = resolveEditCustomStyle(originalFeature, payload);
+  const customStyleId = payload.customLabelStyleId || resolvedCustomStyle?.id;
+  if (customStyleId) {
+    if (resolvedCustomStyle) {
+      const custom = applyCustomLabelStyleToFeature(
+        originalFeature,
+        { ...resolvedCustomStyle, id: customStyleId },
+        payload.wordType,
+        payload.name,
+        payload.labelText ?? payload.name,
+      );
+      return {
+        ...custom,
         mapId: chosenMapId,
+        mapIds: chosenMapIds,
+        map_id: chosenMapId,
+        properties: {
+          ...custom.properties,
+          mapId: chosenMapId,
+          mapIds: chosenMapIds,
+          map_id: chosenMapId,
+          mapTitle: custom.properties.mapTitle ?? null,
+        },
+      };
+    }
+    return {
+      ...originalFeature,
+      name: payload.name,
+      mapId: chosenMapId,
+      mapIds: chosenMapIds,
+      map_id: chosenMapId,
+      properties: {
+        ...originalFeature.properties,
+        name: payload.name,
+        labelText: payload.labelText ?? originalFeature.properties.labelText ?? payload.name,
+        mapId: chosenMapId,
+        mapIds: chosenMapIds,
+        map_id: chosenMapId,
+        customLabelStyleId: customStyleId,
       },
     };
   }
   const isLabel = styledFeature.properties.mapElementType === "label";
-  // A label has no symbol, so its one colour is the text colour. A point keeps
-  // a text colour only when it differs from the symbol's.
+  const isPoint = styledFeature.properties.mapElementType === "point";
+  const pointFillColor = payload.colorHex || "#000000";
+  const pointStrokeColor = payload.strokeColorHex || "#000000";
+  const labelColorHex = payload.colorHex ?? payload.textColorHex;
+  // A label has no symbol, so its one colour is its text colour (stored in colorRgb, without redundant textColorRgb).
+  // A point keeps a separate text colour only when it differs from the symbol's.
   const textColorHex =
     !isLabel && payload.textColorHex && payload.textColorHex !== payload.colorHex
       ? payload.textColorHex
@@ -238,67 +407,77 @@ export function coerceEditedFeature(
   return {
     ...styledFeature,
     mapId: chosenMapId,
+    mapIds: chosenMapIds,
+    map_id: chosenMapId,
     properties: {
       ...styledFeature.properties,
       mapId: chosenMapId,
+      mapIds: chosenMapIds,
+      map_id: chosenMapId,
+      mapTitle: styledFeature.properties.mapTitle ?? null,
       customLabelStyleId: null,
       customLabelStyle: null,
       custom_label_style_id: null,
-      colorRgb: hexToRgb(payload.colorHex),
+      customLabelStyleFallbackWordType: undefined,
+      ...storedFillAndStroke(
+        (isLabel ? labelColorHex : pointFillColor) || "#000000",
+        isPoint,
+        isLabel ? undefined : pointStrokeColor,
+      ),
       textColorRgb: hexToRgb(textColorHex),
       textSizePx: customTextSizePx,
-      strokeColor: isLabel ? undefined : hexToRgb(payload.strokeColorHex),
-      fillOpacity: isLabel ? undefined : normalizeOpacity(payload.fillOpacity),
-      strokeOpacity: isLabel ? undefined : normalizeOpacity(payload.strokeOpacity),
-      strokeWidth: isLabel ? undefined : normalizeStrokeWidth(payload.strokeWidth),
+      fillOpacity: isLabel
+        ? undefined
+        : (normalizeOpacity(payload.fillOpacity) ?? (isPoint ? 1 : undefined)),
+      strokeOpacity: isLabel
+        ? undefined
+        : (normalizeOpacity(payload.strokeOpacity) ?? (isPoint ? 1 : undefined)),
+      strokeWidth: isLabel
+        ? undefined
+        : isPoint
+          ? (normalizePointStrokeWidth(payload.strokeWidth) ?? 1)
+          : (normalizeStrokeWidth(payload.strokeWidth) ?? undefined),
     },
   };
 }
 
 /**
- * When multiple maps are selected, clones the feature for each additional map
- * with a new unique ID and the respective mapId.
+ * Associates the edited feature with the chosen maps on the same feature entity
+ * without creating duplicate IDs.
  */
 export function createFeaturesForSelectedMaps(
   baseEditedFeature: Feature,
   selectedMapIds?: string[],
 ): Feature[] {
-  if (!selectedMapIds || selectedMapIds.length <= 1) {
+  if (!selectedMapIds || selectedMapIds.length === 0) {
+    return [baseEditedFeature];
+  }
+  if (
+    selectedMapIds.length === 1 &&
+    selectedMapIds[0] === baseEditedFeature.mapId &&
+    (!baseEditedFeature.mapIds ||
+      (baseEditedFeature.mapIds.length === 1 && baseEditedFeature.mapIds[0] === selectedMapIds[0]))
+  ) {
     return [baseEditedFeature];
   }
 
-  const results: Feature[] = [
+  const chosenMapIds = [...selectedMapIds];
+  const chosenMapId = chosenMapIds.length > 0 ? chosenMapIds[0] : null;
+
+  return [
     {
       ...baseEditedFeature,
-      mapId: selectedMapIds[0],
+      mapId: chosenMapId,
+      mapIds: chosenMapIds,
+      map_id: chosenMapId,
       properties: {
         ...baseEditedFeature.properties,
-        mapId: selectedMapIds[0],
+        mapId: chosenMapId,
+        mapIds: chosenMapIds,
+        map_id: chosenMapId,
       },
     },
   ];
-
-  for (let i = 1; i < selectedMapIds.length; i++) {
-    const targetMapId = selectedMapIds[i];
-    let cloned: Feature;
-    if (typeof structuredClone === "function") {
-      try {
-        cloned = structuredClone(baseEditedFeature);
-      } catch {
-        cloned = JSON.parse(JSON.stringify(baseEditedFeature)) as Feature;
-      }
-    } else {
-      cloned = JSON.parse(JSON.stringify(baseEditedFeature)) as Feature;
-    }
-    cloned.id = crypto.randomUUID();
-    cloned.mapId = targetMapId;
-    if (cloned.properties) {
-      cloned.properties.mapId = targetMapId;
-    }
-    results.push(cloned);
-  }
-
-  return results;
 }
 
 export function getWordTypePreviewStyle(

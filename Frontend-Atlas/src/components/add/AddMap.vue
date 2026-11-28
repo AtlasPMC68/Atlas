@@ -1,9 +1,18 @@
 <template>
   <dialog ref="addMapDialogRef" class="modal">
-    <div class="modal-box p-0 overflow-visible">
+    <div class="modal-box p-0 relative overflow-visible">
+      <button
+        type="button"
+        class="btn btn-sm btn-circle btn-ghost absolute right-4 top-4 z-10"
+        :disabled="isCreatingMap"
+        @click="addMapDialogRef?.close()"
+      >
+        ✕
+      </button>
+
       <form @submit.prevent="createMapForProject">
         <div class="card-body">
-          <h3 class="text-lg font-bold flex items-center gap-2">
+          <h3 class="text-xl font-bold pr-10 flex items-center gap-2">
             Ajouter une carte au projet
             <GuideLink guide="importation" :page="IMPORT_GUIDE_PAGES.addMap" tooltip-position="right" />
           </h3>
@@ -29,6 +38,7 @@
                   class="input"
                   placeholder="Ex: 1850"
                   required
+                  @input="onStartYearInput"
                 />
                 <input
                   v-else
@@ -36,6 +46,7 @@
                   type="date"
                   class="input"
                   required
+                  @input="onStartDateInput"
                 />
               </div>
 
@@ -62,10 +73,10 @@
             />
             <span>Utiliser la date exacte</span>
           </label>
-          <div class="flex justify-end gap-2 mt-6">
+          <div class="modal-action mt-6 flex justify-end gap-2">
             <button
               type="button"
-              class="btn btn-ghost"
+              class="modal-secondary-btn w-32"
               :disabled="isCreatingMap"
               @click="addMapDialogRef?.close()"
             >
@@ -73,7 +84,7 @@
             </button>
             <button
               type="submit"
-              class="btn btn-primary"
+              class="btn btn-primary rounded-lg min-w-32"
               :disabled="
                 !newMapTitle.trim() || !hasValidImportDates() || isCreatingMap
               "
@@ -82,7 +93,7 @@
                 v-if="isCreatingMap"
                 class="loading loading-spinner loading-xs"
               ></span>
-              <span v-else>Créer et importer</span>
+              <span v-else class="text-white">Créer et importer</span>
             </button>
           </div>
         </div>
@@ -96,7 +107,7 @@
 
 <script setup lang="ts">
 import { ref } from "vue";
-import { yearToIsoEnd, yearToIsoStart } from "../../utils/dateUtils";
+import { syncEndFromStart, yearToIsoEnd, yearToIsoStart } from "../../utils/dateUtils";
 import GuideLink from "../GuideLink.vue";
 import { IMPORT_GUIDE_PAGES } from "../../utils/guides";
 
@@ -123,6 +134,23 @@ const startDate = ref("");
 const endDate = ref("");
 const usePreciseDates = ref(false);
 
+let previousStartYear: number | null = null;
+let previousStartDate = "";
+
+function onStartYearInput() {
+  if (startYear.value !== null && startYear.value !== undefined) {
+    endYear.value = syncEndFromStart(startYear.value, endYear.value, previousStartYear);
+    previousStartYear = startYear.value;
+  }
+}
+
+function onStartDateInput() {
+  if (startDate.value) {
+    endDate.value = syncEndFromStart(startDate.value, endDate.value, previousStartDate);
+    previousStartDate = startDate.value;
+  }
+}
+
 function resetForm() {
   newMapTitle.value = "";
   startYear.value = null;
@@ -130,6 +158,8 @@ function resetForm() {
   startDate.value = "";
   endDate.value = "";
   usePreciseDates.value = false;
+  previousStartYear = null;
+  previousStartDate = "";
 }
 
 function open() {

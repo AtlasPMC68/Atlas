@@ -72,22 +72,13 @@ describe("featureTextEditing", () => {
       expect(res[0]).toBe(basePointFeature);
     });
 
-    it("clones feature for each map when multiple maps selected", () => {
+    it("associates multiple maps on the same feature without duplicating IDs", () => {
       const res = createFeaturesForSelectedMaps(basePointFeature, ["map-1", "map-2", "map-3"]);
-      expect(res).toHaveLength(3);
-
+      expect(res).toHaveLength(1);
       expect(res[0].id).toBe("f-point-1");
       expect(res[0].mapId).toBe("map-1");
-
-      expect(res[1].id).not.toBe("f-point-1");
-      expect(res[1].mapId).toBe("map-2");
-      expect(res[1].properties.mapId).toBe("map-2");
-      expect(res[1].properties.name).toBe("Québec");
-
-      expect(res[2].id).not.toBe("f-point-1");
-      expect(res[2].id).not.toBe(res[1].id);
-      expect(res[2].mapId).toBe("map-3");
-      expect(res[2].properties.mapId).toBe("map-3");
+      expect(res[0].mapIds).toEqual(["map-1", "map-2", "map-3"]);
+      expect(res[0].properties.mapIds).toEqual(["map-1", "map-2", "map-3"]);
     });
   });
 
@@ -127,6 +118,107 @@ describe("featureTextEditing", () => {
       expect(edited.properties.rawType).toBe("river");
     });
 
+    it("keeps the custom style id when the style object is missing", () => {
+      const withIdOnly: Feature = {
+        ...basePointFeature,
+        properties: {
+          ...basePointFeature.properties,
+          customLabelStyleId: "style-capital",
+        },
+      };
+
+      const edited = coerceEditedFeature(withIdOnly, {
+        name: "Québec",
+        wordType: "city",
+        customLabelStyleId: "style-capital",
+        selectedMapIds: ["map-1"],
+      });
+
+      expect(edited.properties.customLabelStyleId).toBe("style-capital");
+      expect(edited.properties.name).toBe("Québec");
+    });
+
+    it("keeps a custom style when only the style id is in the payload", () => {
+      const withCustom = applyCustomLabelStyleToFeature(
+        basePointFeature,
+        sampleCustomStyle,
+        "city",
+        "Québec",
+        "Québec",
+      );
+
+      const edited = coerceEditedFeature(withCustom, {
+        name: "Québec",
+        wordType: "city",
+        customLabelStyleId: "style-capital",
+        selectedMapIds: ["map-1"],
+      });
+
+      expect(edited.properties.customLabelStyleId).toBe("style-capital");
+      expect(edited.properties.customLabelStyle).toEqual(sampleCustomStyle);
+      expect(edited.properties.colorRgb).toEqual([225, 29, 72]);
+    });
+
+    it("clears leftover custom-style fields when switching back to a word type", () => {
+      const withCustom = applyCustomLabelStyleToFeature(
+        basePointFeature,
+        sampleCustomStyle,
+        "city",
+        "Québec",
+        "Québec",
+      );
+
+      const edited = coerceEditedFeature(withCustom, {
+        name: "Québec",
+        wordType: "city",
+        colorHex: "#000000",
+        selectedMapIds: ["map-1"],
+      });
+
+      expect(edited.properties.customLabelStyleId).toBeNull();
+      expect(edited.properties.customLabelStyle).toBeNull();
+      expect(edited.properties.customLabelStyleFallbackWordType).toBeUndefined();
+      expect(edited.properties.rawType).toBe("city");
+    });
+
+    it("applies a mer-to-ville change on that word only and keeps it visible", () => {
+      const seaFeature: Feature = {
+        ...basePointFeature,
+        id: "f-sea-1",
+        name: "Mer du Labrador",
+        properties: {
+          name: "Mer du Labrador",
+          labelText: "Mer du Labrador",
+          mapElementType: "label",
+          rawType: "sea",
+          type: "sea",
+          colorRgb: [0, 70, 140],
+          mapId: "map-1",
+        },
+      };
+
+      const edited = coerceEditedFeature(seaFeature, {
+        name: "Mer du Labrador",
+        wordType: "city",
+        colorHex: "#111111",
+        textColorHex: "#222222",
+        strokeColorHex: "#333333",
+        fillOpacity: 0.8,
+        strokeOpacity: 0.9,
+        strokeWidth: 2,
+        selectedMapIds: ["map-1"],
+      });
+
+      expect(edited.properties.rawType).toBe("city");
+      expect(edited.properties.mapElementType).toBe("point");
+      expect(edited.properties.customLabelStyleId).toBeNull();
+      expect(edited.properties.pointColor).toBe("#111111");
+      expect(edited.properties.pointStrokeColor).toBe("#333333");
+      expect(edited.properties.fillOpacity).toBe(0.8);
+      expect(edited.properties.strokeWidth).toBe(2);
+      expect(edited.mapId).toBe("map-1");
+    });
+
     it("applies custom label style and uppercase transformation when selected", () => {
       const edited = coerceEditedFeature(basePointFeature, {
         name: "ottawa",
@@ -140,6 +232,73 @@ describe("featureTextEditing", () => {
       expect(edited.properties.customLabelStyleId).toBe("style-capital");
       expect(edited.properties.sizePx).toBe(18);
       expect(edited.properties.fontWeight).toBe("bold");
+    });
+
+    it("keeps an image overlay as an image and only updates name, stroke and maps", () => {
+      const imageFeature: Feature = {
+        type: "Feature",
+        id: "img-1",
+        projectId: "p1",
+        name: "carte.png",
+        image: "base64-bytes",
+        createdAt: "2026-01-01T00:00:00Z",
+        updatedAt: "2026-01-01T00:00:00Z",
+        geometry: { type: "Point", coordinates: [-71.0, 46.5] },
+        properties: {
+          name: "carte.png",
+          mapElementType: "image",
+          mimeType: "image/png",
+          bounds: [
+            [46.0, -72.0],
+            [47.0, -70.0],
+          ],
+        },
+      };
+
+      const edited = coerceEditedFeature(imageFeature, {
+        name: "Blason",
+        wordType: "city",
+        strokeColorHex: "#ff0000",
+        colorHex: "#00ff00",
+        fillOpacity: 0,
+        selectedMapIds: ["map-2"],
+      });
+
+      expect(edited.image).toBe("base64-bytes");
+      expect(edited.properties.mapElementType).toBe("image");
+      expect(edited.properties.bounds).toEqual([
+        [46.0, -72.0],
+        [47.0, -70.0],
+      ]);
+      expect(edited.name).toBe("Blason");
+      expect(edited.mapId).toBe("map-2");
+      expect(edited.properties.strokeColor).toEqual([255, 0, 0]);
+      expect(edited.properties.colorRgb).toBeUndefined();
+    });
+
+    it("prepareFeatureForEdit exposes name, stroke and maps for an image", () => {
+      const imageFeature: Feature = {
+        type: "Feature",
+        id: "img-1",
+        projectId: "p1",
+        name: "carte.png",
+        image: "base64-bytes",
+        mapId: "map-1",
+        createdAt: "2026-01-01T00:00:00Z",
+        updatedAt: "2026-01-01T00:00:00Z",
+        geometry: { type: "Point", coordinates: [-71.0, 46.5] },
+        properties: {
+          name: "carte.png",
+          mapElementType: "image",
+          mapId: "map-1",
+          strokeColor: [0, 0, 255],
+        },
+      };
+
+      const { draft } = prepareFeatureForEdit(imageFeature);
+      expect(draft.name).toBe("carte.png");
+      expect(draft.strokeColorHex).toBe("#0000ff");
+      expect(draft.selectedMapIds).toEqual(["map-1"]);
     });
 
     it("updates non-text features (opacity, stroke, strokeWidth)", () => {
@@ -162,6 +321,58 @@ describe("featureTextEditing", () => {
       expect(edited.properties.colorRgb).toEqual([0, 255, 0]);
       expect(edited.properties.strokeColor).toEqual([0, 0, 0]);
     });
+
+    it("clamps a point stroke to MAX_POINT_STROKE_WIDTH_PX", () => {
+      const edited = coerceEditedFeature(basePointFeature, {
+        name: "Québec",
+        wordType: "city",
+        colorHex: "#000000",
+        strokeColorHex: "#111111",
+        strokeWidth: 50,
+        selectedMapIds: ["map-1"],
+      });
+
+      expect(edited.properties.mapElementType).toBe("point");
+      expect(edited.properties.strokeWidth).toBe(12);
+    });
+
+    it("persists text color for label elements without custom style (e.g. country)", () => {
+      const countryFeature: Feature = {
+        type: "Feature",
+        id: "feat-label-1",
+        mapId: "map-1",
+        geometry: { type: "Point", coordinates: [-95.7, 37.0] },
+        properties: {
+          name: "ÉTATS-UNIS",
+          mapElementType: "label",
+          rawType: "country",
+          colorRgb: [0, 0, 0],
+        },
+      };
+
+      const edited = coerceEditedFeature(countryFeature, {
+        name: "ÉTATS-UNIS",
+        wordType: "country",
+        textColorHex: "#00ff88",
+        selectedMapIds: ["map-1"],
+      });
+
+      expect(edited.properties.colorRgb).toEqual([0, 255, 136]);
+      expect(edited.properties.textColorRgb).toBeUndefined();
+    });
+
+    it("persists symbol fill and text color separately for point elements", () => {
+      const edited = coerceEditedFeature(basePointFeature, {
+        name: "Québec",
+        wordType: "city",
+        colorHex: "#3b82f6",
+        textColorHex: "#ef4444",
+        selectedMapIds: ["map-1"],
+      });
+
+      expect(edited.properties.colorRgb).toEqual([59, 130, 246]);
+      expect(edited.properties.textColorRgb).toEqual([239, 68, 68]);
+    });
   });
 
   describe("applyCustomLabelStyleToFeature & removeCustomLabelStyleFromFeature", () => {
@@ -181,6 +392,46 @@ describe("featureTextEditing", () => {
       expect(restored.properties.customLabelStyleId).toBeNull();
       expect(restored.properties.customLabelStyle).toBeNull();
       expect(restored.properties.customLabelStyleFallbackWordType).toBeUndefined();
+    });
+
+    it("sets mapElementType to point when custom style has hasPoint: true", () => {
+      const provinceLabelFeature: Feature = {
+        id: "nova-scotia",
+        type: "Feature",
+        geometry: { type: "Point", coordinates: [-63.5, 44.6] },
+        properties: {
+          name: "Nouvelle-Écosse",
+          mapElementType: "label",
+          rawType: "province",
+          type: "province",
+        },
+      };
+
+      const styleWithPoint: CustomLabelStyle = {
+        ...sampleCustomStyle,
+        hasPoint: true,
+        pointColor: "#ff0000",
+        pointStrokeColor: "#000000",
+        pointStrokeWidth: 2,
+        pointFillOpacity: 0.8,
+        pointStrokeOpacity: 1,
+      };
+
+      const withCustom = applyCustomLabelStyleToFeature(
+        provinceLabelFeature,
+        styleWithPoint,
+        "province",
+      );
+
+      expect(withCustom.properties.mapElementType).toBe("point");
+      expect(withCustom.properties.colorRgb).toEqual([255, 0, 0]);
+      expect(withCustom.properties.textColorRgb).toEqual([225, 29, 72]);
+      expect(withCustom.properties.strokeWidth).toBe(2);
+      expect(withCustom.properties.fillOpacity).toBe(0.8);
+
+      const editState = prepareFeatureForEdit(withCustom);
+      expect(editState.draft.colorHex).toBe("#ff0000");
+      expect(editState.draft.textColorHex).toBe("#e11d48");
     });
   });
 

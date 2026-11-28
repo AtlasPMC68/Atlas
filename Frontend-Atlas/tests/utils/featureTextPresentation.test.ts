@@ -11,7 +11,15 @@ import {
   applyWordStyleToFeature,
   WORD_TYPE_TAXONOMY,
 } from "../../src/utils/wordStyles";
-import { getLabelPresentation } from "../../src/utils/labelPresentation";
+import {
+  getLabelPresentation,
+  getWordTypeOptionStyle,
+  getCustomStyleObject,
+  mapPointSwatchSvg,
+  resolvePointFillHex,
+  resolvePointStrokeHex,
+  type CustomLabelStyle,
+} from "../../src/utils/labelPresentation";
 import { getMapElementType } from "../../src/utils/featureHelpers";
 import {
   prepareFeatureForEdit,
@@ -124,6 +132,15 @@ describe("shared word styles and label presentation", () => {
       properties: { name: "Province", mapElementType: "label" },
     } as Feature;
     expect(isTextFeature(labelFeature)).toBe(true);
+
+    const imageFeature = {
+      type: "Feature",
+      id: "img-1",
+      image: "base64",
+      geometry: { type: "Point", coordinates: [0, 0] },
+      properties: { name: "carte.gif", mapElementType: "image" },
+    } as Feature;
+    expect(isTextFeature(imageFeature)).toBe(false);
   });
 
   it("getWordTypeForFeature extracts word type with correct fallbacks", () => {
@@ -200,9 +217,89 @@ describe("shared word styles and label presentation", () => {
     expect(pres.isItalic).toBe(true);
     expect(pres.fontWeight).toBe("bold");
     expect(pres.isBold).toBe(true);
-    expect(pres.priority).toBe(60);
+    expect(pres.priority).toBe(16);
     expect(pres.minZoom).toBe(2.0);
     expect(pres.html).toContain("Baie d'Hudson");
+  });
+
+  it("prefers hex pointColor over a stale colorRgb for the symbol", () => {
+    const feature: Feature = {
+      type: "Feature",
+      id: "feat-stale-rgb",
+      name: "Québec",
+      geometry: { type: "Point", coordinates: [-71, 46] },
+      properties: {
+        name: "Québec",
+        rawType: "city",
+        mapElementType: "point",
+        pointColor: "#dc2626",
+        colorRgb: [0, 0, 255],
+        pointStrokeColor: "#111111",
+        strokeColor: [255, 255, 0],
+      },
+      createdAt: "2026-01-01",
+      updatedAt: "2026-01-01",
+      projectId: "",
+    };
+    const props = feature.properties as Record<string, unknown>;
+    expect(resolvePointFillHex(props, null)).toBe("#dc2626");
+    expect(resolvePointStrokeHex(props, null)).toBe("#111111");
+    const pres = getLabelPresentation(feature);
+    expect(pres.pointColor).toBe("#dc2626");
+    expect(pres.pointStrokeColor).toBe("#111111");
+  });
+
+  it("does not let an invalid custom style color replace textColorRgb", () => {
+    const feature: Feature = {
+      type: "Feature",
+      id: "feat-bad-custom-color",
+      name: "Québec",
+      geometry: { type: "Point", coordinates: [-71, 46] },
+      properties: {
+        name: "Québec",
+        rawType: "city",
+        mapElementType: "point",
+        textColorRgb: [0, 128, 0],
+        customLabelStyle: {
+          id: "c-bad",
+          name: "Bad",
+          sizePx: 14,
+          fontStyle: "normal",
+          textTransform: "none",
+          color: "not-a-hex",
+          priority: 50,
+          minZoom: 1,
+        },
+      },
+      createdAt: "2026-01-01",
+      updatedAt: "2026-01-01",
+      projectId: "",
+    };
+    expect(getLabelPresentation(feature).colorCss).toBe("rgb(0, 128, 0)");
+  });
+
+  it("uses this word's own size as collision priority, not its type", () => {
+    const feature: Feature = {
+      type: "Feature",
+      id: "feat-city-from-sea",
+      name: "Mer du Labrador",
+      geometry: { type: "Point", coordinates: [-60, 55] },
+      properties: {
+        name: "Mer du Labrador",
+        rawType: "city",
+        mapElementType: "point",
+        textSizePx: 20,
+      },
+      createdAt: "2026-01-01",
+      updatedAt: "2026-01-01",
+      projectId: "",
+    };
+
+    const presentation = getLabelPresentation(feature);
+    expect(presentation.wordType).toBe("city");
+    expect(presentation.mapElementType).toBe("point");
+    expect(presentation.sizePx).toBe(20);
+    expect(presentation.priority).toBe(20);
   });
 
   it("applies custom label style bold/fontWeight correctly to presentation model", () => {
@@ -254,6 +351,37 @@ describe("shared word styles and label presentation", () => {
     expect(presBold.styleAttribute).toContain("font-weight: bold");
   });
 
+  it("still applies a custom style when sizePx is a numeric string and color is missing", () => {
+    const feature: Feature = {
+      type: "Feature",
+      id: "feat-custom-lenient",
+      name: "Fort",
+      geometry: { type: "Point", coordinates: [-75, 52] },
+      properties: {
+        name: "Fort",
+        customLabelStyle: {
+          id: "style-lenient",
+          name: "Fort",
+          sizePx: "16" as unknown as number,
+          fontStyle: "italic",
+          textTransform: "uppercase",
+          priority: 40,
+          minZoom: 1,
+        },
+      },
+      createdAt: "2026-01-01",
+      updatedAt: "2026-01-01",
+      projectId: "",
+    };
+
+    const presentation = getLabelPresentation(feature);
+    expect(presentation.isCustom).toBe(true);
+    expect(presentation.sizePx).toBe(16);
+    expect(presentation.fontStyle).toBe("italic");
+    expect(presentation.color).toBe("#000000");
+    expect(presentation.formattedText).toBe("FORT");
+  });
+
   it("uses taxonomy as the sole source for label style despite stale feature properties", () => {
     const feature: Feature = {
       type: "Feature",
@@ -278,6 +406,26 @@ describe("shared word styles and label presentation", () => {
     expect(presentation.fontStyle).toBe("normal");
     expect(presentation.textTransform).toBe("none");
     expect(presentation.formattedText).toBe("Montreal");
+  });
+
+  it("shows the city name on the map even if labelText is still empty", () => {
+    const feature: Feature = {
+      type: "Feature",
+      id: "city-unsaved",
+      name: "Test",
+      geometry: { type: "Point", coordinates: [-73.5, 45.5] },
+      properties: {
+        name: "Test",
+        labelText: "",
+        rawType: "city",
+        mapElementType: "point",
+      },
+      createdAt: "2026-01-01",
+      updatedAt: "2026-01-01",
+      projectId: "",
+    };
+
+    expect(getLabelPresentation(feature).formattedText).toBe("Test");
   });
 
   it("prepareFeatureForEdit and coerceEditedFeature handle form roundtrips", () => {
@@ -330,5 +478,80 @@ describe("shared word styles and label presentation", () => {
 
     expect(getMapElementType(cityWithStaleLabelType)).toBe("point");
     expect(getMapElementType(provinceWithStalePointType)).toBe("label");
+  });
+
+  it("applies textColorRgb directly in styleAttribute and colorCss in getLabelPresentation", () => {
+    const feature: Feature = {
+      type: "Feature",
+      id: "feat-custom-color",
+      name: "ÉTATS-UNIS",
+      geometry: { type: "Point", coordinates: [-95.7, 37.0] },
+      properties: {
+        name: "ÉTATS-UNIS",
+        rawType: "country",
+        mapElementType: "label",
+        textColorRgb: [0, 255, 136],
+      },
+      createdAt: "2026-01-01",
+      updatedAt: "2026-01-01",
+      projectId: "",
+    };
+
+    const presentation = getLabelPresentation(feature);
+    expect(presentation.colorCss).toBe("rgb(0, 255, 136)");
+    expect(presentation.styleAttribute).toContain("color: rgb(0, 255, 136)");
+  });
+
+  it("ensures getWordTypeOptionStyle and getCustomStyleObject define explicit text colors", () => {
+    const cityOptionStyle = getWordTypeOptionStyle("city");
+    expect(cityOptionStyle.color).toBe("#000000");
+
+    const riverOptionStyle = getWordTypeOptionStyle("river");
+    expect(riverOptionStyle.color).toBe("#000000");
+
+    const customWithColor: CustomLabelStyle = {
+      id: "c-1",
+      name: "Fort",
+      sizePx: 14,
+      fontStyle: "normal",
+      textTransform: "none",
+      color: "#10b981",
+      priority: 50,
+      minZoom: 1,
+    };
+    expect(getCustomStyleObject(customWithColor).color).toBe("#10b981");
+
+    const customWithoutColor: CustomLabelStyle = {
+      id: "c-2",
+      name: "Sans couleur",
+      sizePx: 14,
+      fontStyle: "normal",
+      textTransform: "none",
+      priority: 50,
+      minZoom: 1,
+    };
+    expect(getCustomStyleObject(customWithoutColor).color).toBe("#000000");
+
+    const customWithPoint: CustomLabelStyle = {
+      ...customWithColor,
+      id: "c-point",
+      hasPoint: true,
+      pointColor: "#dc2626",
+    };
+    expect(getCustomStyleObject(customWithPoint).color).toBe("#10b981");
+  });
+
+  it("rejects non-hex fill/stroke and clamps opacities in the map point SVG", () => {
+    const svg = mapPointSwatchSvg({
+      fill: '#00ff00" onclick="alert(1)',
+      stroke: "red",
+      fillOpacity: 4,
+      strokeOpacity: Number.NaN,
+    });
+    expect(svg).toContain('fill="#000000"');
+    expect(svg).toContain('stroke="#000000"');
+    expect(svg).toContain('fill-opacity="1"');
+    expect(svg).toContain('stroke-opacity="1"');
+    expect(svg).not.toContain("onclick");
   });
 });
