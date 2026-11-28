@@ -471,10 +471,6 @@ function copySelectedFeature(): boolean {
     if (label && navigator.clipboard?.writeText) {
       void navigator.clipboard.writeText(label).catch((error: unknown) => {
         console.error("Could not copy feature label to clipboard:", error);
-        showAlert(
-          "error",
-          "Le nom n'a pas pu être copié dans le presse-papiers. L'élément est tout de même copié dans Atlas.",
-        );
       });
     }
   }
