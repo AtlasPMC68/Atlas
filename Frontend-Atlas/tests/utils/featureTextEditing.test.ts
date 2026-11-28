@@ -276,6 +276,31 @@ describe("featureTextEditing", () => {
       expect(edited.properties.colorRgb).toBeUndefined();
     });
 
+    it("prepareFeatureForEdit exposes name, stroke and maps for an image", () => {
+      const imageFeature: Feature = {
+        type: "Feature",
+        id: "img-1",
+        projectId: "p1",
+        name: "carte.png",
+        image: "base64-bytes",
+        mapId: "map-1",
+        createdAt: "2026-01-01T00:00:00Z",
+        updatedAt: "2026-01-01T00:00:00Z",
+        geometry: { type: "Point", coordinates: [-71.0, 46.5] },
+        properties: {
+          name: "carte.png",
+          mapElementType: "image",
+          mapId: "map-1",
+          strokeColor: [0, 0, 255],
+        },
+      };
+
+      const { draft } = prepareFeatureForEdit(imageFeature);
+      expect(draft.name).toBe("carte.png");
+      expect(draft.strokeColorHex).toBe("#0000ff");
+      expect(draft.selectedMapIds).toEqual(["map-1"]);
+    });
+
     it("updates non-text features (opacity, stroke, strokeWidth)", () => {
       const edited = coerceEditedFeature(baseZoneFeature, {
         name: "Nouvelle Zone",

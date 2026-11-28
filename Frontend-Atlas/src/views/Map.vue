@@ -211,6 +211,7 @@ import {
   getFeatureMapId,
   getFeatureMapIds,
 } from "../utils/featureHelpers";
+import { isSupportedFeatureImage } from "../utils/featureImageFile";
 import { nudgeFeatureByPixels } from "../utils/mapDragUtils";
 import {
   getNudgeDelta,
@@ -754,17 +755,6 @@ function getImageNaturalSize(
     };
     img.src = url;
   });
-}
-
-const FEATURE_IMAGE_EXTENSIONS = [".jpg", ".jpeg", ".png"];
-const FEATURE_IMAGE_MIME_TYPES = ["image/jpeg", "image/jpg", "image/png"];
-
-function isSupportedFeatureImage(file: File): boolean {
-  const name = file.name.toLowerCase();
-  const hasAllowedExt = FEATURE_IMAGE_EXTENSIONS.some((ext) => name.endsWith(ext));
-  const mime = (file.type || "").toLowerCase();
-  const hasAllowedMime = !mime || FEATURE_IMAGE_MIME_TYPES.includes(mime);
-  return hasAllowedExt && hasAllowedMime;
 }
 
 async function onAddFeatureImage(file: File) {

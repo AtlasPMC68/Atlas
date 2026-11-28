@@ -6,6 +6,7 @@ import {
   cloneFeatureWithOffset,
   getFeatureMapId,
   getFeatureMapIds,
+  getMapElementType,
 } from "../../src/utils/featureHelpers";
 import type { Feature } from "../../src/typescript/feature";
 
@@ -335,6 +336,50 @@ describe("featureHelpers - copy / paste functionality", () => {
       };
       expect(getFeatureMapId(feat)).toBe("carte-2");
       expect(getFeatureMapIds(feat)).toEqual(["carte-2"]);
+    });
+  });
+
+  describe("getMapElementType for images", () => {
+    it("classifies a feature with mapElementType image as image", () => {
+      expect(getMapElementType(imageFeature)).toBe("image");
+    });
+
+    it("classifies snake_case map_element_type image as image", () => {
+      expect(
+        getMapElementType({
+          ...imageFeature,
+          properties: {
+            ...imageFeature.properties,
+            mapElementType: undefined,
+            map_element_type: "image",
+          } as Feature["properties"],
+        }),
+      ).toBe("image");
+    });
+
+    it("does not treat a point as an image just because it has an image field", () => {
+      expect(
+        getMapElementType({
+          ...textFeature,
+          image: "data:image/png;base64,abc",
+          properties: {
+            ...textFeature.properties,
+            mapElementType: "point",
+          },
+        }),
+      ).toBe("point");
+    });
+
+    it("falls back to image when the type is missing but the feature has image bytes", () => {
+      expect(
+        getMapElementType({
+          ...imageFeature,
+          properties: {
+            name: "carte.png",
+            bounds: imageFeature.properties.bounds,
+          },
+        }),
+      ).toBe("image");
     });
   });
 });
